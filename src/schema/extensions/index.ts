@@ -11,4 +11,4 @@ export * from './extension-registry';
 import './e-commerce';
 
 // Export individual extensions for direct use
-export { eCommerceExtension } from './e-commerce'; 
+export { ECommerceExtension } from './e-commerce'; 

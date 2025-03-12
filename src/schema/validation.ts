@@ -16,12 +16,31 @@ export const TagSchema = z.string();
  * Trigger schema
  */
 export const TriggerSchema = z.object({
-  id: z.string(),
+  id: z.string().optional(),
   name: z.string(),
-  type: z.enum(['event', 'schedule', 'webhook', 'message']),
+  type: z.enum(['event', 'schedule', 'webhook', 'message', 'user_event', 'api_call', 'system_event']),
   description: z.string().optional(),
+  payload: z.array(z.string()).optional(),
+  contextProperties: z.array(z.string()).optional(),
+  url: z.string().optional(),
+  method: z.enum(['GET', 'POST', 'PUT', 'DELETE', 'PATCH']).optional(),
+  schedule: z.string().optional(),
   tags: z.array(TagSchema).optional()
-});
+}).refine(
+  (trigger) => {
+    if (trigger.type === 'api_call') {
+      return !!trigger.url;
+    }
+    if (trigger.type === 'schedule') {
+      return !!trigger.schedule;
+    }
+    return true;
+  },
+  {
+    message: 'Missing required fields for trigger type',
+    path: ['type']
+  }
+);
 
 /**
  * Task schema

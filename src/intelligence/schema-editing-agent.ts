@@ -4,6 +4,10 @@
  * Uses LLM to edit schemas based on natural language prompts.
  */
 
+import { SystemBuilder } from '../dsl';
+import { validateSystemWithResult } from '../schema/validation';
+import type { ReactiveSystem } from '../schema/types';
+
 /**
  * Result of applying a schema change
  */
@@ -11,7 +15,7 @@ export interface SchemaChangeResult {
   /**
    * The modified system schema
    */
-  system: any;
+  system: ReactiveSystem;
   
   /**
    * Explanation of the changes made
@@ -73,7 +77,7 @@ export class SchemaEditingAgent {
    * @param prompt Natural language prompt describing the changes to make
    * @returns Result of applying the schema change
    */
-  async applySchemaChange(schema: any, prompt: string): Promise<SchemaChangeResult> {
+  async applySchemaChange(schema: ReactiveSystem, prompt: string): Promise<SchemaChangeResult> {
     // Check if we should return an invalid system
     if (this.shouldReturnInvalidSystem) {
       return {
@@ -90,82 +94,151 @@ export class SchemaEditingAgent {
       };
     }
     
-    // This is a mock implementation that simulates adding a task
-    if (prompt.toLowerCase().includes('add task') || prompt.toLowerCase().includes('create task')) {
-      const taskName = this.extractTaskName(prompt);
-      const taskId = taskName.toLowerCase().replace(/\s+/g, '-');
+    try {
+      // Create a SystemBuilder from the existing schema
+      const builder = SystemBuilder.create(schema.id)
+        .transform(() => schema);
       
-      // Create a copy of the schema
-      const modifiedSchema = JSON.parse(JSON.stringify(schema));
-      
-      // Add the new task
-      if (!modifiedSchema.tasks) {
-        modifiedSchema.tasks = {};
+      // This is a mock implementation that simulates adding a task
+      if (prompt.toLowerCase().includes('add task') || prompt.toLowerCase().includes('create task')) {
+        const taskName = this.extractTaskName(prompt);
+        const taskId = taskName.toLowerCase().replace(/\s+/g, '-');
+        
+        // Add the task using the builder
+        builder.withTask(taskId, task => ({
+          ...task,
+          name: taskName,
+          type: 'operation',
+          description: `Task created from prompt: ${prompt}`,
+          input: [],
+          output: []
+        }));
+        
+        // Validate the modified system
+        const validationResult = builder.validate();
+        
+        if (!validationResult.success) {
+          return {
+            system: schema,
+            explanation: 'Failed to apply schema change due to validation issues',
+            success: false,
+            validationIssues: validationResult.issues
+          };
+        }
+        
+        // Build the modified system
+        const modifiedSystem = builder.build();
+        
+        return {
+          success: true,
+          system: modifiedSystem,
+          explanation: `Added a new task '${taskName}' with ID '${taskId}'.`
+        };
       }
       
-      modifiedSchema.tasks[taskId] = {
-        id: taskId,
-        name: taskName,
-        type: 'operation',
-        description: `Task created from prompt: ${prompt}`,
-        input: [],
-        output: []
-      };
-      
-      return {
-        success: true,
-        system: modifiedSchema,
-        explanation: `Added a new task '${taskName}' with ID '${taskId}'.`
-      };
-    }
-    
-    // Simulate adding a process
-    if (prompt.toLowerCase().includes('add process') || prompt.toLowerCase().includes('create process')) {
-      const processName = this.extractProcessName(prompt);
-      const processId = processName.toLowerCase().replace(/\s+/g, '-');
-      
-      // Create a copy of the schema
-      const modifiedSchema = JSON.parse(JSON.stringify(schema));
-      
-      // Add the new process
-      if (!modifiedSchema.processes) {
-        modifiedSchema.processes = {};
+      // Simulate adding a process
+      if (prompt.toLowerCase().includes('add process') || prompt.toLowerCase().includes('create process')) {
+        const processName = this.extractProcessName(prompt);
+        const processId = processName.toLowerCase().replace(/\s+/g, '-');
+        
+        // Find a bounded context to add the process to
+        const contextId = schema.boundedContexts ? Object.keys(schema.boundedContexts)[0] : 'default-context';
+        
+        // Add the process using the builder
+        if (prompt.toLowerCase().includes('stateful')) {
+          builder.withStatefulProcess(processId, contextId, {
+            name: processName,
+            states: ['initial', 'processing', 'completed'],
+            transitions: [
+              { from: 'initial', to: 'processing', on: 'start' },
+              { from: 'processing', to: 'completed', on: 'complete' }
+            ]
+          });
+        } else {
+          builder.withProcess(processId, contextId, processName);
+        }
+        
+        // Validate the modified system
+        const validationResult = builder.validate();
+        
+        if (!validationResult.success) {
+          return {
+            system: schema,
+            explanation: 'Failed to apply schema change due to validation issues',
+            success: false,
+            validationIssues: validationResult.issues
+          };
+        }
+        
+        // Build the modified system
+        const modifiedSystem = builder.build();
+        
+        return {
+          success: true,
+          system: modifiedSystem,
+          explanation: `Added a new process '${processName}' with ID '${processId}'.`
+        };
       }
       
-      modifiedSchema.processes[processId] = {
-        id: processId,
-        name: processName,
-        type: 'stateful',
-        description: `Process created from prompt: ${prompt}`,
-        tasks: [],
-        states: ['initial', 'processing', 'completed'],
-        transitions: [
-          {
-            from: 'initial',
-            to: 'processing',
-            on: 'start'
-          },
-          {
-            from: 'processing',
-            to: 'completed',
-            on: 'complete'
+      // Add a field to a task
+      if (prompt.toLowerCase().includes('add field') || prompt.toLowerCase().includes('add a field')) {
+        const fieldMatch = prompt.match(/add (?:a )?field (?:called )?['"]?([a-zA-Z0-9_]+)['"]? to (?:the )?task ['"]?([a-zA-Z0-9_-]+)['"]?/i);
+        
+        if (fieldMatch && fieldMatch[1] && fieldMatch[2]) {
+          const fieldName = fieldMatch[1];
+          const taskId = fieldMatch[2];
+          
+          // Create a copy of the schema
+          const modifiedSchema = JSON.parse(JSON.stringify(schema));
+          
+          // Add the field to the task
+          if (modifiedSchema.tasks && modifiedSchema.tasks[taskId]) {
+            modifiedSchema.tasks[taskId][fieldName] = 'pending';
+            
+            // If it's a status field, add possible values
+            if (fieldName === 'status') {
+              modifiedSchema.tasks[taskId].statusValues = ['pending', 'in-progress', 'completed'];
+            }
+            
+            // Validate the modified system
+            const validationResult = validateSystemWithResult(modifiedSchema);
+            
+            if (!validationResult.success) {
+              return {
+                system: schema,
+                explanation: 'Failed to apply schema change due to validation issues',
+                success: false,
+                validationIssues: validationResult.errors.map(error => ({
+                  path: error.path,
+                  message: error.message,
+                  severity: 'error'
+                }))
+              };
+            }
+            
+            return {
+              success: true,
+              system: modifiedSchema,
+              explanation: `Added field '${fieldName}' to task '${taskId}'.`
+            };
           }
-        ]
-      };
+        }
+      }
       
+      // Default response for unrecognized prompts
       return {
-        success: true,
-        system: modifiedSchema,
-        explanation: `Added a new process '${processName}' with ID '${processId}'.`
+        success: false,
+        system: schema,
+        explanation: 'I could not understand how to modify the schema based on your prompt. Please try again with a more specific request, such as "Add a task called send-email" or "Create a process called order-fulfillment".'
+      };
+    } catch (error) {
+      console.error('Error applying schema change:', error);
+      return {
+        success: false,
+        system: schema,
+        explanation: `Error applying schema change: ${error instanceof Error ? error.message : String(error)}`
       };
     }
-    
-    // Default response for unrecognized prompts
-    return {
-      success: false,
-      system: schema,
-      explanation: 'I could not understand how to modify the schema based on your prompt. Please try again with a more specific request, such as "Add a task called send-email" or "Create a process called order-fulfillment".'
-    };
   }
   
   /**

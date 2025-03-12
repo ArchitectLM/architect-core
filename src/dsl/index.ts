@@ -1,71 +1,197 @@
 /**
  * Hybrid DSL for Architect Framework
  * 
- * This module provides a hybrid DSL that combines functional programming principles
- * with a builder pattern approach for defining reactive systems.
+ * This module provides a Domain-Specific Language (DSL) for defining reactive systems
+ * in the Architect Framework. It combines functional programming principles with a
+ * builder pattern approach, offering flexibility and expressiveness.
  */
 
-import { z } from 'zod';
-import type { 
-  ReactiveSystem, 
-  BoundedContext, 
-  Process, 
-  Task, 
-  Trigger, 
-  Transition 
-} from '../schema/types';
-import { extensionRegistry } from '../schema/extensions/extension-registry';
+import { ReactiveSystem, BoundedContext, Process, Task, Transition } from '../schema/types';
+import { validateSystem, validateSystemWithResult } from '../schema/validation';
+import { ExtensionValidationResult } from '../schema/extensions/extension-registry';
 
-/**
- * Type for a function that transforms a system
- */
-type SystemTransformer = (system: ReactiveSystem) => ReactiveSystem;
+// Type definitions for transformers
+export type SystemTransformer = (system: ReactiveSystem) => ReactiveSystem;
+export type ContextTransformer = (context: BoundedContext) => BoundedContext;
+export type ProcessTransformer = (process: Process) => Process;
+export type TaskTransformer = (task: Task) => Task;
 
 /**
- * Type for a function that transforms a bounded context
+ * Interface for migration history entry
  */
-type ContextTransformer = (context: BoundedContext) => BoundedContext;
+export interface MigrationHistoryEntry {
+  fromVersion: string;
+  toVersion: string;
+  timestamp: string;
+  description?: string;
+}
 
 /**
- * Type for a function that transforms a process
+ * Interface for enhanced validation issue with context
  */
-type ProcessTransformer = (process: Process) => Process;
+export interface EnhancedValidationIssue {
+  path: string;
+  message: string;
+  severity: 'error' | 'warning';
+  context?: {
+    actual?: any;
+    expected?: any;
+    systemId?: string;
+    processId?: string;
+    taskId?: string;
+    contextId?: string;
+    processName?: string;
+    taskName?: string;
+    contextName?: string;
+    llmHint?: string;
+    suggestion?: string;
+    [key: string]: any;
+  };
+}
 
 /**
- * Type for a function that transforms a task
+ * Interface for enhanced validation result
  */
-type TaskTransformer = (task: Task) => Task;
+export interface EnhancedValidationResult {
+  success: boolean;
+  issues: EnhancedValidationIssue[];
+  metadata?: {
+    validatedAt: string;
+    systemId: string;
+    systemName?: string;
+    format?: string;
+    [key: string]: any;
+  };
+}
 
 /**
- * Creates a deep copy of an object to ensure immutability
+ * Deep copy function to ensure immutability of objects
  */
-function deepCopy<T>(obj: T): T {
+export function deepCopy<T>(obj: T): T {
   return JSON.parse(JSON.stringify(obj));
 }
 
 /**
- * Composes multiple system transformers into a single transformer
+ * Compose multiple system transformers into a single transformer
  */
-function composeTransformers(...transformers: SystemTransformer[]): SystemTransformer {
+export function composeTransformers(...transformers: SystemTransformer[]): SystemTransformer {
   return (system: ReactiveSystem) => 
-    transformers.reduce((acc, transformer) => transformer(acc), deepCopy(system));
+    transformers.reduce((acc, transformer) => transformer(acc), system);
 }
 
 /**
- * System builder class that provides a fluent interface for building systems
+ * Validate that a version string follows semantic versioning format
+ */
+export function validateVersionFormat(version: string): boolean {
+  const semverRegex = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
+  return semverRegex.test(version);
+}
+
+/**
+ * Validate state transitions in a process
+ */
+export function validateStateTransitions(process: Process): void {
+  if (process.type !== 'stateful' || !process.states || !process.transitions) {
+    return; // Only validate stateful processes with states and transitions
+  }
+
+  const availableStates = process.states;
+  
+  for (const transition of process.transitions) {
+    if (!availableStates.includes(transition.from)) {
+      throw new Error(`Invalid state "${transition.from}" in transition. Available states: ${availableStates.join(', ')}`);
+    }
+    
+    if (!availableStates.includes(transition.to)) {
+      throw new Error(`Invalid state "${transition.to}" in transition. Available states: ${availableStates.join(', ')}`);
+    }
+  }
+}
+
+/**
+ * Validate all state transitions in a system
+ */
+export function validateAllStateTransitions(system: ReactiveSystem): void {
+  if (!system.processes) return;
+  
+  for (const [processId, process] of Object.entries(system.processes)) {
+    try {
+      validateStateTransitions(process);
+    } catch (error) {
+      if (error instanceof Error) {
+        throw new Error(`${error.message.replace('in transition', `in transition for process "${processId}"`)}`);
+      }
+      throw error;
+    }
+  }
+}
+
+/**
+ * Migrate a system schema to a new version
+ */
+export function migrateSchema(
+  system: ReactiveSystem, 
+  targetVersion: string, 
+  transformer?: SystemTransformer,
+  validate: boolean = true
+): ReactiveSystem {
+  if (!validateVersionFormat(targetVersion)) {
+    throw new Error(`Invalid version format "${targetVersion}". Version should follow semantic versioning (e.g., 1.0.0).`);
+  }
+  
+  const sourceVersion = system.version || '1.0.0';
+  
+  // Create a new system with the updated version
+  let migratedSystem = deepCopy(system);
+  
+  // Apply the transformer if provided
+  if (transformer) {
+    migratedSystem = transformer(migratedSystem);
+  }
+  
+  // Update version information
+  migratedSystem.version = targetVersion;
+  migratedSystem.schemaVersion = targetVersion;
+  
+  // Add migration history
+  const migrationEntry: MigrationHistoryEntry = {
+    fromVersion: sourceVersion,
+    toVersion: targetVersion,
+    timestamp: new Date().toISOString()
+  };
+  
+  migratedSystem.migrationHistory = [
+    ...(migratedSystem.migrationHistory || []),
+    migrationEntry
+  ];
+  
+  // Validate the migrated system if requested
+  if (validate) {
+    validateAllStateTransitions(migratedSystem);
+    const validationResult = validateSystemWithResult(migratedSystem);
+    if (!validationResult.success) {
+      throw new Error(`Migration validation failed: ${validationResult.errors.map(e => e.message).join(', ')}`);
+    }
+  }
+  
+  return migratedSystem;
+}
+
+/**
+ * SystemBuilder class for building reactive systems in a fluent manner
  */
 export class SystemBuilder {
   private system: ReactiveSystem;
-  private transformers: SystemTransformer[] = [];
 
-  /**
-   * Creates a new system builder
-   */
-  private constructor(id: string, name: string, version: string) {
+  private constructor(id: string) {
+    if (!id) {
+      throw new Error('System ID cannot be empty. Please provide a valid identifier for the system.');
+    }
+    
     this.system = {
       id,
-      name,
-      version,
+      name: id,
+      version: '1.0.0',
       boundedContexts: {},
       processes: {},
       tasks: {}
@@ -73,393 +199,325 @@ export class SystemBuilder {
   }
 
   /**
-   * Creates a new system builder
+   * Create a new SystemBuilder with the given ID
    */
   static create(id: string): SystemBuilder {
-    return new SystemBuilder(id, id, '1.0.0');
+    return new SystemBuilder(id);
   }
 
   /**
-   * Sets the name of the system
+   * Set the name of the system
    */
   withName(name: string): SystemBuilder {
-    this.transformers.push(system => ({
-      ...system,
+    const newBuilder = new SystemBuilder(this.system.id);
+    newBuilder.system = {
+      ...deepCopy(this.system),
       name
-    }));
-    return this;
+    };
+    return newBuilder;
   }
 
   /**
-   * Sets the description of the system
+   * Set the description of the system
    */
   withDescription(description: string): SystemBuilder {
-    this.transformers.push(system => ({
-      ...system,
+    const newBuilder = new SystemBuilder(this.system.id);
+    newBuilder.system = {
+      ...deepCopy(this.system),
       description
-    }));
-    return this;
+    };
+    return newBuilder;
   }
 
   /**
-   * Sets the version of the system
+   * Set the version of the system
    */
   withVersion(version: string): SystemBuilder {
-    this.transformers.push(system => ({
-      ...system,
+    if (!validateVersionFormat(version)) {
+      throw new Error(`Invalid version format "${version}". Version should follow semantic versioning (e.g., 1.0.0).`);
+    }
+    
+    const newBuilder = new SystemBuilder(this.system.id);
+    newBuilder.system = {
+      ...deepCopy(this.system),
       version
-    }));
-    return this;
+    };
+    return newBuilder;
   }
 
   /**
-   * Adds a bounded context to the system
+   * Add a bounded context to the system
    */
   withBoundedContext(id: string, nameOrTransformer: string | ContextTransformer): SystemBuilder {
-    if (typeof nameOrTransformer === 'string') {
-      // Simple case: just provide a name
-      this.transformers.push(system => ({
-        ...system,
-        boundedContexts: {
-          ...system.boundedContexts,
-          [id]: {
-            id,
-            name: nameOrTransformer,
-            description: `${nameOrTransformer} bounded context`,
-            processes: []
-          }
-        }
-      }));
-    } else {
-      // Advanced case: provide a transformer function
-      this.transformers.push(system => {
-        const baseContext: BoundedContext = {
-          id,
-          name: id,
-          description: `${id} bounded context`,
-          processes: []
-        };
-        
-        const transformedContext = nameOrTransformer(baseContext);
-        
-        return {
-          ...system,
-          boundedContexts: {
-            ...system.boundedContexts,
-            [id]: transformedContext
-          }
-        };
-      });
-    }
+    const newBuilder = new SystemBuilder(this.system.id);
+    const newSystem = deepCopy(this.system);
     
-    return this;
+    const context: BoundedContext = {
+      id,
+      name: typeof nameOrTransformer === 'string' ? nameOrTransformer : id,
+      description: typeof nameOrTransformer === 'string' ? `${nameOrTransformer} bounded context` : `${id} bounded context`,
+      processes: []
+    };
+
+    if (typeof nameOrTransformer !== 'string') {
+      const transformedContext = nameOrTransformer(context);
+      newSystem.boundedContexts = {
+        ...newSystem.boundedContexts,
+        [id]: transformedContext
+      };
+    } else {
+      newSystem.boundedContexts = {
+        ...newSystem.boundedContexts,
+        [id]: context
+      };
+    }
+
+    newBuilder.system = newSystem;
+    return newBuilder;
   }
 
   /**
-   * Adds a process to the system
+   * Add a process to the system
    */
   withProcess(id: string, contextId: string, nameOrTransformer: string | ProcessTransformer): SystemBuilder {
-    if (typeof nameOrTransformer === 'string') {
-      // Simple case: just provide a name
-      this.transformers.push(system => {
-        // Ensure the context exists
-        if (!system.boundedContexts?.[contextId]) {
-          throw new Error(`Bounded context '${contextId}' does not exist`);
-        }
-        
-        const baseProcess: Process = {
-          id,
-          name: nameOrTransformer,
-          contextId,
-          type: 'stateless',
-          triggers: [],
-          tasks: []
-        };
-        
-        return {
-          ...system,
-          processes: {
-            ...system.processes,
-            [id]: baseProcess
-          },
-          boundedContexts: {
-            ...system.boundedContexts,
-            [contextId]: {
-              ...system.boundedContexts[contextId],
-              processes: [...(system.boundedContexts[contextId].processes || []), id]
-            }
-          }
-        };
-      });
-    } else {
-      // Advanced case: provide a transformer function
-      this.transformers.push(system => {
-        // Ensure the context exists
-        if (!system.boundedContexts?.[contextId]) {
-          throw new Error(`Bounded context '${contextId}' does not exist`);
-        }
-        
-        const baseProcess: Process = {
-          id,
-          name: id,
-          contextId,
-          type: 'stateless',
-          triggers: [],
-          tasks: []
-        };
-        
-        const transformedProcess = nameOrTransformer(baseProcess);
-        
-        return {
-          ...system,
-          processes: {
-            ...system.processes,
-            [id]: transformedProcess
-          },
-          boundedContexts: {
-            ...system.boundedContexts,
-            [contextId]: {
-              ...system.boundedContexts[contextId],
-              processes: [...(system.boundedContexts[contextId].processes || []), id]
-            }
-          }
-        };
-      });
-    }
+    const newBuilder = new SystemBuilder(this.system.id);
+    const newSystem = deepCopy(this.system);
     
-    return this;
+    if (!newSystem.boundedContexts?.[contextId]) {
+      throw new Error(`Bounded context "${contextId}" does not exist. Please create the bounded context before adding processes to it.`);
+    }
+
+    const process: Process = {
+      id,
+      name: typeof nameOrTransformer === 'string' ? nameOrTransformer : id,
+      contextId,
+      type: 'stateless',
+      triggers: [],
+      tasks: []
+    };
+
+    if (typeof nameOrTransformer !== 'string') {
+      const transformedProcess = nameOrTransformer(process);
+      newSystem.processes = {
+        ...newSystem.processes,
+        [id]: transformedProcess
+      };
+    } else {
+      newSystem.processes = {
+        ...newSystem.processes,
+        [id]: process
+      };
+    }
+
+    // Add process to bounded context
+    if (newSystem.boundedContexts[contextId]) {
+      newSystem.boundedContexts[contextId].processes = [
+        ...(newSystem.boundedContexts[contextId].processes || []),
+        id
+      ];
+    }
+
+    newBuilder.system = newSystem;
+    return newBuilder;
   }
 
   /**
-   * Adds a stateful process to the system
+   * Add a stateful process to the system
    */
-  withStatefulProcess(
-    id: string, 
-    contextId: string, 
-    config: {
-      name: string;
-      states: string[];
-      transitions?: Array<{
-        from: string;
-        to: string;
-        on: string;
-        description?: string;
-      }>;
+  withStatefulProcess(id: string, contextId: string, options: {
+    name: string;
+    states: string[];
+    transitions: Array<{ from: string; to: string; on: string }>;
+  }): SystemBuilder {
+    const newBuilder = new SystemBuilder(this.system.id);
+    const newSystem = deepCopy(this.system);
+    
+    if (!newSystem.boundedContexts?.[contextId]) {
+      throw new Error(`Bounded context "${contextId}" does not exist. Please create the bounded context before adding processes to it.`);
     }
-  ): SystemBuilder {
-    this.transformers.push(system => {
-      // Ensure the context exists
-      if (!system.boundedContexts?.[contextId]) {
-        throw new Error(`Bounded context '${contextId}' does not exist`);
+
+    const process: Process = {
+      id,
+      name: options.name,
+      contextId,
+      type: 'stateful',
+      states: options.states,
+      transitions: options.transitions.map(t => ({
+        from: t.from,
+        to: t.to,
+        on: t.on
+      })),
+      triggers: [],
+      tasks: []
+    };
+
+    // Validate state transitions
+    const availableStates = options.states;
+    for (const transition of options.transitions) {
+      if (!availableStates.includes(transition.from)) {
+        throw new Error(`Invalid state "${transition.from}" in transition for process "${id}". Available states: ${availableStates.join(', ')}`);
       }
       
-      const baseProcess: Process = {
-        id,
-        name: config.name,
-        contextId,
-        type: 'stateful',
-        triggers: [],
-        tasks: [],
-        states: config.states,
-        transitions: config.transitions || []
-      };
-      
-      return {
-        ...system,
-        processes: {
-          ...system.processes,
-          [id]: baseProcess
-        },
-        boundedContexts: {
-          ...system.boundedContexts,
-          [contextId]: {
-            ...system.boundedContexts[contextId],
-            processes: [...(system.boundedContexts[contextId].processes || []), id]
-          }
-        }
-      };
-    });
-    
-    return this;
-  }
-
-  /**
-   * Adds a task to the system
-   */
-  withTask(id: string, nameOrTransformer: string | TaskTransformer): SystemBuilder {
-    if (typeof nameOrTransformer === 'string') {
-      // Simple case: just provide a name
-      this.transformers.push(system => {
-        const baseTask: Task = {
-          id,
-          type: 'operation',
-          label: nameOrTransformer
-        };
-        
-        return {
-          ...system,
-          tasks: {
-            ...system.tasks,
-            [id]: baseTask
-          }
-        };
-      });
-    } else {
-      // Advanced case: provide a transformer function
-      this.transformers.push(system => {
-        const baseTask: Task = {
-          id,
-          type: 'operation'
-        };
-        
-        const transformedTask = nameOrTransformer(baseTask);
-        
-        return {
-          ...system,
-          tasks: {
-            ...system.tasks,
-            [id]: transformedTask
-          }
-        };
-      });
+      if (!availableStates.includes(transition.to)) {
+        throw new Error(`Invalid state "${transition.to}" in transition for process "${id}". Available states: ${availableStates.join(', ')}`);
+      }
     }
-    
-    return this;
+
+    newSystem.processes = {
+      ...newSystem.processes,
+      [id]: process
+    };
+
+    // Add process to bounded context
+    if (newSystem.boundedContexts[contextId]) {
+      newSystem.boundedContexts[contextId].processes = [
+        ...(newSystem.boundedContexts[contextId].processes || []),
+        id
+      ];
+    }
+
+    newBuilder.system = newSystem;
+    return newBuilder;
   }
 
   /**
-   * Adds a task to a process
+   * Add a task to the system
+   */
+  withTask(id: string, labelOrTransformer: string | TaskTransformer): SystemBuilder {
+    const newBuilder = new SystemBuilder(this.system.id);
+    const newSystem = deepCopy(this.system);
+    
+    const task: Task = {
+      id,
+      label: typeof labelOrTransformer === 'string' ? labelOrTransformer : id,
+      type: 'operation'
+    };
+
+    if (typeof labelOrTransformer !== 'string') {
+      const transformedTask = labelOrTransformer(task);
+      newSystem.tasks = {
+        ...newSystem.tasks,
+        [id]: transformedTask
+      };
+    } else {
+      newSystem.tasks = {
+        ...newSystem.tasks,
+        [id]: task
+      };
+    }
+
+    newBuilder.system = newSystem;
+    return newBuilder;
+  }
+
+  /**
+   * Add a task to a process
    */
   withProcessTask(processId: string, taskId: string): SystemBuilder {
-    this.transformers.push(system => {
-      // Ensure the process exists
-      if (!system.processes?.[processId]) {
-        throw new Error(`Process '${processId}' does not exist`);
-      }
-      
-      // Ensure the task exists
-      if (!system.tasks?.[taskId]) {
-        throw new Error(`Task '${taskId}' does not exist`);
-      }
-      
-      return {
-        ...system,
-        processes: {
-          ...system.processes,
-          [processId]: {
-            ...system.processes[processId],
-            tasks: [...(system.processes[processId].tasks || []), taskId]
-          }
-        }
-      };
-    });
+    const newBuilder = new SystemBuilder(this.system.id);
+    const newSystem = deepCopy(this.system);
     
-    return this;
+    if (!newSystem.processes?.[processId]) {
+      throw new Error(`Process "${processId}" does not exist. Please create the process before adding tasks to it.`);
+    }
+    
+    if (!newSystem.tasks?.[taskId]) {
+      throw new Error(`Task "${taskId}" does not exist. Please create the task before adding it to a process.`);
+    }
+    
+    newSystem.processes[processId].tasks = [
+      ...(newSystem.processes[processId].tasks || []),
+      taskId
+    ];
+    
+    newBuilder.system = newSystem;
+    return newBuilder;
   }
 
   /**
-   * Adds an extension to the system
-   */
-  withExtension(extensionId: string, config: Record<string, any>): SystemBuilder {
-    this.transformers.push(system => {
-      const extension = extensionRegistry.getExtension(extensionId);
-      if (!extension) {
-        throw new Error(`Extension '${extensionId}' does not exist`);
-      }
-      
-      return {
-        ...system,
-        [extensionId]: config
-      };
-    });
-    
-    return this;
-  }
-
-  /**
-   * Applies a custom transformer to the system
+   * Apply a transformer function to the system
    */
   transform(transformer: SystemTransformer): SystemBuilder {
-    this.transformers.push(transformer);
-    return this;
+    const newBuilder = new SystemBuilder(this.system.id);
+    newBuilder.system = transformer(deepCopy(this.system));
+    return newBuilder;
   }
 
   /**
-   * Builds the system by applying all transformers
+   * Validate the system
+   */
+  validate(): EnhancedValidationResult {
+    try {
+      // Validate state transitions first
+      validateAllStateTransitions(this.system);
+      
+      // Then validate the entire system
+      const result = validateSystemWithResult(this.system);
+      
+      // Convert to enhanced validation result
+      const enhancedResult: EnhancedValidationResult = {
+        success: result.success,
+        issues: result.errors.map(error => ({
+          path: error.path,
+          message: error.message,
+          severity: 'error',
+          context: {
+            systemId: this.system.id,
+            systemName: this.system.name
+          }
+        })),
+        metadata: {
+          validatedAt: new Date().toISOString(),
+          systemId: this.system.id,
+          systemName: this.system.name,
+          format: 'structured-for-llm'
+        }
+      };
+      
+      return enhancedResult;
+    } catch (error) {
+      if (error instanceof Error) {
+        return {
+          success: false,
+          issues: [{
+            path: 'system',
+            message: error.message,
+            severity: 'error',
+            context: {
+              systemId: this.system.id,
+              systemName: this.system.name,
+              llmHint: 'Check the system structure for validation errors'
+            }
+          }],
+          metadata: {
+            validatedAt: new Date().toISOString(),
+            systemId: this.system.id,
+            systemName: this.system.name,
+            format: 'structured-for-llm'
+          }
+        };
+      }
+      
+      throw error;
+    }
+  }
+
+  /**
+   * Build the system
    */
   build(): ReactiveSystem {
-    const result = composeTransformers(...this.transformers)(this.system);
-    // Freeze the object to prevent mutations
-    return Object.freeze(result);
-  }
-
-  /**
-   * Validates the system and returns validation issues
-   */
-  validate(): { success: boolean; issues: Array<{ path: string; message: string; severity: 'error' | 'warning' }> } {
-    const system = this.build();
-    
-    // Basic validation
-    const issues: Array<{ path: string; message: string; severity: 'error' | 'warning' }> = [];
-    
-    // Check for required fields
-    if (!system.id) {
-      issues.push({ path: 'id', message: 'System ID is required', severity: 'error' });
-    }
-    
-    if (!system.name) {
-      issues.push({ path: 'name', message: 'System name is required', severity: 'error' });
-    }
-    
-    if (!system.version) {
-      issues.push({ path: 'version', message: 'System version is required', severity: 'error' });
-    }
-    
-    // Check for process references in bounded contexts
-    if (system.boundedContexts) {
-      for (const [contextId, context] of Object.entries(system.boundedContexts)) {
-        for (const processId of context.processes || []) {
-          if (!system.processes?.[processId]) {
-            issues.push({
-              path: `boundedContexts.${contextId}.processes`,
-              message: `Process '${processId}' referenced in bounded context '${contextId}' does not exist`,
-              severity: 'error'
-            });
-          }
-        }
-      }
-    }
-    
-    // Check for task references in processes
-    if (system.processes) {
-      for (const [processId, process] of Object.entries(system.processes)) {
-        for (const taskId of process.tasks || []) {
-          if (!system.tasks?.[taskId]) {
-            issues.push({
-              path: `processes.${processId}.tasks`,
-              message: `Task '${taskId}' referenced in process '${processId}' does not exist`,
-              severity: 'error'
-            });
-          }
-        }
-      }
-    }
-    
-    // TODO: Add more validation rules
-    
-    return {
-      success: !issues.some(issue => issue.severity === 'error'),
-      issues
-    };
+    // Validate state transitions before returning
+    validateAllStateTransitions(this.system);
+    return deepCopy(this.system);
   }
 }
 
 /**
- * Process builder class for more fluent process definition
+ * ProcessBuilder class for building processes in a fluent manner
  */
 export class ProcessBuilder {
   private process: Process;
-  
+
   constructor(id: string, name: string, contextId: string, type: 'stateful' | 'stateless' = 'stateless') {
     this.process = {
       id,
@@ -469,138 +527,202 @@ export class ProcessBuilder {
       triggers: [],
       tasks: []
     };
+    
+    if (type === 'stateful') {
+      this.process.states = [];
+      this.process.transitions = [];
+    }
   }
-  
+
+  /**
+   * Set the type of the process
+   */
   withType(type: 'stateful' | 'stateless'): ProcessBuilder {
-    this.process = {
-      ...this.process,
+    const newBuilder = new ProcessBuilder(this.process.id, this.process.name, this.process.contextId);
+    newBuilder.process = {
+      ...deepCopy(this.process),
       type
     };
-    return this;
+    
+    if (type === 'stateful' && !newBuilder.process.states) {
+      newBuilder.process.states = [];
+      newBuilder.process.transitions = [];
+    }
+    
+    return newBuilder;
   }
-  
+
+  /**
+   * Set the states of the process
+   */
   withStates(states: string[]): ProcessBuilder {
     if (this.process.type !== 'stateful') {
-      throw new Error('States can only be added to stateful processes');
+      throw new Error('States can only be added to stateful processes. Set the process type to "stateful" first.');
     }
     
-    this.process = {
-      ...this.process,
+    const newBuilder = new ProcessBuilder(this.process.id, this.process.name, this.process.contextId, 'stateful');
+    newBuilder.process = {
+      ...deepCopy(this.process),
       states
     };
-    return this;
+    return newBuilder;
   }
-  
-  withTransition(from: string, to: string, on: string, description?: string): ProcessBuilder {
+
+  /**
+   * Add a transition to the process
+   */
+  withTransition(from: string, to: string, on: string): ProcessBuilder {
     if (this.process.type !== 'stateful') {
-      throw new Error('Transitions can only be added to stateful processes');
+      throw new Error('Transitions can only be added to stateful processes. Set the process type to "stateful" first.');
     }
     
-    const transition: Transition = {
-      from,
-      to,
-      on,
-      description
-    };
+    // Validate states
+    const availableStates = this.process.states || [];
+    if (!availableStates.includes(from)) {
+      throw new Error(`Invalid state "${from}" in transition. Available states: ${availableStates.join(', ')}`);
+    }
     
-    this.process = {
-      ...this.process,
-      transitions: [...(this.process.transitions || []), transition]
+    if (!availableStates.includes(to)) {
+      throw new Error(`Invalid state "${to}" in transition. Available states: ${availableStates.join(', ')}`);
+    }
+    
+    const newBuilder = new ProcessBuilder(this.process.id, this.process.name, this.process.contextId, 'stateful');
+    newBuilder.process = {
+      ...deepCopy(this.process),
+      transitions: [
+        ...(this.process.transitions || []),
+        { from, to, on }
+      ]
     };
-    return this;
+    return newBuilder;
   }
-  
+
+  /**
+   * Add a task to the process
+   */
   withTask(taskId: string): ProcessBuilder {
-    this.process = {
-      ...this.process,
-      tasks: [...this.process.tasks, taskId]
+    const newBuilder = new ProcessBuilder(this.process.id, this.process.name, this.process.contextId, this.process.type);
+    newBuilder.process = {
+      ...deepCopy(this.process),
+      tasks: [
+        ...(this.process.tasks || []),
+        taskId
+      ]
     };
-    return this;
+    return newBuilder;
   }
-  
-  withTrigger(trigger: Trigger): ProcessBuilder {
-    this.process = {
-      ...this.process,
-      triggers: [...this.process.triggers, trigger]
-    };
-    return this;
-  }
-  
+
+  /**
+   * Build the process
+   */
   build(): Process {
-    return Object.freeze(this.process);
+    // Validate state transitions before returning
+    if (this.process.type === 'stateful') {
+      validateStateTransitions(this.process);
+    }
+    return deepCopy(this.process);
   }
 }
 
 /**
- * Task builder class for more fluent task definition
+ * TaskBuilder class for building tasks in a fluent manner
  */
 export class TaskBuilder {
   private task: Task;
-  
-  constructor(id: string, type: Task['type'] = 'operation') {
+
+  constructor(id: string) {
     this.task = {
       id,
-      type
+      type: 'operation'
     };
   }
-  
+
+  /**
+   * Set the label of the task
+   */
   withLabel(label: string): TaskBuilder {
-    this.task = {
-      ...this.task,
+    const newBuilder = new TaskBuilder(this.task.id);
+    newBuilder.task = {
+      ...deepCopy(this.task),
       label
     };
-    return this;
+    return newBuilder;
   }
-  
+
+  /**
+   * Set the description of the task
+   */
   withDescription(description: string): TaskBuilder {
-    this.task = {
-      ...this.task,
+    const newBuilder = new TaskBuilder(this.task.id);
+    newBuilder.task = {
+      ...deepCopy(this.task),
       description
     };
-    return this;
+    return newBuilder;
   }
-  
-  withInput(input: string | string[]): TaskBuilder {
-    this.task = {
-      ...this.task,
+
+  /**
+   * Set the type of the task
+   */
+  withType(type: "operation" | "condition" | "transformation" | "notification" | "external_call" | "state_transition"): TaskBuilder {
+    const newBuilder = new TaskBuilder(this.task.id);
+    newBuilder.task = {
+      ...deepCopy(this.task),
+      type
+    };
+    return newBuilder;
+  }
+
+  /**
+   * Set the input parameters of the task
+   */
+  withInput(input: string[]): TaskBuilder {
+    const newBuilder = new TaskBuilder(this.task.id);
+    newBuilder.task = {
+      ...deepCopy(this.task),
       input
     };
-    return this;
+    return newBuilder;
   }
-  
-  withOutput(output: string | string[]): TaskBuilder {
-    this.task = {
-      ...this.task,
+
+  /**
+   * Set the output parameters of the task
+   */
+  withOutput(output: string[]): TaskBuilder {
+    const newBuilder = new TaskBuilder(this.task.id);
+    newBuilder.task = {
+      ...deepCopy(this.task),
       output
     };
-    return this;
+    return newBuilder;
   }
-  
+
+  /**
+   * Build the final task
+   */
   build(): Task {
-    return Object.freeze(this.task);
+    return deepCopy(this.task);
   }
 }
 
-/**
- * Helper functions for functional composition
- */
+// Functional API
 
 /**
- * Creates a new system
+ * Create a new reactive system
  */
-export function createSystem(id: string, name: string, version: string): ReactiveSystem {
-  return Object.freeze({
+export function createSystem(id: string, name?: string, version?: string): ReactiveSystem {
+  return {
     id,
-    name,
-    version,
+    name: name || id,
+    version: version || '1.0.0',
     boundedContexts: {},
     processes: {},
     tasks: {}
-  });
+  };
 }
 
 /**
- * Adds a bounded context to a system
+ * Add a bounded context to a system
  */
 export function addBoundedContext(
   system: ReactiveSystem, 
@@ -608,131 +730,114 @@ export function addBoundedContext(
   name: string, 
   description?: string
 ): ReactiveSystem {
-  return Object.freeze({
-    ...system,
-    boundedContexts: {
-      ...system.boundedContexts,
-      [id]: {
-        id,
-        name,
-        description: description || `${name} bounded context`,
-        processes: []
-      }
+  const newSystem = deepCopy(system);
+  
+  newSystem.boundedContexts = {
+    ...newSystem.boundedContexts,
+    [id]: {
+      id,
+      name,
+      description: description || `${name} bounded context`,
+      processes: []
     }
-  });
+  };
+  
+  return newSystem;
 }
 
 /**
- * Adds a process to a system
+ * Add a process to a system
  */
 export function addProcess(
-  system: ReactiveSystem,
-  id: string,
-  name: string,
+  system: ReactiveSystem, 
+  id: string, 
+  name: string, 
   contextId: string,
   type: 'stateful' | 'stateless' = 'stateless'
 ): ReactiveSystem {
-  // Ensure the context exists
-  if (!system.boundedContexts?.[contextId]) {
+  const newSystem = deepCopy(system);
+  
+  if (!newSystem.boundedContexts?.[contextId]) {
     throw new Error(`Bounded context '${contextId}' does not exist`);
   }
   
-  return Object.freeze({
-    ...system,
-    processes: {
-      ...system.processes,
-      [id]: {
-        id,
-        name,
-        contextId,
-        type,
-        triggers: [],
-        tasks: []
-      }
-    },
-    boundedContexts: {
-      ...system.boundedContexts,
-      [contextId]: {
-        ...system.boundedContexts[contextId],
-        processes: [...(system.boundedContexts[contextId].processes || []), id]
-      }
+  newSystem.processes = {
+    ...newSystem.processes,
+    [id]: {
+      id,
+      name,
+      contextId,
+      type,
+      triggers: [],
+      tasks: []
     }
-  });
+  };
+  
+  // Add process to bounded context
+  if (newSystem.boundedContexts[contextId]) {
+    newSystem.boundedContexts[contextId].processes = [
+      ...(newSystem.boundedContexts[contextId].processes || []),
+      id
+    ];
+  }
+  
+  return newSystem;
 }
 
 /**
- * Adds a task to a system
+ * Add a task to a system
  */
 export function addTask(
-  system: ReactiveSystem,
-  id: string,
-  type: Task['type'] = 'operation',
-  label?: string
+  system: ReactiveSystem, 
+  id: string, 
+  type: "operation" | "condition" | "transformation" | "notification" | "external_call" | "state_transition", 
+  label: string
 ): ReactiveSystem {
-  return Object.freeze({
-    ...system,
-    tasks: {
-      ...system.tasks,
-      [id]: {
-        id,
-        type,
-        label
-      }
+  const newSystem = deepCopy(system);
+  
+  newSystem.tasks = {
+    ...newSystem.tasks,
+    [id]: {
+      id,
+      type,
+      label
     }
-  });
+  };
+  
+  return newSystem;
 }
 
 /**
- * Adds a task to a process
+ * Add a task to a process
  */
 export function addTaskToProcess(
-  system: ReactiveSystem,
-  processId: string,
+  system: ReactiveSystem, 
+  processId: string, 
   taskId: string
 ): ReactiveSystem {
-  // Ensure the process exists
-  if (!system.processes?.[processId]) {
+  const newSystem = deepCopy(system);
+  
+  if (!newSystem.processes?.[processId]) {
     throw new Error(`Process '${processId}' does not exist`);
   }
   
-  // Ensure the task exists
-  if (!system.tasks?.[taskId]) {
+  if (!newSystem.tasks?.[taskId]) {
     throw new Error(`Task '${taskId}' does not exist`);
   }
   
-  return Object.freeze({
-    ...system,
-    processes: {
-      ...system.processes,
-      [processId]: {
-        ...system.processes[processId],
-        tasks: [...(system.processes[processId].tasks || []), taskId]
-      }
-    }
-  });
-}
-
-/**
- * Adds an extension to a system
- */
-export function addExtension(
-  system: ReactiveSystem,
-  extensionId: string,
-  config: Record<string, any>
-): ReactiveSystem {
-  const extension = extensionRegistry.getExtension(extensionId);
-  if (!extension) {
-    throw new Error(`Extension '${extensionId}' does not exist`);
+  // Add task to process
+  if (newSystem.processes[processId]) {
+    newSystem.processes[processId].tasks = [
+      ...(newSystem.processes[processId].tasks || []),
+      taskId
+    ];
   }
   
-  return Object.freeze({
-    ...system,
-    [extensionId]: config
-  });
+  return newSystem;
 }
 
 /**
- * Composes multiple functions that transform a system
+ * Functional composition utility
  */
 export function pipe<T>(initial: T, ...fns: Array<(arg: T) => T>): T {
   return fns.reduce((acc, fn) => fn(acc), initial);

@@ -14,7 +14,15 @@ import { validateSchema } from './schema-validator';
 import { applySchemaEdit } from './schema-editor';
 import { generateTests } from './test-generator';
 import { generateCode } from './code-generator';
-import { ValidationResult } from '../schema/validation';
+import { 
+  convertDslToJson, 
+  loadSystemFromFile, 
+  convertSystemToSchemaFiles,
+  validateDslSystem,
+  migrateDslSystem,
+  saveSystemToFile,
+  convertJsonToDsl
+} from './dsl-adapter';
 
 // Create the command-line program
 const program = new Command();
@@ -128,7 +136,7 @@ program
       }
       
       console.log('Done!');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error:', error.message);
       process.exit(1);
     }
@@ -156,7 +164,7 @@ program
         });
         process.exit(1);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error:', error.message);
       process.exit(1);
     }
@@ -205,7 +213,7 @@ program
       }
       
       console.log('Done!');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error:', error.message);
       process.exit(1);
     }
@@ -254,7 +262,136 @@ program
       }
       
       console.log('Done!');
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Error:', error.message);
+      process.exit(1);
+    }
+  });
+
+// DSL Commands
+
+// Convert DSL to JSON command
+program
+  .command('dsl-to-json')
+  .description('Convert a TypeScript DSL file to a JSON schema')
+  .requiredOption('-i, --input <path>', 'Path to the TypeScript DSL file')
+  .requiredOption('-o, --output <path>', 'Output path for the JSON schema')
+  .action(async (options) => {
+    try {
+      console.log(`Converting DSL file ${options.input} to JSON...`);
+      const jsonContent = await convertDslToJson(options.input);
+      
+      // Create output directory if it doesn't exist
+      const outputDir = path.dirname(options.output);
+      if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
+      }
+      
+      // Save the JSON content
+      fs.writeFileSync(options.output, jsonContent);
+      console.log(`Saved JSON schema to ${options.output}`);
+      
+      console.log('Done!');
+    } catch (error: any) {
+      console.error('Error:', error.message);
+      process.exit(1);
+    }
+  });
+
+// Convert JSON to DSL command
+program
+  .command('json-to-dsl')
+  .description('Convert a JSON schema to a TypeScript DSL file')
+  .requiredOption('-i, --input <path>', 'Path to the JSON schema file')
+  .requiredOption('-o, --output <path>', 'Output path for the TypeScript DSL file')
+  .action(async (options) => {
+    try {
+      console.log(`Converting JSON schema ${options.input} to DSL...`);
+      
+      // Read the JSON file
+      const jsonContent = fs.readFileSync(options.input, 'utf-8');
+      
+      // Create output directory if it doesn't exist
+      const outputDir = path.dirname(options.output);
+      if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
+      }
+      
+      // Convert and save the DSL file
+      await convertJsonToDsl(jsonContent, options.output);
+      console.log(`Saved TypeScript DSL to ${options.output}`);
+      
+      console.log('Done!');
+    } catch (error: any) {
+      console.error('Error:', error.message);
+      process.exit(1);
+    }
+  });
+
+// Validate DSL command
+program
+  .command('validate-dsl')
+  .description('Validate a system created with the DSL')
+  .requiredOption('-i, --input <path>', 'Path to the TypeScript DSL file or JSON schema')
+  .action(async (options) => {
+    try {
+      console.log(`Loading system from ${options.input}...`);
+      const system = await loadSystemFromFile(options.input);
+      
+      console.log('Validating system...');
+      const validationResult = validateDslSystem(system);
+      
+      if (validationResult.success) {
+        console.log('System is valid!');
+      } else {
+        console.error('System has validation errors:');
+        validationResult.issues.forEach(issue => {
+          console.error(`- ${issue.path}: ${issue.message} (${issue.severity})`);
+        });
+        process.exit(1);
+      }
+      
+      console.log('Done!');
+    } catch (error: any) {
+      console.error('Error:', error.message);
+      process.exit(1);
+    }
+  });
+
+// Migrate DSL command
+program
+  .command('migrate-dsl')
+  .description('Migrate a system to a new version')
+  .requiredOption('-i, --input <path>', 'Path to the TypeScript DSL file or JSON schema')
+  .requiredOption('-v, --version <version>', 'Target version to migrate to')
+  .requiredOption('-o, --output <path>', 'Output path for the migrated system')
+  .option('-t, --transformer <path>', 'Path to a JavaScript file with a transformer function')
+  .action(async (options) => {
+    try {
+      console.log(`Loading system from ${options.input}...`);
+      const system = await loadSystemFromFile(options.input);
+      
+      let transformerCode;
+      if (options.transformer) {
+        console.log(`Loading transformer from ${options.transformer}...`);
+        transformerCode = fs.readFileSync(options.transformer, 'utf-8');
+      }
+      
+      console.log(`Migrating system to version ${options.version}...`);
+      const migratedSystem = migrateDslSystem(system, options.version, transformerCode);
+      
+      // Create output directory if it doesn't exist
+      const outputDir = path.dirname(options.output);
+      if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
+      }
+      
+      // Save the migrated system
+      await saveSystemToFile(migratedSystem, options.output);
+      console.log(`Saved migrated system to ${options.output}`);
+      
+      console.log('Done!');
+    } catch (error: any) {
       console.error('Error:', error.message);
       process.exit(1);
     }

@@ -10,6 +10,13 @@ export interface ReactiveSystem {
     name: string;
     description?: string;
     version: string;
+    schemaVersion?: string;
+    migrationHistory?: Array<{
+      fromVersion: string;
+      toVersion: string;
+      timestamp: string;
+      description?: string;
+    }>;
     boundedContexts?: Record<string, BoundedContext>;
     processes?: Record<string, Process>;
     tasks?: Record<string, Task>;
