@@ -300,5 +300,74 @@ export const TodoFlows: Record<string, Flow> = {
       message: { type: 'string' },
       priority: { type: 'string' }
     }
+  },
+  'categorize-todo-flow': {
+    id: 'categorize-todo-flow',
+    name: 'Categorize Todo Flow',
+    description: 'A flow for categorizing todos with tags',
+    steps: [
+      {
+        id: 'categorize-todo',
+        name: 'Categorize Todo',
+        type: 'task',
+        taskId: 'categorize-todo',
+        inputMapping: {
+          todoId: '$.todoId',
+          categories: '$.categories'
+        },
+        outputMapping: {
+          result: '$'
+        },
+        next: 'check-result'
+      },
+      {
+        id: 'check-result',
+        name: 'Check Result',
+        type: 'condition',
+        condition: '$.result.updated === true',
+        trueBranch: ['success'],
+        falseBranch: ['handle-error']
+      },
+      {
+        id: 'success',
+        name: 'Success',
+        type: 'task',
+        taskId: 'return-result',
+        inputMapping: {
+          success: 'true',
+          categories: '$.result.categories'
+        }
+      },
+      {
+        id: 'handle-error',
+        name: 'Handle Error',
+        type: 'task',
+        taskId: 'handle-error',
+        inputMapping: {
+          error: '$.result.error || "Failed to categorize todo"',
+          errorType: '"categorization"'
+        },
+        next: 'error'
+      },
+      {
+        id: 'error',
+        name: 'Error',
+        type: 'task',
+        taskId: 'return-result',
+        inputMapping: {
+          success: 'false',
+          error: '$.message'
+        }
+      }
+    ],
+    inputSchema: {
+      todoId: { type: 'string', required: true },
+      categories: { type: 'array', items: { type: 'string' }, required: true }
+    },
+    outputSchema: {
+      success: { type: 'boolean' },
+      categories: { type: 'array', items: { type: 'string' } },
+      error: { type: 'string' }
+    }
   }
 };

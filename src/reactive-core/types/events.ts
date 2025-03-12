@@ -31,7 +31,8 @@ export type TodoEventType =
   | 'TODO_MARKED_IMPORTANT'
   | 'TODO_STATE_CHANGED'
   | 'TODO_TRANSITION_COMPLETED'
-  | 'TODO_ARCHIVED';
+  | 'TODO_ARCHIVED'
+  | 'TODO_CATEGORIZED';
 
 /**
  * Process event types
@@ -79,6 +80,7 @@ export interface TodoEvent extends BaseEvent {
     | { id: string; priority: string }                   // TODO_MARKED_IMPORTANT
     | { id: string; fromState: string; toState: string } // TODO_STATE_CHANGED
     | { id: string; transition: string }                 // TODO_TRANSITION_COMPLETED
+    | { todoId: string; categories: string[]; addedCategories: string[]; timestamp: string } // TODO_CATEGORIZED
 }
 
 /**

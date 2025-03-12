@@ -61,6 +61,9 @@ export class TodoEventHandlers {
     
     // Handle TODO_ARCHIVED events
     this.eventBus.subscribe('TODO_ARCHIVED', this.handleTodoArchived.bind(this));
+    
+    // Handle TODO_CATEGORIZED events
+    this.eventBus.subscribe('TODO_CATEGORIZED', this.handleTodoCategorized.bind(this));
   }
   
   /**
@@ -213,6 +216,36 @@ export class TodoEventHandlers {
         type: 'ERROR',
         payload: {
           message: 'Error handling TODO_ARCHIVED event',
+          error: error instanceof Error ? error.message : String(error),
+          originalEvent: event
+        }
+      });
+    }
+  }
+  
+  /**
+   * Handle TODO_CATEGORIZED events
+   * @param event The event
+   */
+  private async handleTodoCategorized(event: any): Promise<void> {
+    try {
+      const { todoId, categories } = event.payload;
+      
+      // Get the todo
+      const todo = await this.todoRepository.findById(todoId);
+      if (!todo) {
+        throw new Error(`Todo not found: ${todoId}`);
+      }
+      
+      console.log(`[TodoEventHandlers] Categorized todo: ${todoId} with categories: ${categories.join(', ')}`);
+    } catch (error) {
+      console.error('[TodoEventHandlers] Error handling TODO_CATEGORIZED event:', error);
+      
+      // Emit an error event
+      this.eventBus.emit({
+        type: 'ERROR',
+        payload: {
+          message: 'Error handling TODO_CATEGORIZED event',
           error: error instanceof Error ? error.message : String(error),
           originalEvent: event
         }

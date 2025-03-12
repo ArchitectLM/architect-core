@@ -35,6 +35,11 @@ export interface Todo {
   priority?: 'low' | 'medium' | 'high';
   
   /**
+   * Categories/tags for organization
+   */
+  categories?: string[];
+  
+  /**
    * Whether the todo is completed
    */
   completed: boolean;

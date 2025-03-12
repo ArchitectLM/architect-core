@@ -151,4 +151,24 @@ describe('Todo Event Handlers', () => {
       mockTodoRepository.findById = originalFindById;
     }
   });
+  
+  it('should handle TODO_CATEGORIZED events', async () => {
+    // Arrange
+    const event = {
+      type: 'TODO_CATEGORIZED',
+      payload: { 
+        todoId: '123', 
+        categories: ['work', 'important'],
+        addedCategories: ['important'],
+        timestamp: new Date().toISOString()
+      }
+    };
+    
+    // Act
+    await todoEventHandlers['handleTodoCategorized'](event);
+    
+    // Assert
+    expect(mockTodoRepository.findById).toHaveBeenCalledWith('123');
+    expect(mockEventBus.emit).not.toHaveBeenCalled(); // No error should be emitted
+  });
 });
