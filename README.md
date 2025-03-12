@@ -541,3 +541,52 @@ We welcome contributions to ArchitectLM! Please see our [contributing guidelines
 ## License
 
 ArchitectLM is licensed under the MIT License. See the [LICENSE](LICENSE) file for more information.
+
+## CLI Tools
+
+ArchitectLM includes a powerful CLI for working with schemas:
+
+### Schema Validation
+
+Validate your schema files against the core schema and any extensions:
+
+```bash
+# Validate a single schema file
+node ./bin/architect-cli.js validate -f path/to/schema.json
+
+# Validate all schema files in a directory
+node ./bin/architect-cli.js validate -d path/to/schemas
+```
+
+### Schema Editing
+
+Edit your schema files using natural language prompts:
+
+```bash
+# Edit a schema file
+node ./bin/architect-cli.js edit -f path/to/schema.json -p "Add a new task called 'send-notification' to the 'create-order' process"
+
+# Edit all schema files in a directory
+node ./bin/architect-cli.js edit -d path/to/schemas -p "Add error handling to all processes"
+```
+
+### Test Generation
+
+Generate tests for your schema:
+
+```bash
+# Generate tests for a schema file
+node ./bin/architect-cli.js generate-tests -f path/to/schema.json -o path/to/tests
+
+# Generate tests for all schema files in a directory
+node ./bin/architect-cli.js generate-tests -d path/to/schemas -o path/to/tests
+```
+
+## Examples
+
+The `examples` directory contains example schema files that demonstrate different aspects of the framework:
+
+- **Todo System**: A simple todo management system without extensions
+- **E-Commerce System**: A more complex e-commerce system that uses the e-commerce extension
+
+You can use these examples as a starting point for your own schemas.

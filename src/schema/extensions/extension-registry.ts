@@ -1,60 +1,38 @@
 /**
- * Schema Extension Registry
+ * Extension Registry
  * 
- * This module provides a registry for schema extensions, allowing
- * domain-specific extensions to be registered and applied to the base schema.
+ * Registry for schema extensions.
  */
 
 import { z } from 'zod';
-import { ReactiveSystemSchema } from '../validation';
 
 /**
- * Schema extension interface
+ * Extension validation issue
  */
-export interface SchemaExtension {
+export interface ExtensionValidationIssue {
   /**
-   * Unique identifier for the extension
+   * Path to the issue
    */
-  id: string;
+  path: string;
   
   /**
-   * Name of the extension
+   * Issue message
    */
-  name: string;
+  message: string;
   
   /**
-   * Description of the extension
+   * Issue severity
    */
-  description: string;
+  severity: 'error' | 'warning';
   
   /**
-   * Version of the extension
+   * Extension that reported the issue
    */
-  version: string;
-  
-  /**
-   * Schemas defined by the extension
-   */
-  schemas: Record<string, z.ZodType<any>>;
-  
-  /**
-   * Refinements to apply to the base schema
-   * These functions should modify or enhance the schema
-   */
-  refinements: Array<(schema: any) => any>;
-  
-  /**
-   * Validators to apply to systems using the extension
-   */
-  validators: Array<(system: any) => Array<{
-    path: string;
-    message: string;
-    severity: 'error' | 'warning';
-  }>>;
+  extension?: string;
 }
 
 /**
- * Validation result with extension information
+ * Extension validation result
  */
 export interface ExtensionValidationResult {
   /**
@@ -63,143 +41,152 @@ export interface ExtensionValidationResult {
   success: boolean;
   
   /**
-   * Validation errors and warnings
+   * Validation issues
    */
-  issues: Array<{
-    /**
-     * Path to the issue
-     */
-    path: string;
-    
-    /**
-     * Error message
-     */
-    message: string;
-    
-    /**
-     * Severity of the issue
-     */
-    severity: 'error' | 'warning';
-    
-    /**
-     * Extension that reported the issue
-     */
-    extension: string;
-  }>;
+  issues: ExtensionValidationIssue[];
 }
 
 /**
- * Registry for schema extensions
+ * Schema extension
+ */
+export interface SchemaExtension {
+  /**
+   * Extension ID
+   */
+  id: string;
+  
+  /**
+   * Extension name
+   */
+  name: string;
+  
+  /**
+   * Extension description
+   */
+  description: string;
+
+  /**
+   * Extension version
+   */
+  version?: string;
+  
+  /**
+   * Schema definitions
+   */
+  schemas?: Record<string, z.ZodType<any, any, any>>;
+  
+  /**
+   * Schema refinements
+   */
+  refinements: Array<(schema: any) => any>;
+  
+  /**
+   * Custom validators
+   */
+  validators: Array<(schema: any) => ExtensionValidationIssue[]>;
+}
+
+/**
+ * Schema extension registry
  */
 export class SchemaExtensionRegistry {
   /**
-   * Map of extension ID to extension
+   * Registered extensions
    */
-  private extensions: Record<string, SchemaExtension> = {};
+  private extensions: Map<string, SchemaExtension> = new Map();
   
   /**
-   * Registers an extension with the registry
-   * @param extension The extension to register
+   * Registers an extension
+   * @param extension Extension to register
    */
   registerExtension(extension: SchemaExtension): void {
-    this.extensions[extension.id] = extension;
+    this.extensions.set(extension.id, extension);
   }
   
   /**
    * Gets an extension by ID
-   * @param id The ID of the extension to get
+   * @param id Extension ID
    * @returns The extension, or undefined if not found
    */
   getExtension(id: string): SchemaExtension | undefined {
-    return this.extensions[id];
+    return this.extensions.get(id);
   }
   
   /**
    * Gets all registered extensions
-   * @returns Array of all registered extensions
+   * @returns All registered extensions
    */
   getAllExtensions(): SchemaExtension[] {
-    return Object.values(this.extensions);
+    return Array.from(this.extensions.values());
   }
   
   /**
-   * Creates an extended schema with the specified extensions applied
-   * @param extensionIds IDs of the extensions to apply
-   * @returns The extended schema
+   * Creates an extended schema with the specified extensions
+   * @param extensionId ID of extension to apply
+   * @returns Extended schema
    */
-  createExtendedSchema(...extensionIds: string[]): z.ZodType<any> {
-    // Start with the base schema
-    let extendedSchema: any = ReactiveSystemSchema;
+  createExtendedSchema(extensionId: string): any {
+    const extension = this.extensions.get(extensionId);
+    if (!extension) {
+      throw new Error(`Extension not found: ${extensionId}`);
+    }
     
-    // Apply each extension
-    for (const id of extensionIds) {
-      const extension = this.getExtension(id);
-      if (!extension) {
-        throw new Error(`Extension not found: ${id}`);
-      }
-      
-      // Apply refinements
-      for (const refinement of extension.refinements) {
-        try {
-          // Apply the refinement
-          extendedSchema = refinement(extendedSchema);
-        } catch (error) {
-          console.error(`Error applying refinement for extension ${id}:`, error);
-          throw new Error(`Failed to apply refinement for extension ${id}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        }
-      }
+    // Create a base schema
+    let baseSchema = z.object({
+      id: z.string(),
+      name: z.string(),
+      description: z.string().optional(),
+      version: z.string().optional(),
+      boundedContexts: z.record(z.string(), z.any()).optional(),
+      processes: z.record(z.string(), z.any()).optional(),
+      tasks: z.record(z.string(), z.any()).optional(),
+      triggers: z.record(z.string(), z.any()).optional()
+    });
+    
+    // Apply refinements
+    let extendedSchema = baseSchema;
+    for (const refinement of extension.refinements) {
+      extendedSchema = refinement(extendedSchema);
     }
     
     return extendedSchema;
   }
   
   /**
-   * Validates a system against all registered extensions
-   * @param system The system to validate
-   * @param extensionIds IDs of the extensions to validate against
+   * Validates a schema with the specified extensions
+   * @param schema Schema to validate
+   * @param extensionIds IDs of extensions to apply
    * @returns Validation result
    */
-  validateWithExtensions(system: any, ...extensionIds: string[]): ExtensionValidationResult {
-    const issues: Array<{
-      path: string;
-      message: string;
-      severity: 'error' | 'warning';
-      extension: string;
-    }> = [];
+  validateWithExtensions(schema: any, ...extensionIds: string[]): ExtensionValidationResult {
+    const issues: ExtensionValidationIssue[] = [];
     
-    // Apply validators from each extension
-    for (const id of extensionIds) {
-      const extension = this.getExtension(id);
+    for (const extensionId of extensionIds) {
+      const extension = this.extensions.get(extensionId);
       if (!extension) {
-        throw new Error(`Extension not found: ${id}`);
+        issues.push({
+          path: '',
+          message: `Extension not found: ${extensionId}`,
+          severity: 'error',
+          extension: 'extension-registry'
+        });
+        continue;
       }
       
+      // Apply validators
       for (const validator of extension.validators) {
-        try {
-          const validationResults = validator(system);
-          for (const result of validationResults) {
-            issues.push({
-              ...result,
-              extension: extension.id
-            });
-          }
-        } catch (error) {
-          console.error(`Error running validator for extension ${id}:`, error);
+        const validatorIssues = validator(schema);
+        for (const issue of validatorIssues) {
           issues.push({
-            path: '',
-            message: `Validator error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-            severity: 'error',
-            extension: extension.id
+            ...issue,
+            extension: extensionId
           });
         }
       }
     }
     
-    // Check if there are any errors (not just warnings)
-    const hasErrors = issues.some(issue => issue.severity === 'error');
-    
     return {
-      success: !hasErrors,
+      success: !issues.some(issue => issue.severity === 'error'),
       issues
     };
   }
@@ -208,4 +195,51 @@ export class SchemaExtensionRegistry {
 /**
  * Global extension registry instance
  */
-export const extensionRegistry = new SchemaExtensionRegistry(); 
+export const extensionRegistry = new SchemaExtensionRegistry();
+
+/**
+ * Test extension for demonstration
+ */
+export const testExtension: SchemaExtension = {
+  id: 'test',
+  name: 'Test Extension',
+  description: 'A test extension for demonstration purposes',
+  version: '1.0.0',
+  schemas: {
+    TestEntity: z.object({
+      id: z.string(),
+      name: z.string(),
+      value: z.number()
+    })
+  },
+  refinements: [
+    (schema) => {
+      // Add test extension properties to the schema
+      return z.object({
+        ...(schema as any).shape,
+        testExtension: z.object({
+          enabled: z.boolean().optional(),
+          entities: z.record(z.string(), z.any()).optional()
+        }).optional()
+      });
+    }
+  ],
+  validators: [
+    (schema) => {
+      const issues: ExtensionValidationIssue[] = [];
+      
+      if (schema.testExtension && !schema.testExtension.enabled) {
+        issues.push({
+          path: 'testExtension.enabled',
+          message: 'Test extension is disabled',
+          severity: 'warning'
+        });
+      }
+      
+      return issues;
+    }
+  ]
+};
+
+// Register the test extension
+extensionRegistry.registerExtension(testExtension); 
