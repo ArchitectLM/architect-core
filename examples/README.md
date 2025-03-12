@@ -1,59 +1,63 @@
-# Schema Examples
+# ArchitectLM Examples
 
-This directory contains example schema files for the ArchitectLM framework.
+This directory contains example implementations that demonstrate different aspects of the ArchitectLM framework.
 
-## Todo System
+## Schema Examples
 
-`todo-system.json` is a simple example of a todo management system with the following components:
+- **todo-system.json**: A simple todo management system schema without extensions
+- **e-commerce-system.json**: A more complex e-commerce system schema that uses the e-commerce extension
 
-- **Bounded Context**: Todo Management
-- **Processes**: 
-  - Manage Todos (stateful)
-  - Manage Lists (stateless)
-- **Tasks**: Various operations for validating, saving, updating, and deleting todos and lists
+## Reactive System Examples
 
-This example demonstrates a basic schema without any extensions.
+- **todo-reactive-system.ts**: Demonstrates how to use the reactive system architecture to build a Todo application
+- **dsl-todo-system.ts**: Shows how to use the DSL integration module with the reactive system
 
-## E-Commerce System
+## Running the Examples
 
-`e-commerce-system.json` is a more complex example of an e-commerce system that uses the e-commerce extension:
+### Schema Examples
 
-- **Bounded Contexts**:
-  - Product Catalog
-  - Order Management
-  - Customer Management
-- **Processes**:
-  - Manage Products (stateful)
-  - Manage Inventory (stateless)
-  - Process Order (stateful)
-  - Manage Returns (stateful)
-  - Manage Customers (stateless)
-  - Manage Addresses (stateless)
-- **Tasks**: Various operations for handling products, inventory, orders, returns, customers, and addresses
-- **Sample Products**:
-  - **Smartphone X**: A high-end smartphone with 128GB storage, available in black
-  - **Laptop Pro**: A professional laptop with Intel i7 processor, 16GB RAM, and 512GB SSD
-  - **Wireless Headphones**: Premium noise-cancelling headphones with 20 hours battery life
-
-Each product includes detailed information such as:
-- Basic details (name, description, price, SKU)
-- Categories
-- Attributes (color, specifications, etc.)
-- Inventory information (quantity, reserved, available)
-- Images
-
-This example demonstrates how to use the e-commerce extension to enhance the schema with domain-specific concepts and data. The extension provides validation for inventory consistency and reference integrity between entities.
-
-## Using the Examples
-
-You can validate these examples using the CLI:
+You can validate the schema examples using the CLI:
 
 ```bash
 # Validate the todo system schema
-node ./bin/architect-cli.js validate -d examples/todo-system.json
+node ./bin/architect-cli.js validate -f examples/todo-system.json
 
 # Validate the e-commerce system schema
-node ./bin/architect-cli.js validate -d examples/e-commerce-system.json
+node ./bin/architect-cli.js validate -f examples/e-commerce-system.json
 ```
 
-You can also use these examples as a starting point for your own schemas. 
+### Reactive System Examples
+
+You can run the reactive system examples using the following commands:
+
+```bash
+# Run the todo reactive system example
+npm run dev -- examples/todo-reactive-system.ts
+
+# Run the DSL todo system example
+npm run dev -- examples/dsl-todo-system.ts
+```
+
+## Todo Reactive System Example
+
+The `todo-reactive-system.ts` example demonstrates how to use the reactive system architecture to build a simple Todo application. It shows:
+
+1. How to set up the reactive system runtime
+2. How to create and use repositories for data storage
+3. How to register processes and their handlers
+4. How to implement and register tasks
+5. How to execute flows
+6. How the event-driven architecture responds to changes in the system
+
+The example creates several Todo items with different priorities, marks one as important using a flow, filters important todos, and demonstrates state transitions when todos are completed or archived.
+
+Key components demonstrated:
+
+- **ReactiveSystemRuntime**: The main runtime that integrates all components
+- **InMemoryTodoRepository**: A repository for storing and retrieving Todo items
+- **TodoProcessHandlers**: Handlers for the Todo process state transitions
+- **MarkImportantTaskImpl**: A task implementation for marking todos as important
+- **FilterImportantTodosTaskImpl**: A task implementation for filtering important todos
+- **TodoEventHandlers**: Handlers for Todo-related events
+
+This example provides a practical demonstration of how the reactive system architecture can be used to build a real-world application with complex behavior and state management.

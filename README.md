@@ -9,6 +9,158 @@ ArchitectLM is a comprehensive framework designed to simplify the development of
 
 The framework is built around a core schema that defines the structure of reactive systems, with extension points for domain-specific functionality. It includes tools for validation, testing, and visualization, as well as advanced features for working with Large Language Models (LLMs).
 
+## Reactive System Architecture
+
+The reactive system architecture is a core component of ArchitectLM, providing a flexible and powerful way to build event-driven applications. The architecture consists of several key components that work together to create a responsive and maintainable system:
+
+### Core Components
+
+#### Event Bus
+
+The event bus is the central communication mechanism in the reactive system. It allows components to emit events and subscribe to events emitted by other components. The event bus implementation provides:
+
+- Event emission with typed payloads
+- Subscription management with automatic cleanup
+- Error handling for event handlers
+- Support for wildcard subscriptions
+
+```typescript
+// Example of using the event bus
+const eventBus = new ReactiveEventBus();
+
+// Subscribe to an event
+const subscription = eventBus.subscribe('TODO_CREATED', (event) => {
+  console.log('Todo created:', event.payload);
+});
+
+// Emit an event
+eventBus.emit({
+  type: 'TODO_CREATED',
+  payload: { id: '123', title: 'New Todo' }
+});
+
+// Unsubscribe when done
+subscription.unsubscribe();
+```
+
+#### Process Engine
+
+The process engine manages stateful processes and their transitions. It provides:
+
+- Process instance creation and management
+- State transitions based on events
+- Context management for process instances
+- Lifecycle hooks for state changes
+
+```typescript
+// Example of using the process engine
+const processEngine = new ReactiveProcessEngine(eventBus);
+
+// Register a process
+processEngine.registerProcess(TodoProcess, todoProcessHandlers);
+
+// Create a process instance
+processEngine.createInstance('todo', 'todo-123', 'active', { todo: { id: '123', title: 'New Todo' } });
+
+// Transition a process
+processEngine.transition('todo-123', 'complete', { completedAt: new Date() });
+```
+
+#### Flow Engine
+
+The flow engine executes flows, which are sequences of steps that perform operations. It provides:
+
+- Flow registration and execution
+- Task implementation registration
+- Support for different step types (task, condition, parallel, wait)
+- Input/output mapping between steps
+- Execution tracing and error handling
+
+```typescript
+// Example of using the flow engine
+const flowEngine = new ReactiveFlowEngine(eventBus);
+
+// Register a flow
+flowEngine.registerFlow(markImportantFlow);
+
+// Register task implementations
+flowEngine.registerTaskImplementation(markImportantTask);
+
+// Execute a flow
+const result = await flowEngine.executeFlow('mark-important-flow', { todoId: '123', priority: 'high' });
+```
+
+### Extension Components
+
+#### Repositories
+
+Repositories provide data access and storage capabilities for the reactive system. They emit events when data changes, allowing other components to react to these changes.
+
+```typescript
+// Example of using a repository
+const todoRepository = new InMemoryTodoRepository(eventBus);
+
+// Create a todo
+const todo = await todoRepository.save({
+  title: 'Important Task',
+  description: 'This is an important task',
+  completed: false
+});
+
+// Update a todo
+await todoRepository.update(todo.id, { priority: 'high' });
+```
+
+#### Process Handlers
+
+Process handlers define the behavior of processes, including state transitions and context updates.
+
+```typescript
+// Example of process handlers
+const todoProcessHandlers = new TodoProcessHandlers(eventBus);
+
+// Register the handlers with the process engine
+processEngine.registerProcess(TodoProcess, todoProcessHandlers);
+```
+
+#### Task Implementations
+
+Task implementations provide the actual functionality for tasks defined in flows.
+
+```typescript
+// Example of a task implementation
+const markImportantTask = new MarkImportantTaskImpl(todoRepository, eventBus);
+
+// Register the task implementation with the flow engine
+flowEngine.registerTaskImplementation(markImportantTask);
+```
+
+#### Event Handlers
+
+Event handlers respond to events emitted by other components and perform actions based on those events.
+
+```typescript
+// Example of event handlers
+const todoEventHandlers = new TodoEventHandlers(eventBus, processEngine, todoRepository);
+```
+
+### System Runtime
+
+The `ReactiveSystemRuntime` class brings all these components together, providing a unified interface for working with the reactive system:
+
+```typescript
+// Example of using the system runtime
+const runtime = new ReactiveSystemRuntime({ debug: true });
+
+// Register components
+runtime.registerProcess(TodoProcess, todoProcessHandlers);
+runtime.registerTaskImplementation(markImportantTask);
+runtime.registerFlow(markImportantFlow);
+
+// Execute a flow
+const result = await runtime.executeFlow('mark-important-flow', { todoId: '123', priority: 'high' });
+```
+
 ## How It Works
 
 ArchitectLM is built on several key architectural components that work together to provide a comprehensive framework for reactive system development:
