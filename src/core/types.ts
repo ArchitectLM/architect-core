@@ -679,4 +679,29 @@ export interface UIComponentDefinition {
   description?: string;
   props: UIComponentPropSpec[];
   code: string;
+}
+
+/**
+ * Core types for the Reactive System
+ */
+
+/**
+ * System configuration
+ */
+export interface SystemConfig {
+  id: string;
+  name?: string;
+  description?: string;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Process instance
+ */
+export interface ProcessInstance {
+  id: string;
+  name?: string;
+  description?: string;
+  currentState: string;
+  metadata?: Record<string, unknown>;
 } 
