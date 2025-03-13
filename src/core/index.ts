@@ -6,4 +6,5 @@ export * from './event-bus';
 export * from './process';
 export * from './task';
 export * from './system';
-export * from './runtime'; 
+export * from './runtime';
+export * from './extensions'; 

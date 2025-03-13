@@ -351,7 +351,7 @@ describe('Runtime', () => {
       // Assert - verify the behavior of event structure
       expect(handler).toHaveBeenCalledWith(expect.objectContaining({
         id: expect.any(String),
-        timestamp: expect.any(Number),
+        timestamp: expect.any(Date),
         type: 'TEST_EVENT',
         payload: expect.objectContaining({ data: 'test' })
       }));

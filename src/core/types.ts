@@ -22,12 +22,27 @@ export type EventHandler = (event: Event) => void | Promise<void>;
 // Process definition
 export interface ProcessDefinition {
   id: string;                       // Unique process identifier
-  states: string[];                 // Valid states for this process
+  states: string[] | Record<string, ProcessState>; // Valid states for this process
   initialState?: string;            // Initial state (defaults to first state)
-  transitions: Transition[];        // Valid state transitions
+  transitions?: Transition[];        // Valid state transitions
   description?: string;             // Process description
   contextSchema?: object;           // Schema for process context (optional)
   metadata?: Record<string, any>;   // Additional metadata for the process
+}
+
+// Process state definition
+export interface ProcessState {
+  type?: 'normal' | 'initial' | 'final'; // State type
+  transitions?: Record<string, StateTransition>; // Transitions from this state
+  metadata?: Record<string, any>;   // Additional metadata for the state
+}
+
+// State transition definition
+export interface StateTransition {
+  target: string;                   // Target state
+  action?: string;                  // Task to execute during transition
+  guard?: (context: any, event: any) => boolean | Promise<boolean>; // Optional condition
+  metadata?: Record<string, any>;   // Additional metadata for the transition
 }
 
 // Transition definition
@@ -52,6 +67,7 @@ export interface ProcessInstance {
 // Task definition
 export interface TaskDefinition {
   id: string;                       // Unique task identifier
+  name?: string;                    // Task name
   input?: string[];                 // Input parameter names (for documentation)
   output?: string[];                // Output field names (for documentation)
   implementation: TaskImplementation; // Task implementation function
@@ -60,16 +76,17 @@ export interface TaskDefinition {
 }
 
 // Task implementation type
-export type TaskImplementation = (
-  input: any,                       // Task input
-  context: TaskContext              // Execution context
-) => Promise<any>;                  // Task result
+export type TaskImplementation = 
+  | ((input: any, context: TaskContext) => Promise<any>)  // Task result
+  | ((context: TaskContext) => Promise<any>);             // Task result
 
 // Task context provides access to system during task execution
 export interface TaskContext {
+  input: any;                        // Task input
+  services: Record<string, any>;     // Available services
   processId?: string;                // Current process ID if in process context
   instanceId?: string;               // Current instance ID if in process context
-  getService?: (name: string) => any; // Get a service (like a repository or external API)
+  getService: (name: string) => any; // Get a service (like a repository or external API)
   emitEvent: (type: string | Event, payload?: any) => void; // Emit an event
   executeTask: (taskId: string, input: any) => Promise<any>; // Execute another task
   getProcess?: (instanceId: string) => any; // Get a process instance
@@ -80,9 +97,10 @@ export interface TaskContext {
 // System configuration
 export interface SystemConfig {
   id: string;                                           // Unique system identifier
+  name?: string;                                        // System name
   description?: string;                                 // System description
-  processes?: Record<string, ProcessDefinition>;        // Process definitions
-  tasks?: Record<string, TaskDefinition>;               // Task definitions
+  processes: Record<string, ProcessDefinition> | ProcessDefinition[];  // Process definitions
+  tasks: Record<string, TaskDefinition> | TaskDefinition[];           // Task definitions
   tests?: TestDefinition[];                             // Test definitions
   mocks?: Record<string, Record<string, Function>>;     // Mock implementations
   extensions?: Record<string, ExtensionConfig>;         // Optional extensions
