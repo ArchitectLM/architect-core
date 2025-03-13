@@ -8,6 +8,7 @@
 
 import { z } from 'zod';
 import { TaskImplementationFn, TestCase, RetryPolicy } from './types';
+import { Plugin } from './plugin';
 
 // -----------------------------------------------------------------------------
 // DSL Types
@@ -22,7 +23,7 @@ export interface ReactiveSystemDefinition {
   description?: string;
   processes: ProcessDefinition[];
   tasks: TaskDefinition[];
-  plugins?: PluginDefinition[];
+  plugins?: (PluginDefinition | Plugin)[];
   metadata?: Record<string, unknown>;
 }
 
@@ -189,8 +190,9 @@ export class ReactiveSystemBuilder {
 
   /**
    * Add a plugin to the system
+   * @param plugin The plugin to add
    */
-  withPlugin(plugin: PluginDefinition): this {
+  withPlugin(plugin: PluginDefinition | Plugin): this {
     if (!this.definition.plugins) {
       this.definition.plugins = [];
     }
@@ -596,8 +598,8 @@ export class TaskBuilder<Input = any, Output = any, Context = any> {
   /**
    * Set the implementation for the task
    */
-  implementation(fn: TaskImplementationFn<Input, Output, Context>): this {
-    this.definition.implementation = fn;
+  implementation(fn: TaskImplementationFn<Input, Output, Context> | string): this {
+    this.definition.implementation = fn as TaskImplementationFn;
     return this;
   }
 
@@ -684,5 +686,11 @@ export class TaskBuilder<Input = any, Output = any, Context = any> {
  * Reactive System DSL factory
  */
 export const ReactiveSystem = {
-  define: ReactiveSystemBuilder.define
+  define: ReactiveSystemBuilder.define,
+  Process: {
+    create: (id: string) => new ProcessBuilder(new ReactiveSystemBuilder(), id)
+  },
+  Task: {
+    create: (id: string) => new TaskBuilder(new ReactiveSystemBuilder(), id)
+  }
 }; 

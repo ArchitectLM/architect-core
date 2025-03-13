@@ -22,6 +22,12 @@ import {
   SystemConfig
 } from './types';
 import { v4 as uuidv4 } from 'uuid';
+import { Plugin, PluginManager } from './dsl/plugin';
+
+/**
+ * Hook function type for runtime hooks
+ */
+export type HookFunction = (...args: any[]) => void | Promise<void>;
 
 interface RuntimeOptions {
   onProcessCreated?: (instance: ProcessInstance) => void;
@@ -34,6 +40,7 @@ interface RuntimeOptions {
     loadState: () => ProcessInstance[];
   };
   services?: Record<string, any>;
+  plugins?: Plugin[];
 }
 
 // Extended TaskContext that includes input and services
@@ -51,19 +58,32 @@ export class ReactiveRuntime implements Runtime {
   private tasks: Record<string, TaskDefinition>;
   private instances: Map<string, ProcessInstance> = new Map();
   private mocks: Record<string, Record<string, Function>>;
+  private options: RuntimeOptions;
+  private hooks: Map<string, HookFunction[]> = new Map();
+  private pluginManager: PluginManager;
   
   constructor(
     processes: Record<string, ProcessDefinition>,
     tasks: Record<string, TaskDefinition>,
-    mocks: Record<string, Record<string, Function>> = {}
+    mocks: Record<string, Record<string, Function>> = {},
+    options: RuntimeOptions = {}
   ) {
     this.eventBus = new ReactiveEventBus();
     this.processes = processes;
     this.tasks = tasks;
     this.mocks = mocks;
+    this.options = options;
+    this.pluginManager = new PluginManager(this);
     
-    // Subscribe to events for process transitions
-    this.eventBus.subscribe('*', this.handleEvent.bind(this));
+    // Initialize plugins if provided
+    if (options.plugins) {
+      for (const plugin of options.plugins) {
+        this.pluginManager.registerPlugin(plugin);
+      }
+    }
+    
+    // Trigger system startup hook
+    this.triggerHook('onSystemStartup');
   }
   
   /**
@@ -157,6 +177,7 @@ export class ReactiveRuntime implements Runtime {
       id: instanceId,
       processId,
       state: initialState,
+      currentState: initialState,
       context: { ...input, ...(options?.context || {}) },
       createdAt: new Date(),
       updatedAt: new Date()
@@ -451,6 +472,7 @@ export function createRuntime(
         id: processOptions?.instanceId || uuidv4(),
         processId,
         state: initialState,
+        currentState: initialState,
         context: input,
         createdAt: new Date(),
         updatedAt: new Date()

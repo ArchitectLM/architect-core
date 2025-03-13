@@ -6,7 +6,7 @@
  */
 
 import { 
-  ServiceIntegrationExtension, 
+  ServiceIntegrationExtension as ServiceIntegrationInterface, 
   ServiceIntegrationConfig, 
   ServiceConfig, 
   Service, 
@@ -15,10 +15,13 @@ import {
   WebhookHandlerConfig, 
   WebhookHandler, 
   WebhookEvent, 
-  RetryPolicy 
+  RetryPolicy,
+  CircuitBreakerOptions,
+  CircuitBreaker
 } from './types';
 import { Extension, Runtime } from '../types';
 import { ReactiveEventBus } from '../event-bus';
+import { DefaultCircuitBreaker } from './circuit-breaker';
 
 /**
  * Default configuration for the service integration extension
@@ -30,25 +33,32 @@ const DEFAULT_CONFIG: ServiceIntegrationConfig = {
     backoff: 'exponential',
     initialDelayMs: 100,
     maxDelayMs: 5000
+  },
+  defaultCircuitBreakerOptions: {
+    failureThreshold: 5,
+    resetTimeoutMs: 30000, // 30 seconds
+    successThreshold: 2
   }
 };
 
 /**
  * Service Integration Extension implementation
  */
-export class ServiceIntegration implements Extension, ServiceIntegrationExtension {
+export class ServiceIntegration implements Extension, ServiceIntegrationInterface {
   name = 'service-integration';
-  private config: ServiceIntegrationConfig;
-  private runtime?: Runtime;
   public services: Map<string, Service> = new Map();
   private webhookHandlers: Map<string, WebhookHandler> = new Map();
+  private eventBus!: ReactiveEventBus;
+  private config: ServiceIntegrationConfig;
+  private runtime?: Runtime;
   
   constructor(config: Partial<ServiceIntegrationConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
   }
   
   /**
-   * Initialize the extension with the runtime
+   * Initialize the extension
+   * @param runtime The runtime instance
    */
   async initialize(runtime: Runtime): Promise<void> {
     this.runtime = runtime;
@@ -61,6 +71,9 @@ export class ServiceIntegration implements Extension, ServiceIntegrationExtensio
   
   /**
    * Register a service
+   * @param id Service ID
+   * @param config Service configuration
+   * @returns The registered service
    */
   registerService<T = any>(id: string, config: ServiceConfig): Service<T> {
     const service: Service<T> = {
@@ -70,6 +83,9 @@ export class ServiceIntegration implements Extension, ServiceIntegrationExtensio
       config: config.config,
       operations: config.operations || {},
       retryPolicy: config.retryPolicy || this.config.defaultRetryPolicy,
+      circuitBreaker: !config.circuitBreakerOptions && this.config.defaultCircuitBreakerOptions 
+        ? new DefaultCircuitBreaker(this.config.defaultCircuitBreakerOptions)
+        : config.circuitBreakerOptions ? new DefaultCircuitBreaker(config.circuitBreakerOptions) : undefined,
       webhookHandler: config.webhookHandler ? {
         path: config.webhookHandler.path,
         secret: config.webhookHandler.secret,
@@ -89,6 +105,10 @@ export class ServiceIntegration implements Extension, ServiceIntegrationExtensio
   
   /**
    * Execute an operation on a service
+   * @param serviceId Service ID
+   * @param operationName Operation name
+   * @param input Operation input
+   * @returns Operation result
    */
   async executeOperation<T = any, R = any>(
     serviceId: string, 
@@ -107,33 +127,52 @@ export class ServiceIntegration implements Extension, ServiceIntegrationExtensio
       throw new Error(`Operation not found: ${operationName} on service ${serviceId}`);
     }
     
-    // If no retry policy, just execute the operation
-    if (!service.retryPolicy) {
-      return operation(input) as Promise<R>;
+    try {
+      // Execute operation with circuit breaker if available
+      if (service.circuitBreaker) {
+        return await service.circuitBreaker.execute(async () => {
+          return await this.executeWithRetry(operation, input, service.retryPolicy);
+        }) as R;
+      } else {
+        // Execute with retry if policy exists
+        return await this.executeWithRetry(operation, input, service.retryPolicy) as R;
+      }
+    } catch (error) {
+      // Emit error event if runtime is available
+      if (this.runtime) {
+        this.runtime.emitEvent({
+          type: `service.${serviceId}.error`,
+          payload: {
+            operationName,
+            input,
+            error
+          }
+        });
+      }
+      
+      throw error;
     }
-    
-    // Execute with retry
-    return this.executeWithRetry<T, R>(
-      operation as ServiceOperation<T, R>,
-      input,
-      service.retryPolicy
-    );
   }
   
   /**
    * Execute an operation with retry
+   * @param operation Operation to execute
+   * @param input Operation input
+   * @param retryPolicy Retry policy
+   * @param attempt Current attempt number
+   * @returns Operation result
    */
   private async executeWithRetry<T = any, R = any>(
-    operation: ServiceOperation<T, R>,
+    operation: ServiceOperation,
     input: T,
-    retryPolicy: RetryPolicy,
+    retryPolicy?: RetryPolicy,
     attempt = 1
   ): Promise<R> {
     try {
-      return await operation(input);
+      return await operation(input) as R;
     } catch (error) {
-      // If we've reached the maximum number of attempts, throw the error
-      if (attempt >= retryPolicy.maxAttempts) {
+      // If no retry policy or we've reached the maximum number of attempts, throw the error
+      if (!retryPolicy || attempt >= retryPolicy.maxAttempts) {
         throw error;
       }
       
@@ -141,10 +180,10 @@ export class ServiceIntegration implements Extension, ServiceIntegrationExtensio
       let delay = retryPolicy.initialDelayMs;
       
       if (retryPolicy.backoff === 'exponential') {
-        const factor = retryPolicy.factor || 2;
+        const factor = 2;
         delay = retryPolicy.initialDelayMs * Math.pow(factor, attempt - 1);
       } else if (retryPolicy.backoff === 'linear') {
-        const factor = retryPolicy.factor || 1;
+        const factor = 1;
         delay = retryPolicy.initialDelayMs * (1 + (attempt - 1) * factor);
       }
       
@@ -163,6 +202,9 @@ export class ServiceIntegration implements Extension, ServiceIntegrationExtensio
   
   /**
    * Register a webhook handler for a service
+   * @param serviceId Service ID
+   * @param config Webhook handler configuration
+   * @returns The registered webhook handler
    */
   registerWebhookHandler(serviceId: string, config: WebhookHandlerConfig): WebhookHandler {
     const handler: WebhookHandler = {
@@ -178,6 +220,8 @@ export class ServiceIntegration implements Extension, ServiceIntegrationExtensio
   
   /**
    * Get a webhook handler for a service
+   * @param serviceId Service ID
+   * @returns The webhook handler or undefined if not found
    */
   getWebhookHandler(serviceId: string): WebhookHandler | undefined {
     return this.webhookHandlers.get(serviceId);
@@ -185,6 +229,8 @@ export class ServiceIntegration implements Extension, ServiceIntegrationExtensio
   
   /**
    * Process a webhook event
+   * @param serviceId Service ID
+   * @param event Webhook event
    */
   async processWebhookEvent(serviceId: string, event: WebhookEvent): Promise<void> {
     const handler = this.webhookHandlers.get(serviceId);
@@ -212,99 +258,30 @@ export class ServiceIntegration implements Extension, ServiceIntegrationExtensio
   }
   
   /**
-   * DSL for creating services
+   * Get a registered service by ID
+   * @param serviceId Service ID
+   * @returns The service or undefined if not found
    */
-  static Service = {
-    /**
-     * Create a new service builder
-     */
-    create: (id: string) => new ServiceBuilder(id)
-  };
+  getService(serviceId: string): Service | undefined {
+    return this.services.get(serviceId);
+  }
+  
+  /**
+   * Get all registered services
+   * @returns Array of registered services
+   */
+  getAllServices(): Service[] {
+    return Array.from(this.services.values());
+  }
 }
 
 /**
- * Service Builder for fluent API
+ * Create a service integration extension
+ * @param config The extension configuration
+ * @returns A new service integration extension
  */
-export class ServiceBuilder<T = any> {
-  private id: string;
-  private type?: ServiceType;
-  private provider?: string;
-  private config: Record<string, any> = {};
-  private operations: Record<string, ServiceOperation> = {};
-  private retryPolicy?: RetryPolicy;
-  private webhookHandlerConfig?: WebhookHandlerConfig;
-  
-  constructor(id: string) {
-    this.id = id;
-  }
-  
-  /**
-   * Set the service type
-   */
-  withType(type: ServiceType): this {
-    this.type = type;
-    return this;
-  }
-  
-  /**
-   * Set the service provider
-   */
-  withProvider(provider: string): this {
-    this.provider = provider;
-    return this;
-  }
-  
-  /**
-   * Set the service configuration
-   */
-  withConfig(config: Record<string, any>): this {
-    this.config = config;
-    return this;
-  }
-  
-  /**
-   * Add an operation to the service
-   */
-  withOperation<I = any, O = any>(name: string, operation: ServiceOperation<I, O>): this {
-    this.operations[name] = operation;
-    return this;
-  }
-  
-  /**
-   * Set the retry policy for the service
-   */
-  withRetryPolicy(retryPolicy: RetryPolicy): this {
-    this.retryPolicy = retryPolicy;
-    return this;
-  }
-  
-  /**
-   * Set the webhook handler for the service
-   */
-  withWebhookHandler(config: WebhookHandlerConfig): this {
-    this.webhookHandlerConfig = config;
-    return this;
-  }
-  
-  /**
-   * Build the service configuration
-   */
-  build(): ServiceConfig {
-    if (!this.type) {
-      throw new Error('Service type is required');
-    }
-    
-    if (!this.provider) {
-      throw new Error('Service provider is required');
-    }
-    
-    return {
-      type: this.type,
-      provider: this.provider,
-      config: this.config,
-      operations: this.operations,
-      retryPolicy: this.retryPolicy,
-      webhookHandler: this.webhookHandlerConfig
-    };
-  }
+export function createServiceIntegration(
+  config: Partial<ServiceIntegrationConfig> = {}
+): ServiceIntegration {
+  return new ServiceIntegration(config);
 } 

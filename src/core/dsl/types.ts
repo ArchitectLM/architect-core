@@ -45,4 +45,4 @@ export interface RetryPolicy {
    * If not provided, all errors will trigger a retry
    */
   retryCondition?: (error: Error) => boolean;
-} 
+}

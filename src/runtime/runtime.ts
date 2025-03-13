@@ -12,9 +12,9 @@ import { Runtime, RuntimeConfig } from '../core/types';
 export function createRuntime(config: RuntimeConfig = {}): Runtime {
   // This is a placeholder implementation that will be tested
   return {
-    createProcess: () => ({ id: '', processId: '', state: '', context: {}, createdAt: new Date(), updatedAt: new Date() }),
+    createProcess: () => ({ id: '', processId: '', state: '', currentState: '', context: {}, createdAt: new Date(), updatedAt: new Date() }),
     getProcess: () => undefined,
-    transitionProcess: () => ({ id: '', processId: '', state: '', context: {}, createdAt: new Date(), updatedAt: new Date() }),
+    transitionProcess: () => ({ id: '', processId: '', state: '', currentState: '', context: {}, createdAt: new Date(), updatedAt: new Date() }),
     executeTask: async () => ({}),
     emitEvent: () => {},
     subscribeToEvent: () => ({ unsubscribe: () => {} }),

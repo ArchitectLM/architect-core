@@ -2,6 +2,7 @@
  * System Builder - Fluent API for defining systems
  */
 import { SystemConfig, ProcessDefinition, TaskDefinition, Extension, ObservabilityConfig, TestDefinition } from '../types';
+import { Plugin } from '../dsl/plugin';
 
 /**
  * Builder class for creating system configurations with a fluent interface
@@ -10,7 +11,8 @@ export class SystemBuilder {
   private config: Partial<SystemConfig> = {
     processes: {},
     tasks: {},
-    tests: []
+    tests: [],
+    plugins: []
   };
 
   /**
@@ -170,6 +172,19 @@ export class SystemBuilder {
       ...this.config.metadata,
       ...metadata
     };
+    return this;
+  }
+
+  /**
+   * Add a plugin to the system
+   * @example
+   * .withPlugin(loggingPlugin)
+   */
+  withPlugin(plugin: Plugin): this {
+    if (!this.config.plugins) {
+      this.config.plugins = [];
+    }
+    this.config.plugins.push(plugin);
     return this;
   }
 

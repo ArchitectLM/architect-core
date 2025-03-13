@@ -559,6 +559,7 @@ export interface ServiceConfig {
   config: Record<string, any>;
   operations?: Record<string, ServiceOperation>;
   retryPolicy?: RetryPolicy;
+  circuitBreakerOptions?: CircuitBreakerOptions;
   webhookHandler?: WebhookHandlerConfig;
 }
 
@@ -591,6 +592,7 @@ export interface Service<T = any> {
   config: Record<string, any>;
   operations: Record<string, ServiceOperation>;
   retryPolicy?: RetryPolicy;
+  circuitBreaker?: CircuitBreaker;
   webhookHandler?: WebhookHandler;
 }
 
@@ -626,9 +628,69 @@ export interface WebhookEvent {
 export type WebhookEventHandler = (event: WebhookEvent) => void | Promise<void>;
 
 /**
- * Service integration configuration
+ * Circuit Breaker State
+ */
+export enum CircuitBreakerState {
+  CLOSED = 'CLOSED',
+  OPEN = 'OPEN',
+  HALF_OPEN = 'HALF_OPEN'
+}
+
+/**
+ * Circuit Breaker Options
+ */
+export interface CircuitBreakerOptions {
+  /**
+   * Number of failures before opening the circuit
+   */
+  failureThreshold: number;
+  
+  /**
+   * Time in milliseconds before attempting to close the circuit
+   */
+  resetTimeoutMs: number;
+  
+  /**
+   * Number of consecutive successful calls required to close the circuit
+   */
+  successThreshold: number;
+}
+
+/**
+ * Circuit Breaker Interface
+ */
+export interface CircuitBreaker {
+  /**
+   * Execute a function with circuit breaker protection
+   */
+  execute<T>(fn: () => Promise<T>): Promise<T>;
+  
+  /**
+   * Get the current state of the circuit breaker
+   */
+  getState(): CircuitBreakerState;
+  
+  /**
+   * Reset the circuit breaker to closed state
+   */
+  reset(): void;
+  
+  /**
+   * Handle successful execution
+   */
+  onSuccess(): void;
+  
+  /**
+   * Handle failed execution
+   */
+  onFailure(): void;
+}
+
+/**
+ * Service Integration Configuration
  */
 export interface ServiceIntegrationConfig {
   enabled: boolean;
   defaultRetryPolicy?: RetryPolicy;
+  defaultCircuitBreakerOptions?: CircuitBreakerOptions;
 } 

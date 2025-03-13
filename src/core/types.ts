@@ -2,6 +2,7 @@
  * Core type definitions for ArchitectLM
  */
 import { z } from 'zod';
+import { Plugin } from './dsl/plugin';
 
 // -----------------------------------------------------------------------------
 // Event System Types
@@ -42,10 +43,13 @@ export type EventHandler<T extends string = string, P = any> =
 export interface ProcessState<TContext = any> {
   name: string;                      // State name
   description?: string;              // State description
-  type?: 'normal' | 'initial' | 'final'; // State type
+  type?: 'normal' | 'initial' | 'final' | 'parallel'; // State type
+  parent?: string;                   // Parent state for hierarchical states
   onEnter?: (context: TContext) => Promise<void> | void; // Handler when entering state
   onExit?: (context: TContext) => Promise<void> | void;  // Handler when exiting state
   metadata?: Record<string, unknown>; // Additional metadata
+  isFinal?: boolean;                 // Whether this is a final state
+  transitions?: Record<string, any>; // State transitions
 }
 
 /**
@@ -177,6 +181,7 @@ export interface SystemConfig {
   tasks: Record<string, TaskDefinition>;       // Task definitions
   tests?: TestDefinition[];          // Test definitions
   extensions?: Record<string, Extension | ExtensionConfig>; // Extensions
+  plugins?: Plugin[];                // Plugins
   observability?: ObservabilityConfig; // Observability configuration
   metadata?: Record<string, unknown>; // Additional metadata
 }

@@ -14,6 +14,7 @@
     "example": "tsx examples/order-processing.ts",
     "example:agent": "tsx examples/agent-example.ts",
     "example:rag-agent": "tsx examples/rag-agent-example.ts",
+    "example:plugin": "tsx examples/plugin-runtime-example.ts",
     "test:openrouter": "tsx examples/openrouter-rag-test.ts"
   },
   "keywords": [

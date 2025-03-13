@@ -55,13 +55,20 @@ export class ProcessBuilder<
   /**
    * Add a state to the process
    * @example
-   * .addState('processing')
+   * // Basic state
+   * .addState('created')
    * 
    * // With configuration
    * .addState('processing', {
    *   description: 'Order is being processed',
    *   onEnter: async (context) => { console.log('Entering processing state'); }
    * })
+   * 
+   * // Parallel state
+   * .addState('processing', { type: 'parallel' })
+   * 
+   * // Child state with parent
+   * .addState('processing.payment', { parent: 'processing' })
    */
   addState(name: TState, config: Omit<ProcessState<TContext>, 'name'> = {}): this {
     // Ensure states is an array
@@ -69,11 +76,35 @@ export class ProcessBuilder<
       this.definition.states = [];
     }
 
-    // Add the state
-    (this.definition.states as Array<ProcessState<TContext>>).push({
+    // Create the state
+    const state: ProcessState<TContext> = {
       name,
       ...config
-    });
+    };
+    
+    // Validate parent state if specified
+    if (state.parent) {
+      const parentState = (this.definition.states as Array<ProcessState<TContext>>).find(
+        s => s.name === state.parent
+      );
+      
+      if (!parentState) {
+        throw new Error(`Parent state '${state.parent}' not found. Make sure to define parent states before child states.`);
+      }
+      
+      // Ensure parent is a parallel state if it has children
+      if (parentState.type !== 'parallel') {
+        parentState.type = 'parallel';
+      }
+    }
+    
+    // Convert isFinal to type if needed
+    if (state.isFinal && !state.type) {
+      state.type = 'final';
+    }
+
+    // Add the state
+    (this.definition.states as Array<ProcessState<TContext>>).push(state);
 
     return this;
   }

@@ -10,6 +10,136 @@ import { ReactiveSystemBuilder, TaskBuilder, ProcessBuilder, StateBuilder } from
 import { PluginDefinition, ServiceDefinition, TaskDefinition } from './reactive-system';
 
 /**
+ * Enhanced Plugin System
+ * 
+ * This extends the original plugin architecture with runtime hooks, service registration,
+ * and initialization capabilities.
+ */
+
+/**
+ * Hook types for plugin extension points
+ */
+export type PluginHooks = {
+  beforeTaskExecution?: (task: any, input: any) => void | Promise<void>;
+  afterTaskExecution?: (task: any, input: any, output: any) => void | Promise<void>;
+  beforeProcessTransition?: (process: any, event: any) => void | Promise<void>;
+  afterProcessTransition?: (process: any, event: any) => void | Promise<void>;
+  onSystemStartup?: () => void | Promise<void>;
+  onSystemShutdown?: () => void | Promise<void>;
+  [key: string]: ((...args: any[]) => void | Promise<void>) | undefined;
+};
+
+/**
+ * Service operation type
+ */
+export type ServiceOperation = (...args: any[]) => any | Promise<any>;
+
+/**
+ * Service definition for plugins
+ */
+export interface PluginService {
+  operations: Record<string, ServiceOperation>;
+  [key: string]: any;
+}
+
+/**
+ * Enhanced plugin interface
+ */
+export interface Plugin {
+  id: string;
+  name: string;
+  description?: string;
+  hooks?: PluginHooks;
+  services?: Record<string, PluginService>;
+  initialize?: (runtime: any) => void | Promise<void>;
+}
+
+/**
+ * Plugin definition options
+ */
+export interface PluginOptions {
+  id: string;
+  name: string;
+  description?: string;
+  hooks?: PluginHooks;
+  services?: Record<string, PluginService>;
+  initialize?: (runtime: any) => void | Promise<void>;
+}
+
+/**
+ * Define a new plugin
+ */
+export function definePlugin(options: PluginOptions): Plugin {
+  return {
+    id: options.id,
+    name: options.name,
+    description: options.description,
+    hooks: options.hooks,
+    services: options.services,
+    initialize: options.initialize
+  };
+}
+
+/**
+ * Plugin manager for registering and managing plugins
+ */
+export class PluginManager {
+  private plugins: Map<string, Plugin> = new Map();
+  private runtime: any;
+
+  constructor(runtime: any) {
+    this.runtime = runtime;
+  }
+
+  /**
+   * Register a plugin with the system
+   */
+  registerPlugin(plugin: Plugin): void {
+    if (this.plugins.has(plugin.id)) {
+      throw new Error(`Plugin with id '${plugin.id}' is already registered`);
+    }
+
+    // Register hooks
+    if (plugin.hooks) {
+      for (const [hookName, hookFn] of Object.entries(plugin.hooks)) {
+        if (hookFn) {
+          this.runtime.registerHook(hookName, hookFn);
+        }
+      }
+    }
+
+    // Register services
+    if (plugin.services) {
+      for (const [serviceName, service] of Object.entries(plugin.services)) {
+        this.runtime.registerService(serviceName, service);
+      }
+    }
+
+    // Initialize plugin
+    if (plugin.initialize) {
+      plugin.initialize(this.runtime);
+    }
+
+    this.plugins.set(plugin.id, plugin);
+  }
+
+  /**
+   * Get a registered plugin by id
+   */
+  getPlugin(id: string): Plugin | undefined {
+    return this.plugins.get(id);
+  }
+
+  /**
+   * Get all registered plugins
+   */
+  getAllPlugins(): Plugin[] {
+    return Array.from(this.plugins.values());
+  }
+}
+
+// Keep the original plugin interface for backward compatibility
+/**
  * Plugin interface for extending the DSL
  */
 export interface ReactiveSystemPlugin {

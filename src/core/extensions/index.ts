@@ -13,7 +13,8 @@ export {
   Scheduler, ScheduledTaskConfig, RecurringTaskConfig, ScheduledTask, ScheduledTaskStatus, ScheduledTaskFilter,
   Supervisor, ProcessSupervisionConfig, TaskSupervisionConfig, SupervisionStatus, SupervisionStatusType, SupervisionEventType, SupervisionEvent,
   LoadManager, ResourceConfig, ResourceStatus, CircuitStatus, LoadEventType, LoadEvent, ResourceType,
-  ServiceIntegrationExtension, ServiceConfig, Service, ServiceType, ServiceOperation, WebhookHandlerConfig, WebhookHandler, WebhookEvent, RetryPolicy
+  ServiceIntegrationExtension, ServiceConfig, Service, ServiceType, ServiceOperation, WebhookHandlerConfig, WebhookHandler, WebhookEvent, RetryPolicy,
+  CircuitBreaker, CircuitBreakerOptions, CircuitBreakerState
 } from './types';
 
 // Export agent extensions
