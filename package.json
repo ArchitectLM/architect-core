@@ -12,7 +12,9 @@
     "lint": "eslint src --ext .ts",
     "dev": "tsc --watch",
     "example": "tsx examples/order-processing.ts",
-    "example:agent": "tsx examples/agent-example.ts"
+    "example:agent": "tsx examples/agent-example.ts",
+    "example:rag-agent": "tsx examples/rag-agent-example.ts",
+    "test:openrouter": "tsx examples/openrouter-rag-test.ts"
   },
   "keywords": [
     "llm",
@@ -35,6 +37,11 @@
     "vitest": "^1.2.0"
   },
   "dependencies": {
+    "@langchain/openai": "^0.4.4",
+    "@types/axios": "^0.14.4",
+    "axios": "^1.8.3",
+    "chromadb": "^2.0.1",
+    "langchain": "^0.3.19",
     "tsx": "^4.19.3",
     "uuid": "^11.1.0",
     "zod": "^3.24.2"

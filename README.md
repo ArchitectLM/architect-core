@@ -12,6 +12,7 @@ ArchitectLM is a TypeScript framework for building reactive systems with state m
 - **Fluent API**: Builder pattern for defining components
 - **Testing Utilities**: Comprehensive testing tools for verifying system behavior
 - **AI-Assisted Development**: Agent mode for generating components using LLMs
+- **RAG-Enhanced Generation**: Retrieval-augmented generation for context-aware AI assistance
 
 ## Installation
 
@@ -206,6 +207,108 @@ const taskDefinition = await agent.generateTask(taskSpec);
 // Generate documentation
 const docs = await agent.generateDocs(processDefinition);
 ```
+
+### RAG-Enhanced Agent API
+
+```typescript
+// Create a RAG-enhanced agent
+import { createRAGAgent } from 'architectlm/extensions';
+import * as path from 'path';
+
+const ragAgent = createRAGAgent({
+  provider: 'openai',
+  model: 'gpt-4',
+  apiKey: process.env.OPENAI_API_KEY,
+  temperature: 0.7,
+  codebasePath: path.join(__dirname, 'src'), // Path to your codebase
+  useInMemoryVectorStore: true // Use in-memory vector store for development
+});
+
+// Initialize the agent with your runtime
+await ragAgent.initialize(runtime);
+
+// Generate a process with RAG enhancement
+const processSpec = {
+  name: 'OrderProcess',
+  description: 'Manages the lifecycle of customer orders',
+  states: ['created', 'paid', 'shipped', 'delivered', 'cancelled'],
+  events: ['CREATE_ORDER', 'PAYMENT_RECEIVED', 'SHIP_ORDER', 'DELIVER_ORDER', 'CANCEL_ORDER']
+};
+
+// The agent will retrieve relevant examples from your codebase
+// to enhance the generation process
+const processDefinition = await ragAgent.generateProcess(processSpec);
+
+// Generate a task with RAG enhancement
+const taskSpec = {
+  name: 'ProcessPayment',
+  description: 'Processes a payment for an order',
+  input: {
+    orderId: 'string',
+    amount: 'number',
+    paymentMethod: 'string'
+  },
+  output: {
+    success: 'boolean',
+    transactionId: 'string'
+  }
+};
+
+const taskDefinition = await ragAgent.generateTask(taskSpec);
+
+// Generate tests with RAG enhancement
+const tests = await ragAgent.generateTests(processDefinition);
+
+// Generate documentation with RAG enhancement
+const docs = await ragAgent.generateDocs(processDefinition);
+```
+
+## Using Different Models with the RAG-Enhanced Agent
+
+The RAG-enhanced agent supports various LLM providers and models. Here's a comparison of using different models:
+
+### OpenAI GPT-3.5 Turbo
+
+```typescript
+const ragAgent = createRAGAgent({
+  provider: 'openai',
+  model: 'gpt-3.5-turbo',
+  apiKey: process.env.OPENAI_API_KEY,
+  temperature: 0.7,
+  codebasePath: './src',
+  useInMemoryVectorStore: true,
+});
+```
+
+GPT-3.5 Turbo provides good results for most use cases, with reliable JSON generation and documentation capabilities.
+
+### Meta's Llama 3.2 1B Instruct (via OpenRouter)
+
+```typescript
+const ragAgent = createRAGAgent({
+  provider: 'custom',
+  model: 'meta-llama/llama-3.2-1b-instruct:free',
+  apiKey: 'your-openrouter-api-key',
+  temperature: 0.7,
+  codebasePath: './src',
+  useInMemoryVectorStore: true,
+});
+
+// Override the LLM with a custom OpenRouter implementation
+(ragAgent as any).llm = new OpenRouterChatModel({
+  apiKey: 'your-openrouter-api-key',
+  model: 'meta-llama/llama-3.2-1b-instruct:free',
+  temperature: 0.7,
+});
+```
+
+Llama 3.2 1B Instruct is a lightweight model that can run on less powerful hardware. It provides decent results for process and test generation, but may require additional handling for JSON parsing and task generation.
+
+### Choosing the Right Model
+
+- **GPT-4/GPT-3.5 Turbo**: Best for production use cases where reliability and quality are important.
+- **Llama 3.2 1B Instruct**: Good for development, testing, or when running on resource-constrained environments.
+- **Custom Models**: You can implement your own chat model interface to use any LLM provider.
 
 ## Examples
 
