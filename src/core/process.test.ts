@@ -136,13 +136,13 @@ describe('defineProcess', () => {
         { 
           from: 'pending', 
           to: 'approved', 
-          on: 'REVIEW', 
+          on: 'REVIEW_APPROVE', 
           guard: guardFn
         },
         { 
           from: 'pending', 
           to: 'rejected', 
-          on: 'REVIEW', 
+          on: 'REVIEW_REJECT', 
           guard: (context) => context.score < 70 
         }
       ]
@@ -239,5 +239,241 @@ describe('defineProcess', () => {
     
     // Assert
     expect(process.description).toBe('A process with a detailed description');
+  });
+
+  // Additional edge case tests
+
+  it('should throw error if initial state is not in states array', () => {
+    // Arrange
+    const processConfig: ProcessDefinition = {
+      id: 'invalid-initial-state',
+      states: ['start', 'middle', 'end'],
+      initialState: 'invalid',
+      transitions: [
+        { from: 'start', to: 'middle', on: 'NEXT' },
+        { from: 'middle', to: 'end', on: 'FINISH' }
+      ]
+    };
+    
+    // Act & Assert
+    expect(() => defineProcess(processConfig)).toThrow('Initial state must be one of the defined states');
+  });
+
+  it('should throw error if transition references undefined states', () => {
+    // Arrange
+    const processConfig: ProcessDefinition = {
+      id: 'invalid-transition-states',
+      states: ['start', 'end'],
+      transitions: [
+        { from: 'start', to: 'middle', on: 'NEXT' }, // 'middle' is not defined
+        { from: 'middle', to: 'end', on: 'FINISH' }
+      ]
+    };
+    
+    // Act & Assert
+    expect(() => defineProcess(processConfig)).toThrow('Transition references undefined state: middle');
+  });
+
+  it('should throw error if transition has no event type', () => {
+    // Arrange
+    const processConfig: ProcessDefinition = {
+      id: 'invalid-transition-event',
+      states: ['start', 'end'],
+      transitions: [
+        { from: 'start', to: 'end', on: '' } // Empty event type
+      ]
+    };
+    
+    // Act & Assert
+    expect(() => defineProcess(processConfig)).toThrow('Transition must have an event type');
+  });
+
+  it('should handle process with many states and transitions', () => {
+    // Arrange
+    const states = Array.from({ length: 50 }, (_, i) => `state-${i}`);
+    const transitions = states.slice(0, -1).map((state, i) => ({
+      from: state,
+      to: `state-${i + 1}`,
+      on: `EVENT_${i}`
+    }));
+    
+    const processConfig: ProcessDefinition = {
+      id: 'large-process',
+      states,
+      transitions
+    };
+    
+    // Act
+    const process = defineProcess(processConfig);
+    
+    // Assert
+    expect(process.states.length).toBe(50);
+    expect(process.transitions.length).toBe(49);
+    expect(process.initialState).toBe('state-0');
+  });
+
+  it('should handle process with duplicate state names', () => {
+    // Arrange
+    const processConfig: ProcessDefinition = {
+      id: 'duplicate-states',
+      states: ['start', 'middle', 'end', 'start'], // Duplicate 'start'
+      transitions: [
+        { from: 'start', to: 'middle', on: 'NEXT' },
+        { from: 'middle', to: 'end', on: 'FINISH' }
+      ]
+    };
+    
+    // Act & Assert
+    expect(() => defineProcess(processConfig)).toThrow('Duplicate state name: start');
+  });
+
+  it('should handle process with duplicate transition events from same state', () => {
+    // Arrange
+    const processConfig: ProcessDefinition = {
+      id: 'duplicate-transitions',
+      states: ['start', 'middle', 'end'],
+      transitions: [
+        { from: 'start', to: 'middle', on: 'NEXT' },
+        { from: 'start', to: 'end', on: 'NEXT' } // Same event from same state
+      ]
+    };
+    
+    // Act & Assert
+    expect(() => defineProcess(processConfig)).toThrow('Duplicate transition event: NEXT from state: start');
+  });
+
+  it('should handle process with transitions using array of source states including wildcard', () => {
+    // Arrange
+    const processConfig: ProcessDefinition = {
+      id: 'mixed-sources',
+      states: ['start', 'middle', 'end', 'error'],
+      transitions: [
+        { from: ['start', '*'], to: 'error', on: 'ERROR' } // Mixed specific and wildcard
+      ]
+    };
+    
+    // Act & Assert
+    expect(() => defineProcess(processConfig)).toThrow('Cannot mix wildcard with specific states in transition source');
+  });
+
+  it('should handle process with metadata', () => {
+    // Arrange
+    const metadata = {
+      owner: 'system',
+      version: '1.0.0',
+      tags: ['critical', 'core'],
+      timeout: 3600
+    };
+    
+    const processConfig: ProcessDefinition = {
+      id: 'metadata-process',
+      states: ['start', 'end'],
+      transitions: [
+        { from: 'start', to: 'end', on: 'FINISH' }
+      ],
+      metadata
+    };
+    
+    // Act
+    const process = defineProcess(processConfig);
+    
+    // Assert
+    expect(process.metadata).toEqual(metadata);
+  });
+
+  it('should handle process with transition metadata', () => {
+    // Arrange
+    const transitionMetadata = {
+      description: 'Transition when order is approved',
+      permissions: ['admin', 'manager'],
+      audit: true
+    };
+    
+    const processConfig: ProcessDefinition = {
+      id: 'transition-metadata',
+      states: ['pending', 'approved'],
+      transitions: [
+        { 
+          from: 'pending', 
+          to: 'approved', 
+          on: 'APPROVE', 
+          metadata: transitionMetadata
+        }
+      ]
+    };
+    
+    // Act
+    const process = defineProcess(processConfig);
+    
+    // Assert
+    expect(process.transitions[0].metadata).toEqual(transitionMetadata);
+  });
+
+  it('should handle process with very long ID', () => {
+    // Arrange
+    const veryLongId = 'a'.repeat(1000);
+    const processConfig: ProcessDefinition = {
+      id: veryLongId,
+      states: ['start', 'end'],
+      transitions: [
+        { from: 'start', to: 'end', on: 'FINISH' }
+      ]
+    };
+    
+    // Act
+    const process = defineProcess(processConfig);
+    
+    // Assert
+    expect(process.id).toBe(veryLongId);
+    expect(process.id.length).toBe(1000);
+  });
+
+  it('should handle process with special characters in state names', () => {
+    // Arrange
+    const processConfig: ProcessDefinition = {
+      id: 'special-chars',
+      states: ['start-state', 'middle_state', 'end.state', 'error@state'],
+      transitions: [
+        { from: 'start-state', to: 'middle_state', on: 'NEXT' },
+        { from: 'middle_state', to: 'end.state', on: 'FINISH' },
+        { from: '*', to: 'error@state', on: 'ERROR' }
+      ]
+    };
+    
+    // Act
+    const process = defineProcess(processConfig);
+    
+    // Assert
+    expect(process.states).toContain('start-state');
+    expect(process.states).toContain('middle_state');
+    expect(process.states).toContain('end.state');
+    expect(process.states).toContain('error@state');
+  });
+
+  it('should handle process with async guard conditions', () => {
+    // Arrange
+    const asyncGuard = async (context: any) => {
+      await new Promise(resolve => setTimeout(resolve, 10));
+      return context.score >= 70;
+    };
+    
+    const processConfig: ProcessDefinition = {
+      id: 'async-guard',
+      states: ['pending', 'approved', 'rejected'],
+      transitions: [
+        { 
+          from: 'pending', 
+          to: 'approved', 
+          on: 'REVIEW', 
+          guard: asyncGuard
+        }
+      ]
+    };
+    
+    // Act
+    const process = defineProcess(processConfig);
+    
+    // Assert
+    expect(process.transitions[0].guard).toBe(asyncGuard);
   });
 }); 

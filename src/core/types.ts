@@ -27,6 +27,7 @@ export interface ProcessDefinition {
   transitions: Transition[];        // Valid state transitions
   description?: string;             // Process description
   contextSchema?: object;           // Schema for process context (optional)
+  metadata?: Record<string, any>;   // Additional metadata for the process
 }
 
 // Transition definition
@@ -35,6 +36,7 @@ export interface Transition {
   to: string;                       // Target state
   on: string;                       // Event type that triggers transition
   guard?: (context: any, event: any) => boolean | Promise<boolean>; // Optional condition
+  metadata?: Record<string, any>;   // Additional metadata for the transition
 }
 
 // Process instance representing a running process
@@ -54,6 +56,7 @@ export interface TaskDefinition {
   output?: string[];                // Output field names (for documentation)
   implementation: TaskImplementation; // Task implementation function
   description?: string;             // Task description
+  metadata?: Record<string, any>;   // Additional metadata for the task
 }
 
 // Task implementation type
@@ -83,6 +86,7 @@ export interface SystemConfig {
   tests?: TestDefinition[];                             // Test definitions
   mocks?: Record<string, Record<string, Function>>;     // Mock implementations
   extensions?: Record<string, ExtensionConfig>;         // Optional extensions
+  metadata?: Record<string, any>;                       // Additional metadata for the system
 }
 
 // Runtime configuration
@@ -248,5 +252,4 @@ export interface TestReporter {
 // Extension configuration
 export interface ExtensionConfig {
   enabled: boolean;
-  options?: any;
 } 

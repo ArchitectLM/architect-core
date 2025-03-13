@@ -209,8 +209,8 @@ export class ReactiveRuntime implements Runtime {
         }
         return {}; // Default empty service
       },
-      emitEvent: (type: string, payload?: any) => {
-        this.emitEvent(type, payload);
+      emitEvent: (typeOrEvent: string | Event, payload?: any) => {
+        this.emitEvent(typeOrEvent, payload);
       },
       executeTask: (nestedTaskId: string, nestedInput: any) => {
         return this.executeTask(nestedTaskId, nestedInput);
@@ -575,6 +575,14 @@ export function createRuntime(
     
     getAvailableProcesses: (): string[] => {
       return Object.keys(processes);
+    },
+    
+    getTaskImplementation: (taskId: string): TaskImplementation | undefined => {
+      return tasks[taskId]?.implementation;
+    },
+    
+    getProcessDefinition: (processId: string): ProcessDefinition | undefined => {
+      return processes[processId];
     }
   };
   

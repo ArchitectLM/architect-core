@@ -4,13 +4,12 @@
 import { TaskDefinition } from './types';
 
 /**
- * Define a task
- * 
+ * Define a task with implementation
  * @param config Task configuration
- * @returns Task definition
+ * @returns Validated task definition
  */
 export function defineTask(config: TaskDefinition): TaskDefinition {
-  // Validate task configuration
+  // Validate required fields
   if (!config.id) {
     throw new Error('Task ID is required');
   }

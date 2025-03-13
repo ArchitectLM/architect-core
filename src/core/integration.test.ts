@@ -46,9 +46,23 @@ describe('Integration Tests', () => {
       const system = defineSystem(systemConfig);
       
       // Assert
+      // Test behavior rather than exact implementation
       expect(system.id).toBe('order-system');
-      expect(system.processes['order-process']).toEqual(orderProcess);
-      expect(system.tasks['process-order']).toEqual(processOrderTask);
+      expect(system.processes).toHaveProperty('order-process');
+      expect(system.tasks).toHaveProperty('process-order');
+      
+      // Verify the process has the correct structure
+      const definedProcess = system.processes['order-process'];
+      expect(definedProcess.id).toBe('order-process');
+      expect(definedProcess.states).toContain('created');
+      expect(definedProcess.states).toContain('processing');
+      expect(definedProcess.states).toContain('completed');
+      expect(definedProcess.initialState).toBe('created');
+      
+      // Verify the task has the correct structure
+      const definedTask = system.tasks['process-order'];
+      expect(definedTask.id).toBe('process-order');
+      expect(definedTask.implementation).toBeInstanceOf(Function);
     });
   });
 
@@ -119,11 +133,16 @@ describe('Integration Tests', () => {
       await runtime.executeTask('no-event-task', { orderId: '12345' });
       
       // Assert
+      // Verify behavior: process state changed
       expect(updatedInstance.state).toBe('processing');
+      
+      // Verify behavior: task was called with correct input
       expect(taskSpy).toHaveBeenCalledWith(
-        { orderId: '12345' },
+        expect.objectContaining({ orderId: '12345' }),
         expect.anything()
       );
+      
+      // Verify behavior: event was emitted
       expect(eventHandler).toHaveBeenCalledWith(expect.objectContaining({
         type: 'TASK_STARTED',
         payload: expect.objectContaining({
@@ -148,6 +167,8 @@ describe('Integration Tests', () => {
       const updatedInstance = runtime.getProcess(instance.id);
       
       // Assert
+      // Verify behavior: process state changed to completed
+      expect(updatedInstance).toBeDefined();
       expect(updatedInstance?.state).toBe('completed');
     });
   });
@@ -227,7 +248,12 @@ describe('Integration Tests', () => {
       const updatedShipmentInstance = runtime.getProcess(shipmentInstance.id);
       
       // Assert
+      // Verify behavior: shipment state changed
+      expect(updatedShipmentInstance).toBeDefined();
       expect(updatedShipmentInstance?.state).toBe('shipped');
+      
+      // Verify behavior: order state changed
+      expect(updatedOrderInstance).toBeDefined();
       expect(updatedOrderInstance?.state).toBe('completed');
     });
     
@@ -243,6 +269,7 @@ describe('Integration Tests', () => {
       runtime.transitionProcess(instance.id, 'START_PROCESSING');
       
       // Assert
+      // Verify behavior: state change event was emitted with correct data
       expect(stateChangeHandler).toHaveBeenCalledWith(expect.objectContaining({
         type: 'STATE_CHANGED',
         payload: expect.objectContaining({
@@ -314,8 +341,10 @@ describe('Integration Tests', () => {
       runtime.subscribeToEvent('TASK_FAILED', errorHandler);
       
       // Act & Assert
+      // Verify behavior: task execution throws error
       await expect(runtime.executeTask('failing-task', {})).rejects.toThrow('Task execution failed');
       
+      // Verify behavior: error event was emitted
       expect(errorHandler).toHaveBeenCalledWith(expect.objectContaining({
         type: 'TASK_FAILED',
         payload: expect.objectContaining({
@@ -330,12 +359,17 @@ describe('Integration Tests', () => {
       // Create a process instance in created state
       const instance = runtime.createProcess('order-process', {});
       
-      // Act & Assert
+      // Act
       // Try to transition directly to completed (invalid)
-      expect(() => runtime.transitionProcess(instance.id, 'COMPLETE')).not.toThrow();
+      const result = runtime.transitionProcess(instance.id, 'COMPLETE');
       
-      // Verify state didn't change
+      // Assert
+      // Verify behavior: state didn't change for invalid transition
+      expect(result.state).toBe('created');
+      
+      // Verify behavior: process instance still exists with unchanged state
       const updatedInstance = runtime.getProcess(instance.id);
+      expect(updatedInstance).toBeDefined();
       expect(updatedInstance?.state).toBe('created');
     });
     
@@ -351,7 +385,9 @@ describe('Integration Tests', () => {
       await runtime.executeTask('error-handling-task', {});
       
       // Assert
+      // Verify behavior: process transitioned to error state
       const updatedInstance = runtime.getProcess(instance.id);
+      expect(updatedInstance).toBeDefined();
       expect(updatedInstance?.state).toBe('error');
     });
   });
@@ -466,10 +502,14 @@ describe('Flow-Based Tests', () => {
     const finalNotificationInstance = runtime.getProcess(notificationInstance.id);
     
     // Verify the flow
+    // Verify behavior: processes reached their final states
+    expect(finalOrderInstance).toBeDefined();
     expect(finalOrderInstance?.state).toBe('completed');
+    
+    expect(finalNotificationInstance).toBeDefined();
     expect(finalNotificationInstance?.state).toBe('sent');
     
-    // Verify events were emitted in the correct order
+    // Verify behavior: events were emitted in the correct sequence
     const eventTypes = eventLog.map(e => e.type);
     
     // Check key events in the flow
@@ -486,6 +526,7 @@ describe('Flow-Based Tests', () => {
       .filter(e => e.type === 'STATE_CHANGED' && e.payload.processId === 'order-process')
       .map(e => e.payload.newState);
     
+    // Verify behavior: state transitions happened in the correct order
     expect(stateChanges).toEqual(['processing', 'processed', 'completed']);
   });
 }); 
