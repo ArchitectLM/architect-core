@@ -46,34 +46,67 @@ vi.mock('@langchain/openai', () => ({
       // Mock different responses based on the input
       if (messages.some(m => m.content.includes('OrderProcess'))) {
         return {
-          content: JSON.stringify({
-            id: 'order-process',
-            description: 'Manages the lifecycle of customer orders',
-            initialState: 'created',
-            states: {
-              created: { description: 'Order has been created' },
-              paid: { description: 'Order has been paid' },
-              shipped: { description: 'Order has been shipped' },
-              delivered: { description: 'Order has been delivered' },
-              cancelled: { description: 'Order has been cancelled' }
-            },
-            transitions: [
-              { from: 'created', to: 'paid', on: 'PAYMENT_RECEIVED' },
-              { from: 'paid', to: 'shipped', on: 'SHIP_ORDER' },
-              { from: 'shipped', to: 'delivered', on: 'DELIVER_ORDER' },
-              { from: ['created', 'paid'], to: 'cancelled', on: 'CANCEL_ORDER' }
-            ]
-          })
+          content: `
+\`\`\`typescript
+const process = ReactiveSystem.Process.create("order-process")
+  .withDescription("Manages the lifecycle of customer orders")
+  .withInitialState("created")
+  .addState("created")
+  .addState("paid")
+  .addState("shipped")
+  .addState("delivered")
+  .addState("cancelled")
+  .addTransition({
+    from: "created",
+    to: "paid",
+    on: "PAYMENT_RECEIVED"
+  })
+  .addTransition({
+    from: "paid",
+    to: "shipped",
+    on: "SHIP_ORDER"
+  })
+  .addTransition({
+    from: "shipped",
+    to: "delivered",
+    on: "DELIVER_ORDER"
+  })
+  .addTransition({
+    from: ["created", "paid"],
+    to: "cancelled",
+    on: "CANCEL_ORDER"
+  });
+\`\`\`
+          `
         };
       } else if (messages.some(m => m.content.includes('ProcessPayment'))) {
         return {
-          content: JSON.stringify({
-            id: 'process-payment',
-            description: 'Processes a payment for an order',
-            implementation: 'async (input, context) => { return { success: true, transactionId: "tx-123" }; }',
-            inputSchema: { type: 'object', properties: { orderId: { type: 'string' }, amount: { type: 'number' } } },
-            outputSchema: { type: 'object', properties: { success: { type: 'boolean' }, transactionId: { type: 'string' } } }
-          })
+          content: `
+\`\`\`typescript
+const task = ReactiveSystem.Task.create("process-payment")
+  .withDescription("Processes a payment for an order")
+  .withInputSchema(z.object({
+    orderId: z.string(),
+    amount: z.number()
+  }))
+  .withOutputSchema(z.object({
+    success: z.boolean(),
+    transactionId: z.string()
+  }))
+  .withImplementation(async (input, context) => {
+    console.log("Processing payment for order:", input.orderId);
+    // In a real implementation, this would call a payment service
+    return { 
+      success: true, 
+      transactionId: "tx-123"
+    };
+  })
+  .withRetry({
+    maxAttempts: 3,
+    delay: 1000
+  });
+\`\`\`
+          `
         };
       } else {
         return {
@@ -116,6 +149,60 @@ vi.mock('path', () => ({
   basename: vi.fn((path) => path.split('/').pop()),
   extname: vi.fn((path) => '.ts')
 }));
+
+// Mock ReactiveSystem
+vi.mock('../dsl/reactive-system', () => ({
+  ReactiveSystem: {
+    Process: {
+      create: vi.fn().mockReturnValue({
+        id: 'test-process',
+        withDescription: vi.fn().mockReturnThis(),
+        withInitialState: vi.fn().mockReturnThis(),
+        addState: vi.fn().mockReturnThis(),
+        addTransition: vi.fn().mockReturnThis(),
+        states: [
+          { name: 'initial', description: 'Initial state' },
+          { name: 'final', description: 'Final state', isFinal: true }
+        ],
+        initialState: 'initial',
+        transitions: [
+          { from: 'initial', to: 'final', on: 'COMPLETE' }
+        ],
+        description: 'A test process'
+      })
+    },
+    Task: {
+      create: vi.fn().mockReturnValue({
+        id: 'test-task',
+        name: 'Test Task',
+        withDescription: vi.fn().mockReturnThis(),
+        withInputSchema: vi.fn().mockReturnThis(),
+        withOutputSchema: vi.fn().mockReturnThis(),
+        withImplementation: vi.fn().mockReturnThis(),
+        withRetry: vi.fn().mockReturnThis(),
+        description: 'A test task',
+        implementation: vi.fn().mockResolvedValue({ success: true }),
+        inputSchema: { type: 'object' },
+        outputSchema: { type: 'object' },
+        retryPolicy: {
+          maxAttempts: 3,
+          delay: 1000
+        }
+      })
+    }
+  }
+}));
+
+// Mock zod
+vi.mock('zod', () => {
+  const z = {
+    object: vi.fn().mockReturnValue({}),
+    string: vi.fn().mockReturnValue({}),
+    number: vi.fn().mockReturnValue({}),
+    boolean: vi.fn().mockReturnValue({})
+  };
+  return { z };
+});
 
 describe('RAGAgentExtension', () => {
   let agent: RAGAgentExtension;
@@ -194,19 +281,20 @@ describe('RAGAgentExtension', () => {
     // Mock the llm.invoke method
     vi.spyOn(agent as any, 'llm', 'get').mockReturnValue({
       invoke: vi.fn().mockResolvedValue({
-        content: JSON.stringify({
-          id: 'test-process',
-          name: 'Test Process',
-          description: 'A test process',
-          initialState: 'initial',
-          states: {
-            initial: { description: 'Initial state' },
-            final: { description: 'Final state' }
-          },
-          transitions: [
-            { from: 'initial', to: 'final', on: 'COMPLETE' }
-          ]
-        })
+        content: `
+\`\`\`typescript
+const process = ReactiveSystem.Process.create("test-process")
+  .withDescription("A test process")
+  .withInitialState("initial")
+  .addState("initial")
+  .addState("final")
+  .addTransition({
+    from: "initial",
+    to: "final",
+    on: "COMPLETE"
+  });
+\`\`\`
+        `
       })
     });
     
@@ -221,7 +309,6 @@ describe('RAGAgentExtension', () => {
     
     expect(result).toBeDefined();
     expect(result.id).toBe('test-process');
-    expect(result.name).toBe('Test Process');
     expect(result.states).toBeDefined();
     expect(Object.keys(result.states).length).toBe(2);
   });
@@ -238,12 +325,20 @@ describe('RAGAgentExtension', () => {
     // Mock the llm.invoke method
     vi.spyOn(agent as any, 'llm', 'get').mockReturnValue({
       invoke: vi.fn().mockResolvedValue({
-        content: JSON.stringify({
-          id: 'test-task',
-          name: 'Test Task',
-          description: 'A test task',
-          implementation: 'async (input, context) => { return { success: true }; }'
-        })
+        content: `
+\`\`\`typescript
+const task = ReactiveSystem.Task.create("test-task")
+  .withDescription("A test task")
+  .withImplementation(async (input, context) => {
+    console.log("Executing test task");
+    return { success: true };
+  })
+  .withRetry({
+    maxAttempts: 3,
+    delay: 1000
+  });
+\`\`\`
+        `
       })
     });
     

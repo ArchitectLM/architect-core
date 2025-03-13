@@ -515,4 +515,120 @@ export interface LoadEvent {
  */
 export interface ExtensionConfig {
   enabled: boolean;
+}
+
+/**
+ * Service Integration Extension
+ * 
+ * Provides integration with external services like payment processors,
+ * shipping providers, tax calculators, etc.
+ */
+export interface ServiceIntegrationExtension {
+  /**
+   * Register a service
+   */
+  registerService: <T = any>(id: string, config: ServiceConfig) => Service<T>;
+  
+  /**
+   * Execute an operation on a service
+   */
+  executeOperation: <T = any, R = any>(serviceId: string, operationName: string, input: T) => Promise<R>;
+  
+  /**
+   * Register a webhook handler for a service
+   */
+  registerWebhookHandler: (serviceId: string, config: WebhookHandlerConfig) => WebhookHandler;
+  
+  /**
+   * Get a webhook handler for a service
+   */
+  getWebhookHandler: (serviceId: string) => WebhookHandler | undefined;
+  
+  /**
+   * Process a webhook event
+   */
+  processWebhookEvent: (serviceId: string, event: WebhookEvent) => Promise<void>;
+}
+
+/**
+ * Service configuration
+ */
+export interface ServiceConfig {
+  type: ServiceType;
+  provider: string;
+  config: Record<string, any>;
+  operations?: Record<string, ServiceOperation>;
+  retryPolicy?: RetryPolicy;
+  webhookHandler?: WebhookHandlerConfig;
+}
+
+/**
+ * Service type
+ */
+export enum ServiceType {
+  PAYMENT_PROCESSOR = 'payment-processor',
+  SHIPPING_PROVIDER = 'shipping-provider',
+  TAX_CALCULATOR = 'tax-calculator',
+  INVENTORY_MANAGER = 'inventory-manager',
+  EMAIL_PROVIDER = 'email-provider',
+  SMS_PROVIDER = 'sms-provider',
+  ANALYTICS_PROVIDER = 'analytics-provider',
+  CUSTOM = 'custom'
+}
+
+/**
+ * Service operation
+ */
+export type ServiceOperation<T = any, R = any> = (input: T) => Promise<R>;
+
+/**
+ * Service instance
+ */
+export interface Service<T = any> {
+  id: string;
+  type: ServiceType | string;
+  provider: string;
+  config: Record<string, any>;
+  operations: Record<string, ServiceOperation>;
+  retryPolicy?: RetryPolicy;
+  webhookHandler?: WebhookHandler;
+}
+
+/**
+ * Webhook handler configuration
+ */
+export interface WebhookHandlerConfig {
+  path: string;
+  secret?: string;
+  handlers: Record<string, WebhookEventHandler>;
+}
+
+/**
+ * Webhook handler
+ */
+export interface WebhookHandler {
+  path: string;
+  secret?: string;
+  handlers: Record<string, WebhookEventHandler>;
+}
+
+/**
+ * Webhook event
+ */
+export interface WebhookEvent {
+  type: string;
+  data: any;
+}
+
+/**
+ * Webhook event handler
+ */
+export type WebhookEventHandler = (event: WebhookEvent) => void | Promise<void>;
+
+/**
+ * Service integration configuration
+ */
+export interface ServiceIntegrationConfig {
+  enabled: boolean;
+  defaultRetryPolicy?: RetryPolicy;
 } 

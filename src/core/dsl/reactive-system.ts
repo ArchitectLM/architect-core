@@ -7,7 +7,7 @@
  */
 
 import { z } from 'zod';
-import { TaskImplementationFn, TestCase } from './types';
+import { TaskImplementationFn, TestCase, RetryPolicy } from './types';
 
 // -----------------------------------------------------------------------------
 // DSL Types
@@ -72,6 +72,7 @@ export interface TaskDefinition {
   output?: Record<string, OutputFieldDefinition>;
   implementation?: TaskImplementationFn;
   tests?: TestDefinition[];
+  retryPolicy?: RetryPolicy;
   metadata?: Record<string, unknown>;
 }
 
@@ -629,6 +630,25 @@ export class TaskBuilder<Input = any, Output = any, Context = any> {
     this.definition.metadata = {
       ...this.definition.metadata,
       ...metadata
+    };
+    return this;
+  }
+
+  /**
+   * Set the retry policy for the task
+   */
+  withRetryPolicy(policy: RetryPolicy): this {
+    this.definition.retryPolicy = policy;
+    return this;
+  }
+
+  /**
+   * Set a simple retry policy with max attempts and delay
+   */
+  withRetry(maxAttempts: number, delay: number | ((attempt: number) => number)): this {
+    this.definition.retryPolicy = {
+      maxAttempts,
+      delay
     };
     return this;
   }

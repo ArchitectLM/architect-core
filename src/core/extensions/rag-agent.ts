@@ -27,6 +27,12 @@ import {
   UIComponentDefinition
 } from '../types';
 
+// Import our DSL components
+import { ReactiveSystem } from '../dsl/reactive-system';
+import { createAssembler } from '../dsl/assembler';
+import { createRuntime as createDSLRuntime } from '../dsl/runtime';
+import { RetryPolicy } from '../dsl/types';
+
 // Import LangChain components
 // Note: We're using a simplified implementation for testing
 // In a real implementation, you would use the actual LangChain components
@@ -455,7 +461,7 @@ export class RAGAgentExtension implements Extension, ArchitectAgent {
     const relevantExamples = await this.retrieveRelevantExamples(spec, 'process');
     
     // Create enhanced prompt with examples
-    const enhancedPrompt = await this.createEnhancedPrompt(spec, 'process', relevantExamples);
+    const enhancedPrompt = await this.createDSLProcessPrompt(spec, relevantExamples);
     
     // Generate with enhanced prompt
     const response = await this.llm.invoke([
@@ -464,13 +470,46 @@ export class RAGAgentExtension implements Extension, ArchitectAgent {
     ]);
     
     try {
-      // Parse the response as JSON
-      const processDefinition = JSON.parse(response.content);
+      // Extract the code from the response
+      const processCode = this.extractCodeFromResponse(response.content, 'typescript');
+      
+      if (!processCode) {
+        throw new Error('Failed to extract process code from response');
+      }
+      
+      // Create a temporary function to evaluate the code and get the process
+      const createProcessFn = new Function(
+        'ReactiveSystem',
+        `
+        ${processCode}
+        return process;
+        `
+      );
+      
+      // Execute the function to get the process
+      const process = createProcessFn(ReactiveSystem);
+      
+      if (!process) {
+        throw new Error('Failed to create process from generated code');
+      }
+      
+      // Convert the DSL process to a ProcessDefinition
+      const processDefinition = this.convertDSLProcessToDefinition(process);
+      
       return processDefinition;
     } catch (error: unknown) {
-      console.error('Failed to parse process definition:', error);
+      console.error('Failed to generate process definition:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(`Failed to generate process definition: ${errorMessage}`);
+      
+      // Fallback to JSON parsing if code execution fails
+      try {
+        console.log('Attempting to parse response as JSON...');
+        const processDefinition = JSON.parse(response.content);
+        return processDefinition;
+      } catch (jsonError) {
+        console.error('Failed to parse response as JSON:', jsonError);
+        throw new Error(`Failed to generate process definition: ${errorMessage}`);
+      }
     }
   }
   
@@ -484,7 +523,7 @@ export class RAGAgentExtension implements Extension, ArchitectAgent {
     const relevantExamples = await this.retrieveRelevantExamples(spec, 'task');
     
     // Create enhanced prompt with examples
-    const enhancedPrompt = await this.createEnhancedPrompt(spec, 'task', relevantExamples);
+    const enhancedPrompt = this.createDSLTaskPrompt(spec, relevantExamples);
     
     // Generate with enhanced prompt
     const response = await this.llm.invoke([
@@ -493,13 +532,46 @@ export class RAGAgentExtension implements Extension, ArchitectAgent {
     ]);
     
     try {
-      // Parse the response as JSON
-      const taskDefinition = JSON.parse(response.content);
+      // Extract the code from the response
+      const taskCode = this.extractCodeFromResponse(response.content, 'typescript');
+      
+      if (!taskCode) {
+        throw new Error('Failed to extract task code from response');
+      }
+      
+      // Create a temporary function to evaluate the code and get the task
+      const createTaskFn = new Function(
+        'ReactiveSystem',
+        `
+        ${taskCode}
+        return task;
+        `
+      );
+      
+      // Execute the function to get the task
+      const task = createTaskFn(ReactiveSystem);
+      
+      if (!task) {
+        throw new Error('Failed to create task from generated code');
+      }
+      
+      // Convert the DSL task to a TaskDefinition
+      const taskDefinition = this.convertDSLTaskToDefinition(task);
+      
       return taskDefinition;
     } catch (error: unknown) {
-      console.error('Failed to parse task definition:', error);
+      console.error('Failed to generate task definition:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(`Failed to generate task definition: ${errorMessage}`);
+      
+      // Fallback to JSON parsing if code execution fails
+      try {
+        console.log('Attempting to parse response as JSON...');
+        const taskDefinition = JSON.parse(response.content);
+        return taskDefinition;
+      } catch (jsonError) {
+        console.error('Failed to parse response as JSON:', jsonError);
+        throw new Error(`Failed to generate task definition: ${errorMessage}`);
+      }
     }
   }
   
@@ -1170,11 +1242,11 @@ Include TypeScript interfaces and proper error handling.
     // Get the base prompt template based on the type
     switch (type) {
       case 'process':
-        basePrompt = this.createProcessPrompt(spec);
+        basePrompt = this.createDSLProcessPrompt(spec, examples);
         break;
         
       case 'task':
-        basePrompt = this.createTaskPrompt(spec);
+        basePrompt = this.createDSLTaskPrompt(spec, examples);
         break;
         
       case 'system':
@@ -1230,6 +1302,116 @@ Return ONLY the JSON object representing the ${type === 'process' ? 'ProcessDefi
   }
   
   /**
+   * Create a DSL-specific prompt for generating a process
+   */
+  private createDSLProcessPrompt(spec: ProcessSpec, examples: Document[] = []): string {
+    const template = `
+You are designing a process for a reactive system using the ArchitectLM framework with our Reactive System DSL.
+
+Process Specification:
+- Name: ${spec.name}
+- Description: ${spec.description || ''}
+${spec.domainConcepts ? `- Domain Concepts: ${spec.domainConcepts.join(', ')}` : ''}
+${spec.businessRules ? `- Business Rules: ${spec.businessRules.join(', ')}` : ''}
+${spec.states ? `- States: ${spec.states.join(', ')}` : ''}
+${spec.events ? `- Events: ${spec.events.join(', ')}` : ''}
+
+Create a complete process definition using our Reactive System DSL.
+Use the following pattern:
+
+\`\`\`typescript
+// Import the ReactiveSystem if needed
+// const { Process } = ReactiveSystem;
+
+// Define the process
+const process = ReactiveSystem.Process.create("${spec.name.toLowerCase().replace(/\s+/g, '-')}")
+  .withDescription("${spec.description || ''}")
+  .withInitialState("${spec.states && spec.states.length > 0 ? spec.states[0] : 'initial'}")
+  ${spec.states && spec.states.length > 0 ? spec.states.map(state => `\n  .addState("${state}")`).join('') : ''}
+  ${spec.events && spec.events.length > 0 && spec.states && spec.states.length > 0 ? 
+    spec.events.map((event, index) => {
+      const fromState = spec.states![Math.min(index, spec.states!.length - 1)];
+      const toState = spec.states![Math.min(index + 1, spec.states!.length - 1)];
+      return `\n  .addTransition({\n    from: "${fromState}",\n    to: "${toState}",\n    on: "${event}"\n  })`;
+    }).join('') : ''}
+  // Add more states and transitions as needed
+\`\`\`
+
+The process should include:
+1. A unique ID based on the process name
+2. All the states specified in the requirements
+3. Transitions between states with appropriate event triggers
+4. Guards and actions for transitions where appropriate
+
+Return ONLY the TypeScript code that defines the process using our DSL.
+`;
+
+    // If no examples, return the base prompt
+    if (examples.length === 0) {
+      return template;
+    }
+
+    // Add examples to the prompt
+    let examplesText = '\n\nHere are some relevant examples from the codebase:\n\n';
+    
+    examples.forEach((example, index) => {
+      examplesText += `Example ${index + 1} (from ${example.metadata.source}):\n\`\`\`typescript\n${example.pageContent}\n\`\`\`\n\n`;
+    });
+    
+    // Add guidance on how to use the examples
+    examplesText += `
+Please use these examples as a reference for the coding style, patterns, and best practices used in the codebase.
+Your generated code should follow similar patterns while implementing the specific requirements.
+
+Now, please generate the process according to the specification above.
+Return ONLY the TypeScript code that defines the process using our DSL.
+`;
+    
+    return template + examplesText;
+  }
+
+  /**
+   * Convert a DSL process to a ProcessDefinition
+   */
+  private convertDSLProcessToDefinition(process: any): ProcessDefinition {
+    // Extract the process definition from the DSL process
+    const id = process.id;
+    const description = process.description;
+    const initialState = process.initialState;
+    
+    // Convert states
+    const states: Record<string, any> = {};
+    process.states.forEach((state: any) => {
+      states[state.name] = {
+        name: state.name,
+        description: state.description || '',
+        type: state.name === initialState ? 'initial' : (state.isFinal ? 'final' : 'normal')
+      };
+    });
+    
+    // Convert transitions
+    const transitions = process.transitions.map((transition: any) => {
+      return {
+        from: Array.isArray(transition.from) ? transition.from : [transition.from],
+        to: transition.to,
+        on: transition.on,
+        guard: transition.guard,
+        action: transition.action
+      };
+    });
+    
+    // Create the ProcessDefinition
+    return {
+      id,
+      description,
+      states,
+      initialState,
+      transitions,
+      metadata: process.metadata || {}
+    };
+  }
+  
+  /**
    * Create a prompt for generating a process
    */
   private createProcessPrompt(spec: ProcessSpec): string {
@@ -1282,49 +1464,103 @@ Return ONLY the JSON object representing the ProcessDefinition.
   }
   
   /**
-   * Create a prompt for generating a task
+   * Create a DSL-specific prompt for generating a task
    */
-  private createTaskPrompt(spec: TaskSpec): string {
-    const template = this.config.promptTemplates?.task || `
-You are designing a task for a reactive system using the ArchitectLM framework.
+  private createDSLTaskPrompt(spec: TaskSpec, examples: Document[] = []): string {
+    const template = `
+You are designing a task for a reactive system using the ArchitectLM framework with our Reactive System DSL.
 
 Task Specification:
-- Name: {{name}}
-- Description: {{description}}
-{{#if input}}
-- Input: {{input}}
-{{/if}}
-{{#if output}}
-- Output: {{output}}
-{{/if}}
-{{#if dependencies}}
-- Dependencies: {{dependencies}}
-{{/if}}
+- Name: ${spec.name}
+- Description: ${spec.description || ''}
+${spec.input ? `- Input: ${JSON.stringify(spec.input)}` : ''}
+${spec.output ? `- Output: ${JSON.stringify(spec.output)}` : ''}
+${spec.dependencies ? `- Dependencies: ${spec.dependencies.join(', ')}` : ''}
 
-Create a complete TaskDefinition object that implements this specification.
-The TaskDefinition should include:
-1. A unique ID
-2. An implementation function that performs the task
+Create a complete task definition using our Reactive System DSL.
+Use the following pattern:
+
+\`\`\`typescript
+// Import the ReactiveSystem if needed
+// const { Task } = ReactiveSystem;
+
+// Define the task
+const task = ReactiveSystem.Task.create("${spec.name.toLowerCase().replace(/\s+/g, '-')}")
+  .withDescription("${spec.description || ''}")
+  ${spec.input ? `.withInputSchema(z.object({
+    ${Object.entries(spec.input).map(([key, type]) => `${key}: z.${type.toLowerCase()}`).join(',\n    ')}
+  }))` : ''}
+  ${spec.output ? `.withOutputSchema(z.object({
+    ${Object.entries(spec.output).map(([key, type]) => `${key}: z.${type.toLowerCase()}`).join(',\n    ')}
+  }))` : ''}
+  .withImplementation(async (input, context) => {
+    // Implement the task logic here
+    console.log("Executing task: ${spec.name}");
+    
+    // Example implementation
+    ${spec.output ? `return {
+      ${Object.keys(spec.output).map(key => `${key}: ${this.getDefaultValueForType(spec.output![key])}`).join(',\n      ')}
+    };` : 'return { success: true };'}
+  })
+  .withRetry({
+    maxAttempts: 3,
+    delay: 1000
+  });
+\`\`\`
+
+The task should include:
+1. A unique ID based on the task name
+2. A clear description of what the task does
 3. Input and output schemas using Zod for validation
-4. Error handling
-5. Appropriate timeout and retry configuration
+4. A proper implementation function that performs the task
+5. Appropriate error handling
+6. Retry configuration for transient failures
 
-Return ONLY the JSON object representing the TaskDefinition.
+Return ONLY the TypeScript code that defines the task using our DSL.
 `;
 
-    // Simple template replacement
-    return template
-      .replace('{{name}}', spec.name)
-      .replace('{{description}}', spec.description || '')
-      .replace('{{#if input}}', spec.input ? '' : '<!--')
-      .replace('{{/if}}', spec.input ? '' : '-->')
-      .replace('{{input}}', spec.input ? JSON.stringify(spec.input) : '')
-      .replace('{{#if output}}', spec.output ? '' : '<!--')
-      .replace('{{/if}}', spec.output ? '' : '-->')
-      .replace('{{output}}', spec.output ? JSON.stringify(spec.output) : '')
-      .replace('{{#if dependencies}}', spec.dependencies ? '' : '<!--')
-      .replace('{{/if}}', spec.dependencies ? '' : '-->')
-      .replace('{{dependencies}}', spec.dependencies?.join(', ') || '');
+    // If no examples, return the base prompt
+    if (examples.length === 0) {
+      return template;
+    }
+
+    // Add examples to the prompt
+    let examplesText = '\n\nHere are some relevant examples from the codebase:\n\n';
+    
+    examples.forEach((example, index) => {
+      examplesText += `Example ${index + 1} (from ${example.metadata.source}):\n\`\`\`typescript\n${example.pageContent}\n\`\`\`\n\n`;
+    });
+    
+    // Add guidance on how to use the examples
+    examplesText += `
+Please use these examples as a reference for the coding style, patterns, and best practices used in the codebase.
+Your generated code should follow similar patterns while implementing the specific requirements.
+
+Now, please generate the task according to the specification above.
+Return ONLY the TypeScript code that defines the task using our DSL.
+`;
+    
+    return template + examplesText;
+  }
+  
+  /**
+   * Get a default value for a given type
+   */
+  private getDefaultValueForType(type: string): string {
+    switch (type.toLowerCase()) {
+      case 'string':
+        return '"example"';
+      case 'number':
+        return '42';
+      case 'boolean':
+        return 'true';
+      case 'array':
+        return '[]';
+      case 'object':
+        return '{}';
+      default:
+        return 'null';
+    }
   }
   
   /**
@@ -1731,6 +1967,36 @@ Return ONLY the TypeScript/TSX code for the component file.
       // Return the original response as a fallback
       return response.trim();
     }
+  }
+
+  /**
+   * Convert a DSL task to a TaskDefinition
+   */
+  private convertDSLTaskToDefinition(task: any): TaskDefinition {
+    // Extract the task definition from the DSL task
+    const id = task.id;
+    const name = task.name || id;
+    const description = task.description || '';
+    const implementation = task.implementation;
+    
+    // Extract retry policy if available
+    const retry = task.retryPolicy ? {
+      maxAttempts: task.retryPolicy.maxAttempts,
+      backoff: typeof task.retryPolicy.delay === 'function' ? 'exponential' as const : 'fixed' as const,
+      delayMs: typeof task.retryPolicy.delay === 'number' ? task.retryPolicy.delay : 1000
+    } : undefined;
+    
+    // Create the TaskDefinition
+    return {
+      id,
+      name,
+      description,
+      implementation,
+      inputSchema: task.inputSchema,
+      outputSchema: task.outputSchema,
+      retry,
+      metadata: task.metadata || {}
+    };
   }
 }
 

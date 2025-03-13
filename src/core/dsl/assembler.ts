@@ -14,7 +14,7 @@ import {
   TaskDefinition,
   TestDefinition,
 } from './reactive-system';
-import { TaskImplementationFn, TestCase } from './types';
+import { TaskImplementationFn, TestCase, RetryPolicy } from './types';
 import { SystemConfig } from '../types';
 
 /**
@@ -49,6 +49,7 @@ export interface AssembledTask {
   name?: string;
   description?: string;
   implementation: TaskImplementationFn;
+  retryPolicy?: RetryPolicy;
   tests?: Array<{
     name: string;
     type: 'unit' | 'integration' | 'e2e';
@@ -298,6 +299,7 @@ export class ReactiveSystemAssembler {
       name: definition.name,
       description: definition.description,
       implementation,
+      retryPolicy: definition.retryPolicy,
       tests,
       metadata: definition.metadata
     };

@@ -5,4 +5,5 @@
 export { Process, ProcessBuilder } from './process-builder';
 export { Task, TaskBuilder } from './task-builder';
 export { System, SystemBuilder } from './system-builder';
-export { Test, TestBuilder } from './test-builder'; 
+export { Test, TestBuilder } from './test-builder';
+export { Service, ServiceBuilder } from './service-builder'; 

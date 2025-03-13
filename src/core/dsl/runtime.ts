@@ -265,7 +265,8 @@ export class ReactiveSystemRuntime {
   async executeTask<Input = any, Output = any>(
     taskId: string, 
     input: Input, 
-    context?: Partial<TaskContext>
+    context?: Partial<TaskContext>,
+    retryAttempt: number = 0
   ): Promise<Output> {
     const task = this.system.tasks[taskId];
     
@@ -288,13 +289,23 @@ export class ReactiveSystemRuntime {
       executeTask: (taskId, input) => this.executeTask(taskId, input, context)
     };
     
-    // Emit task started event
-    this.emitEvent('task.started', {
-      taskId,
-      input,
-      processId: context?.processId,
-      instanceId: context?.instanceId
-    });
+    // Emit task started event (only on first attempt)
+    if (retryAttempt === 0) {
+      this.emitEvent('task.started', {
+        taskId,
+        input,
+        processId: context?.processId,
+        instanceId: context?.instanceId
+      });
+    } else {
+      this.emitEvent('task.retry', {
+        taskId,
+        input,
+        attempt: retryAttempt,
+        processId: context?.processId,
+        instanceId: context?.instanceId
+      });
+    }
     
     try {
       // Execute the task
@@ -305,15 +316,47 @@ export class ReactiveSystemRuntime {
         taskId,
         result,
         processId: context?.processId,
-        instanceId: context?.instanceId
+        instanceId: context?.instanceId,
+        attempts: retryAttempt + 1
       });
       
       return result as Output;
     } catch (error) {
+      // Check if we should retry
+      if (task.retryPolicy && retryAttempt < task.retryPolicy.maxAttempts) {
+        // Check retry condition if provided
+        const shouldRetry = !task.retryPolicy.retryCondition || 
+                            task.retryPolicy.retryCondition(error as Error);
+        
+        if (shouldRetry) {
+          // Emit retry attempt event
+          this.emitEvent('task.retry.attempt', {
+            taskId,
+            error,
+            attempt: retryAttempt + 1,
+            maxAttempts: task.retryPolicy.maxAttempts,
+            processId: context?.processId,
+            instanceId: context?.instanceId
+          });
+          
+          // Calculate delay
+          const delay = typeof task.retryPolicy.delay === 'function' 
+            ? task.retryPolicy.delay(retryAttempt + 1) 
+            : task.retryPolicy.delay;
+          
+          // Wait for the delay
+          await new Promise(resolve => setTimeout(resolve, delay));
+          
+          // Retry the task with the same context
+          return this.executeTask(taskId, input, context, retryAttempt + 1);
+        }
+      }
+      
       // Emit task error event
       this.emitEvent('task.error', {
         taskId,
         error,
+        attempts: retryAttempt + 1,
         processId: context?.processId,
         instanceId: context?.instanceId
       });
