@@ -32,6 +32,7 @@
     "@typescript-eslint/eslint-plugin": "^6.19.0",
     "@typescript-eslint/parser": "^6.19.0",
     "eslint": "^8.56.0",
+    "tsx": "^4.19.3",
     "typescript": "^5.3.3",
     "uuid": "^11.1.0",
     "vitest": "^1.2.0"
@@ -42,7 +43,6 @@
     "axios": "^1.8.3",
     "chromadb": "^2.0.1",
     "langchain": "^0.3.19",
-    "tsx": "^4.19.3",
     "uuid": "^11.1.0",
     "zod": "^3.24.2"
   }
