@@ -11,6 +11,7 @@ ArchitectLM is a TypeScript framework for building reactive systems with state m
 - **Validation**: Schema validation using Zod
 - **Fluent API**: Builder pattern for defining components
 - **Testing Utilities**: Comprehensive testing tools for verifying system behavior
+- **AI-Assisted Development**: Agent mode for generating components using LLMs
 
 ## Installation
 
@@ -160,6 +161,50 @@ const test = Test.create('test-name')
   .expectFinalState('final-state')
   .expectEvents(['EVENT_1', 'EVENT_2'])
   .build();
+```
+
+### Agent API
+
+```typescript
+// Create an agent
+import { createAgent } from 'architectlm/extensions';
+
+const agent = createAgent({
+  provider: 'openai',
+  model: 'gpt-4',
+  apiKey: process.env.OPENAI_API_KEY,
+  temperature: 0.7
+});
+
+// Generate a process
+const processSpec = {
+  name: 'OrderProcess',
+  description: 'Manages the lifecycle of customer orders',
+  states: ['created', 'paid', 'shipped', 'delivered', 'cancelled'],
+  events: ['CREATE_ORDER', 'PAYMENT_RECEIVED', 'SHIP_ORDER', 'DELIVER_ORDER', 'CANCEL_ORDER']
+};
+
+const processDefinition = await agent.generateProcess(processSpec);
+
+// Generate a task
+const taskSpec = {
+  name: 'ProcessPayment',
+  description: 'Processes a payment for an order',
+  input: {
+    orderId: 'string',
+    amount: 'number',
+    paymentMethod: 'string'
+  },
+  output: {
+    success: 'boolean',
+    transactionId: 'string'
+  }
+};
+
+const taskDefinition = await agent.generateTask(taskSpec);
+
+// Generate documentation
+const docs = await agent.generateDocs(processDefinition);
 ```
 
 ## Examples

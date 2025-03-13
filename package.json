@@ -11,7 +11,8 @@
     "build": "tsc",
     "lint": "eslint src --ext .ts",
     "dev": "tsc --watch",
-    "example": "tsx examples/order-processing.ts"
+    "example": "tsx examples/order-processing.ts",
+    "example:agent": "tsx examples/agent-example.ts"
   },
   "keywords": [
     "llm",

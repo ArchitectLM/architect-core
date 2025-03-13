@@ -12,6 +12,9 @@ export {
   LoadManager, ResourceConfig, ResourceStatus, CircuitStatus, LoadEventType, LoadEvent, ResourceType
 } from './types';
 
+// Export agent extension
+export { AgentExtension, AgentConfig, createAgent } from './agent';
+
 // Export mock implementations
 export * from './mocks';
 
@@ -36,12 +39,20 @@ export const createLoadManager = () => {
   return new MockLoadManager();
 };
 
+// Configuration type for createExtensions
+interface ExtensionsConfig {
+  agent?: Record<string, unknown>;
+}
+
 // Export a function to create all extensions
-export const createExtensions = () => {
+export const createExtensions = (config: ExtensionsConfig = {}) => {
+  const { createAgent } = require('./agent');
+  
   return {
     sagaCoordinator: createSagaCoordinator(),
     scheduler: createScheduler(),
     supervisor: createSupervisor(),
-    loadManager: createLoadManager()
+    loadManager: createLoadManager(),
+    agent: config.agent ? createAgent(config.agent) : undefined
   };
 }; 
