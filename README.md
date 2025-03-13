@@ -1,136 +1,170 @@
 # ArchitectLM
 
-An architecture for building LLM-powered applications with a focus on event-driven workflows, processes, and tasks.
+ArchitectLM is a TypeScript framework for building reactive systems with state machines, tasks, and event-driven architecture.
 
-## Overview
+## Features
 
-ArchitectLM provides a flexible, event-driven architecture for building applications that leverage Large Language Models (LLMs). It is designed to be simple, extensible, and focused on developer experience.
-
-The core components of ArchitectLM include:
-
-- **Event Bus**: A reactive event bus for asynchronous communication between components
-- **Process Engine**: Define processes with states and transitions
-- **Task Executor**: Define tasks with implementations that can be executed
-- **System**: Combine processes and tasks into a complete system
-- **Runtime**: Integrate all components and provide execution capabilities
+- **State Machine Processes**: Define processes with states, transitions, and guards
+- **Asynchronous Tasks**: Define tasks with implementation, validation, and error handling
+- **Event-Driven Architecture**: Built-in event bus for communication between components
+- **Type Safety**: Strong TypeScript typing throughout the framework
+- **Validation**: Schema validation using Zod
+- **Fluent API**: Builder pattern for defining components
+- **Testing Utilities**: Comprehensive testing tools for verifying system behavior
 
 ## Installation
 
 ```bash
-# Using pnpm (recommended)
-pnpm install
-
-# Using npm
-npm install
-
-# Using yarn
-yarn install
+npm install architectlm
+# or
+yarn add architectlm
+# or
+pnpm add architectlm
 ```
 
-## Usage
-
-### Defining a Process
+## Quick Start
 
 ```typescript
-import { defineProcess } from 'architectlm';
+import { Process, Task, System, createRuntime } from 'architectlm';
+import { z } from 'zod';
 
-const orderProcess = defineProcess({
-  id: 'order-process',
-  states: ['created', 'processing', 'completed', 'cancelled'],
-  initialState: 'created',
-  transitions: [
-    { from: 'created', to: 'processing', on: 'START_PROCESSING' },
-    { from: 'processing', to: 'completed', on: 'COMPLETE' },
-    { from: 'processing', to: 'cancelled', on: 'CANCEL' },
-    { from: 'created', to: 'cancelled', on: 'CANCEL' }
-  ],
-  description: 'Order processing workflow'
-});
-```
+// Define a process
+const orderProcess = Process.create('order-process')
+  .withDescription('Handles order processing')
+  .withInitialState('created')
+  .addState('created')
+  .addState('processing')
+  .addState('completed')
+  .addState('cancelled')
+  .addTransition({
+    from: 'created',
+    to: 'processing',
+    on: 'START_PROCESSING'
+  })
+  .addTransition({
+    from: 'processing',
+    to: 'completed',
+    on: 'COMPLETE'
+  })
+  .addSimpleTransition('created', 'cancelled', 'CANCEL')
+  .build();
 
-### Defining a Task
-
-```typescript
-import { defineTask } from 'architectlm';
-
-const processOrderTask = defineTask({
-  id: 'process-order',
-  implementation: async (input, context) => {
+// Define a task
+const processOrderTask = Task.create('process-order')
+  .withDescription('Processes an order')
+  .withImplementation(async (input, context) => {
     // Process the order
-    const result = { processed: true, orderId: input.orderId };
-    
-    // Emit an event to trigger a process transition
     context.emitEvent('COMPLETE', { orderId: input.orderId });
-    
-    return result;
-  }
-});
-```
+    return { processed: true };
+  })
+  .build();
 
-### Creating a System
+// Define a system
+const ecommerceSystem = System.create('ecommerce')
+  .withDescription('E-commerce system')
+  .addProcess(orderProcess)
+  .addTask(processOrderTask)
+  .build();
 
-```typescript
-import { defineSystem } from 'architectlm';
-
-const system = defineSystem({
-  id: 'order-system',
-  description: 'Order processing system',
-  processes: {
-    'order-process': orderProcess
-  },
-  tasks: {
-    'process-order': processOrderTask
-  }
-});
-```
-
-### Using the Runtime
-
-```typescript
-import { createRuntime } from 'architectlm';
-
-// Create a runtime with processes and tasks
-const runtime = createRuntime(
-  { 'order-process': orderProcess },
-  { 'process-order': processOrderTask }
-);
-
-// Create a process instance
+// Create a runtime and use it
+const runtime = createRuntime(ecommerceSystem);
 const instance = runtime.createProcess('order-process', { orderId: '12345' });
-
-// Transition the process
-runtime.transitionProcess(instance.id, 'START_PROCESSING');
-
-// Execute a task
-const result = await runtime.executeTask('process-order', { orderId: '12345' });
-
-// Subscribe to events
-runtime.subscribeToEvent('COMPLETE', (event) => {
-  console.log('Order completed:', event.payload.orderId);
-});
+await runtime.executeTask('process-order', { orderId: '12345' });
 ```
 
-## Development
+## API Reference
 
-### Running Tests
+### Process API
 
-```bash
-# Run tests
-pnpm test
-
-# Run tests in watch mode
-pnpm test:watch
-
-# Run tests with UI
-pnpm test:ui
+```typescript
+// Create a process
+const process = Process.create('process-id')
+  .withDescription('Process description')
+  .withInitialState('initial-state')
+  .addState('state-name', {
+    description: 'State description',
+    onEnter: async (context) => { /* ... */ },
+    onExit: async (context) => { /* ... */ }
+  })
+  .addTransition({
+    from: 'source-state',
+    to: 'target-state',
+    on: 'EVENT_TYPE',
+    guard: (context, event) => boolean,
+    action: async (context, event) => { /* ... */ }
+  })
+  .withContextSchema(z.object({ /* ... */ }))
+  .build();
 ```
 
-### Building
+### Task API
 
-```bash
-# Build the project
-pnpm build
+```typescript
+// Create a task
+const task = Task.create('task-id')
+  .withDescription('Task description')
+  .withImplementation(async (input, context) => {
+    // Implementation
+    return { /* result */ };
+  })
+  .withInputSchema(z.object({ /* ... */ }))
+  .withOutputSchema(z.object({ /* ... */ }))
+  .withErrorHandler(async (error, input, context) => {
+    // Handle error
+  })
+  .withSuccessHandler(async (result, input, context) => {
+    // Handle success
+  })
+  .withTimeout(5000) // 5 seconds
+  .withRetry({
+    maxAttempts: 3,
+    backoff: 'exponential',
+    delayMs: 1000
+  })
+  .build();
 ```
+
+### System API
+
+```typescript
+// Create a system
+const system = System.create('system-id')
+  .withName('System Name')
+  .withDescription('System description')
+  .addProcess(process)
+  .addTask(task)
+  .withObservability({
+    metrics: true,
+    tracing: {
+      provider: 'opentelemetry',
+      exporters: ['jaeger']
+    },
+    logging: {
+      level: 'info',
+      format: 'json'
+    }
+  })
+  .build();
+```
+
+### Testing API
+
+```typescript
+// Create a test
+const test = Test.create('test-name')
+  .withDescription('Test description')
+  .withSystem(system)
+  .createProcess('process-id', { /* input */ })
+  .executeTask('task-id', { /* input */ })
+  .verifyState('expected-state')
+  .expectFinalState('final-state')
+  .expectEvents(['EVENT_1', 'EVENT_2'])
+  .build();
+```
+
+## Examples
+
+See the [examples](./examples) directory for more examples of how to use ArchitectLM.
 
 ## License
 
