@@ -490,6 +490,14 @@ export interface ArchitectAgent {
   
   // Documentation
   generateDocs: (component: any) => Promise<string>;
+  
+  // Implementation generation
+  generateDatabaseSchema?: (schemaSpec: DatabaseSchemaSpec) => Promise<DatabaseSchemaDefinition>;
+  generateDatabaseModelFile?: (modelDefinition: DatabaseSchemaDefinition, outputPath: string) => Promise<string>;
+  generateAPIEndpoint?: (endpointSpec: APIEndpointSpec) => Promise<APIEndpointDefinition>;
+  generateAPIEndpointFile?: (endpointDefinition: APIEndpointDefinition, outputPath: string) => Promise<string>;
+  generateUIComponent?: (componentSpec: UIComponentSpec) => Promise<UIComponentDefinition>;
+  generateUIComponentFile?: (componentDefinition: UIComponentDefinition, outputPath: string) => Promise<string>;
 }
 
 /**
@@ -562,4 +570,113 @@ export interface StaticAnalysisResult {
 export interface SystemFixes {
   components: Record<string, any>;
   explanation: string;
+}
+
+// -----------------------------------------------------------------------------
+// Implementation Generation Types
+// -----------------------------------------------------------------------------
+
+/**
+ * Database field specification
+ */
+export interface DatabaseFieldSpec {
+  name: string;
+  type: string;
+  required?: boolean;
+  default?: string;
+  unique?: boolean;
+  index?: boolean;
+  ref?: string;
+  validate?: {
+    validator: string;
+    message: string;
+  };
+}
+
+/**
+ * Database schema specification
+ */
+export interface DatabaseSchemaSpec {
+  name: string;
+  description?: string;
+  fields: DatabaseFieldSpec[];
+  timestamps?: boolean;
+  indexes?: Array<{
+    fields: string[];
+    unique?: boolean;
+  }>;
+}
+
+/**
+ * Database schema definition
+ */
+export interface DatabaseSchemaDefinition {
+  name: string;
+  description?: string;
+  fields: DatabaseFieldSpec[];
+  code: string;
+}
+
+/**
+ * API endpoint operation
+ */
+export interface APIEndpointOperation {
+  name: string;
+  method: 'get' | 'post' | 'put' | 'delete' | 'patch';
+  path: string;
+  handler: string;
+}
+
+/**
+ * API endpoint specification
+ */
+export interface APIEndpointSpec {
+  name: string;
+  description?: string;
+  model: string;
+  operations: string[];
+  authentication?: boolean;
+  validation?: boolean;
+}
+
+/**
+ * API endpoint definition
+ */
+export interface APIEndpointDefinition {
+  name: string;
+  description?: string;
+  model: string;
+  operations: APIEndpointOperation[];
+  code: string;
+}
+
+/**
+ * UI component prop specification
+ */
+export interface UIComponentPropSpec {
+  name: string;
+  type: string;
+  required?: boolean;
+  default?: string;
+}
+
+/**
+ * UI component specification
+ */
+export interface UIComponentSpec {
+  name: string;
+  description?: string;
+  props: UIComponentPropSpec[];
+  framework: 'react' | 'vue' | 'angular' | 'svelte';
+  styling?: 'css' | 'scss' | 'tailwind' | 'styled-components' | 'emotion';
+}
+
+/**
+ * UI component definition
+ */
+export interface UIComponentDefinition {
+  name: string;
+  description?: string;
+  props: UIComponentPropSpec[];
+  code: string;
 } 
