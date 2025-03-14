@@ -25,7 +25,10 @@ export function defineSystem(config: SystemConfig): SystemConfig {
     name: config.name,
     description: config.description,
     observability: config.observability,
-    llmMetadata: config.llmMetadata
+    llmMetadata: config.llmMetadata,
+    tests: config.tests || [],
+    mocks: config.mocks || {},
+    runtime: config.runtime || {}
   };
   
   return system;

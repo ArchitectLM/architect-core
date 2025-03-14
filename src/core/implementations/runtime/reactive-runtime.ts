@@ -1469,11 +1469,10 @@ export class ReactiveRuntime implements Runtime {
   /**
    * Get a service by name
    */
-  getService<T = unknown>(name: string): T {
+  getService<T = unknown>(name: string): T | null {
     if (!this.options.services || !this.options.services[name]) {
-      // For backward compatibility with tests, return a default value
-      // This is not type-safe but matches the interface requirement
-      return {} as T;
+      // Return null for non-existent services
+      return null;
     }
     
     return this.options.services[name] as T;

@@ -46,4 +46,10 @@ export interface SystemConfig {
     stakeholders?: string[];                      // System stakeholders
     requirements?: string[];                      // System requirements
   };
+  
+  // Mock services for testing
+  mocks?: Record<string, any>;                    // Mock services
+  
+  // Runtime configuration
+  runtime?: Record<string, any>;                  // Runtime configuration
 } 

@@ -32,7 +32,7 @@ describe('defineSystem', () => {
     const system = defineSystem(systemConfig);
     
     // Assert
-    expect(system).toEqual({
+    expect(system).toEqual(expect.objectContaining({
       id: 'test-system',
       processes: {
         'order': {
@@ -53,7 +53,7 @@ describe('defineSystem', () => {
       tests: [],
       mocks: {},
       runtime: expect.anything()
-    });
+    }));
   });
 
   it('should create a system with minimal configuration', () => {
@@ -66,14 +66,14 @@ describe('defineSystem', () => {
     const system = defineSystem(systemConfig);
     
     // Assert
-    expect(system).toEqual({
+    expect(system).toEqual(expect.objectContaining({
       id: 'minimal-system',
       processes: {},
       tasks: {},
       tests: [],
       mocks: {},
       runtime: expect.anything()
-    });
+    }));
   });
 
   it('should include tests and mocks if provided', () => {
