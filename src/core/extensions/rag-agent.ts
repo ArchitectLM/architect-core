@@ -101,80 +101,140 @@ class ChatOpenAI {
   private maxTokens: number;
   private debug: boolean;
   private baseUrl: string;
+  private provider: string;
 
-  constructor(options: { openAIApiKey?: string; modelName?: string; temperature?: number; maxTokens?: number; debug?: boolean; baseUrl?: string }) {
+  constructor(options: { 
+    openAIApiKey?: string; 
+    modelName?: string; 
+    temperature?: number; 
+    maxTokens?: number; 
+    debug?: boolean; 
+    baseUrl?: string;
+    provider?: string;
+  }) {
     this.apiKey = options.openAIApiKey || '';
     this.modelName = options.modelName || 'meta-llama/llama-3.2-1b-instruct:free';
-    this.temperature = options.temperature || 0.7;
+    this.temperature = options.temperature !== undefined ? options.temperature : 0.7;
     this.maxTokens = options.maxTokens || 4000;
     this.debug = options.debug || false;
-    this.baseUrl = options.baseUrl || 'https://openrouter.ai/api/v1';
+    this.baseUrl = options.baseUrl || 'https://api.openai.com/v1/chat/completions';
+    this.provider = options.provider || 'openai';
   }
 
   async invoke(messages: any[]): Promise<{ content: string }> {
-    // Make a real API call to OpenRouter
     try {
       if (this.debug) {
-        console.log(`Making API call to OpenRouter with model: ${this.modelName}`);
+        console.log(`Making API call to ${this.provider === 'openrouter' ? 'OpenRouter' : 'OpenAI'} with model: ${this.modelName}`);
         console.log(`API Key (first 5 chars): ${this.apiKey.substring(0, 5)}...`);
         console.log(`Number of messages: ${messages.length}`);
-      }
-
-      const url = `${this.baseUrl}/chat/completions`;
-      const headers = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey}`,
-        'HTTP-Referer': 'https://architectlm.com', // Replace with your actual domain
-        'X-Title': 'ArchitectLM Implementation Generator'
-      };
-      const data = {
-        model: this.modelName,
-        messages: messages.map(msg => ({
-          role: msg.role,
-          content: msg.content
-        })),
-        temperature: this.temperature,
-        max_tokens: this.maxTokens
-      };
-      
-      if (this.debug) {
-        console.log('Request payload:', JSON.stringify({
+        console.log(`Request payload: ${JSON.stringify({
           model: this.modelName,
           temperature: this.temperature,
           max_tokens: this.maxTokens,
-          messages: messages.map(msg => ({
-            role: msg.role,
-            content: msg.content.substring(0, 100) + (msg.content.length > 100 ? '...' : '')
-          }))
-        }, null, 2));
+          messages
+        }, null, 2)}`);
+      }
+      
+      // Set the correct endpoint for OpenRouter
+      let url = this.baseUrl;
+      if (this.provider === 'openrouter') {
+        // Make sure the URL ends with /chat/completions for OpenRouter
+        if (!url.endsWith('/chat/completions')) {
+          url = `${url}/chat/completions`;
+        }
+      } else {
+        url = 'https://api.openai.com/v1/chat/completions';
+      }
+      
+      if (this.debug) {
+        console.log(`Using API URL: ${url}`);
+      }
+      
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.apiKey}`
+      };
+      
+      // Add OpenRouter specific headers
+      if (this.provider === 'openrouter') {
+        headers['HTTP-Referer'] = 'https://architectlm.com';
+        headers['X-Title'] = 'ArchitectLM Implementation Generator';
       }
       
       const response = await fetch(url, {
         method: 'POST',
         headers,
-        body: JSON.stringify(data)
+        body: JSON.stringify({
+          model: this.modelName,
+          temperature: this.temperature,
+          max_tokens: this.maxTokens,
+          messages
+        })
       });
       
       if (!response.ok) {
-        const errorData = await response.json();
-        console.error('OpenRouter API error:', {
+        let errorData;
+        try {
+          errorData = await response.json();
+        } catch (e) {
+          // If we can't parse as JSON, get the text
+          errorData = await response.text();
+          if (this.debug) {
+            console.error('Response is not JSON:', errorData.substring(0, 500));
+          }
+        }
+        
+        console.error(`${this.provider === 'openrouter' ? 'OpenRouter' : 'OpenAI'} API error:`, {
           status: response.status,
           statusText: response.statusText,
           error: errorData
         });
-        throw new Error(`OpenRouter API error: ${response.status} ${JSON.stringify(errorData)}`);
+        throw new Error(`${this.provider === 'openrouter' ? 'OpenRouter' : 'OpenAI'} API error: ${response.status} ${JSON.stringify(errorData)}`);
       }
       
-      const result = await response.json();
+      // Get the response text first to debug
+      const responseText = await response.text();
       
       if (this.debug) {
-        console.log('Response received from OpenRouter API');
-        console.log('First 100 chars of response:', result.choices[0].message.content.substring(0, 100) + '...');
+        console.log(`Response received from ${this.provider === 'openrouter' ? 'OpenRouter' : 'OpenAI'} API`);
+        console.log('Response text (first 500 chars):', responseText.substring(0, 500));
       }
       
-      return { content: result.choices[0].message.content };
+      // Parse the response as JSON
+      let result;
+      try {
+        result = JSON.parse(responseText);
+      } catch (e) {
+        console.error('Error parsing response as JSON:', e);
+        throw new Error(`Failed to parse response as JSON: ${responseText.substring(0, 500)}`);
+      }
+      
+      if (this.debug) {
+        // Debug the response structure
+        console.log('Response structure:', JSON.stringify(result, null, 2));
+      }
+      
+      // Handle different response structures based on provider
+      if (this.provider === 'openrouter') {
+        // OpenRouter response structure
+        if (result.choices && result.choices.length > 0 && result.choices[0].message) {
+          return { content: result.choices[0].message.content };
+        } else if (result.output) {
+          // Alternative OpenRouter response format
+          return { content: result.output };
+        } else if (result.content) {
+          // Another possible format
+          return { content: result.content };
+        } else {
+          console.error('Unexpected OpenRouter response format:', result);
+          return { content: JSON.stringify(result) };
+        }
+      } else {
+        // OpenAI response structure
+        return { content: result.choices[0].message.content };
+      }
     } catch (error) {
-      console.error('Error calling OpenRouter API:', error);
+      console.error(`Error calling ${this.provider === 'openrouter' ? 'OpenRouter' : 'OpenAI'} API:`, error);
       throw error;
     }
   }
@@ -360,6 +420,18 @@ When generating code, follow these principles:
 Your code should be ready to run with minimal modifications and should integrate well with existing codebases.`
 };
 
+// Add this import at the top of the file, after the existing imports
+import { 
+  extractCodeFromResponse, 
+  processCodeWithTsMorph, 
+  convertCodeToProcessDefinition, 
+  convertCodeToTaskDefinition, 
+  convertCodeToSystemConfig, 
+  createFallbackProcessDefinition, 
+  createFallbackTaskDefinition, 
+  createFallbackSystemConfig 
+} from './rag-agent-ts-morph';
+
 /**
  * RAG-Enhanced Agent Extension implementation
  */
@@ -372,9 +444,22 @@ export class RAGAgentExtension implements Extension, ArchitectAgent {
   private llm: ChatOpenAI;
   
   constructor(config: Partial<RAGAgentConfig> = {}) {
-    this.config = { ...DEFAULT_CONFIG, ...config };
+    // Set default configuration
+    this.config = {
+      provider: config.provider || 'openai',
+      model: config.model || 'gpt-3.5-turbo',
+      apiKey: config.apiKey || process.env.OPENAI_API_KEY || '',
+      baseUrl: config.baseUrl,
+      temperature: config.temperature !== undefined ? config.temperature : 0.7,
+      maxTokens: config.maxTokens || 4000,
+      systemPrompt: config.systemPrompt || DEFAULT_CONFIG.systemPrompt,
+      codebasePath: config.codebasePath || DEFAULT_CONFIG.codebasePath,
+      useInMemoryVectorStore: config.useInMemoryVectorStore || DEFAULT_CONFIG.useInMemoryVectorStore,
+      debug: config.debug || DEFAULT_CONFIG.debug,
+      promptTemplates: config.promptTemplates || DEFAULT_CONFIG.promptTemplates || {}
+    };
     
-    // Initialize OpenAI embeddings
+    // Initialize embeddings
     this.embeddings = new OpenAIEmbeddings({
       openAIApiKey: this.config.apiKey,
       modelName: 'text-embedding-ada-002'
@@ -387,7 +472,8 @@ export class RAGAgentExtension implements Extension, ArchitectAgent {
       temperature: this.config.temperature,
       maxTokens: this.config.maxTokens,
       debug: this.config.debug,
-      baseUrl: this.config.baseUrl
+      baseUrl: this.config.baseUrl,
+      provider: this.config.provider
     });
   }
   
@@ -480,24 +566,19 @@ export class RAGAgentExtension implements Extension, ArchitectAgent {
         throw new Error('Failed to extract process code from response');
       }
       
-      // Create a temporary function to evaluate the code and get the process
-      const createProcessFn = new Function(
-        'ReactiveSystem',
-        `
-        ${processCode}
-        return process;
-        `
-      );
-      
-      // Execute the function to get the process
-      const process = createProcessFn(ReactiveSystem);
-      
-      if (!process) {
-        throw new Error('Failed to create process from generated code');
+      if (this.config.debug) {
+        console.log('Extracted process code:', processCode);
       }
       
-      // Convert the DSL process to a ProcessDefinition
-      const processDefinition = this.convertDSLProcessToDefinition(process);
+      // Process the code with ts-morph
+      const processedCode = processCodeWithTsMorph(processCode, this.config.debug);
+      
+      if (this.config.debug) {
+        console.log('Processed code with ts-morph:', processedCode);
+      }
+      
+      // Convert the code to a process definition using ts-morph
+      const processDefinition = convertCodeToProcessDefinition(processedCode, spec.name, this.config.debug);
       
       return processDefinition;
     } catch (error: unknown) {
@@ -511,7 +592,9 @@ export class RAGAgentExtension implements Extension, ArchitectAgent {
         return processDefinition;
       } catch (jsonError) {
         console.error('Failed to parse response as JSON:', jsonError);
-        throw new Error(`Failed to generate process definition: ${errorMessage}`);
+        
+        // Last resort: create a minimal process definition
+        return createFallbackProcessDefinition(spec.name, errorMessage);
       }
     }
   }
@@ -542,24 +625,19 @@ export class RAGAgentExtension implements Extension, ArchitectAgent {
         throw new Error('Failed to extract task code from response');
       }
       
-      // Create a temporary function to evaluate the code and get the task
-      const createTaskFn = new Function(
-        'ReactiveSystem',
-        `
-        ${taskCode}
-        return task;
-        `
-      );
-      
-      // Execute the function to get the task
-      const task = createTaskFn(ReactiveSystem);
-      
-      if (!task) {
-        throw new Error('Failed to create task from generated code');
+      if (this.config.debug) {
+        console.log('Extracted task code:', taskCode);
       }
       
-      // Convert the DSL task to a TaskDefinition
-      const taskDefinition = this.convertDSLTaskToDefinition(task);
+      // Process the code with ts-morph
+      const processedCode = processCodeWithTsMorph(taskCode, this.config.debug);
+      
+      if (this.config.debug) {
+        console.log('Processed code with ts-morph:', processedCode);
+      }
+      
+      // Convert the code to a task definition using ts-morph
+      const taskDefinition = convertCodeToTaskDefinition(processedCode, spec.name, this.config.debug);
       
       return taskDefinition;
     } catch (error: unknown) {
@@ -573,7 +651,9 @@ export class RAGAgentExtension implements Extension, ArchitectAgent {
         return taskDefinition;
       } catch (jsonError) {
         console.error('Failed to parse response as JSON:', jsonError);
-        throw new Error(`Failed to generate task definition: ${errorMessage}`);
+        
+        // Last resort: create a minimal task definition
+        return createFallbackTaskDefinition(spec.name, errorMessage);
       }
     }
   }
@@ -597,39 +677,39 @@ export class RAGAgentExtension implements Extension, ArchitectAgent {
     ]);
     
     try {
-      // Parse the response as JSON
-      const systemConfig = JSON.parse(response.content);
-      return systemConfig;
+      // Try to parse the response as JSON first
+      try {
+        console.log('Attempting to parse system configuration as JSON...');
+        const jsonResponse = JSON.parse(response.content);
+        return jsonResponse;
+      } catch (jsonError) {
+        console.error('Failed to parse system configuration as JSON:', jsonError);
+        
+        // If JSON parsing fails, try to extract code and convert it
+        const systemCode = this.extractCodeFromResponse(response.content, 'typescript');
+        
+        if (this.config.debug) {
+          console.log('Extracted system code:', systemCode);
+        }
+        
+        // Process the code with ts-morph
+        const processedCode = processCodeWithTsMorph(systemCode, this.config.debug);
+        
+        if (this.config.debug) {
+          console.log('Processed code with ts-morph:', processedCode);
+        }
+        
+        // Convert the code to a system configuration using ts-morph
+        const systemConfig = convertCodeToSystemConfig(processedCode, spec.name, this.config.debug);
+        
+        return systemConfig;
+      }
     } catch (error: unknown) {
-      console.error('Failed to parse system configuration:', error);
+      console.error('Failed to generate system configuration:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(`Failed to generate system configuration: ${errorMessage}`);
-    }
-  }
-  
-  /**
-   * Analyze feedback and suggest fixes
-   */
-  async analyzeFeedback(feedback: SystemFeedback): Promise<SystemFixes> {
-    console.log('Analyzing system feedback');
-    
-    // Create enhanced prompt with feedback
-    const enhancedPrompt = this.createFeedbackPrompt(feedback);
-    
-    // Generate with enhanced prompt
-    const response = await this.llm.invoke([
-      new SystemMessage(this.config.systemPrompt || ''),
-      new HumanMessage(enhancedPrompt)
-    ]);
-    
-    try {
-      // Parse the response as JSON
-      const fixes = JSON.parse(response.content);
-      return fixes;
-    } catch (error: unknown) {
-      console.error('Failed to parse system fixes:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(`Failed to analyze feedback: ${errorMessage}`);
+      
+      // Last resort: create a minimal system configuration
+      return createFallbackSystemConfig(spec.name, errorMessage);
     }
   }
   
@@ -651,14 +731,129 @@ export class RAGAgentExtension implements Extension, ArchitectAgent {
       new HumanMessage(enhancedPrompt)
     ]);
     
+    if (this.config.debug) {
+      console.log('Response received from OpenRouter API');
+      console.log('Response text (first 500 chars):', response.content.substring(0, 500));
+      console.log('Response structure:', JSON.stringify(response, null, 2));
+    }
+    
     try {
-      // Parse the response as JSON
-      const tests = JSON.parse(response.content);
-      return tests;
+      // First try to parse the response as JSON directly
+      try {
+        const tests = JSON.parse(response.content);
+        return tests;
+      } catch (jsonError) {
+        if (this.config.debug) {
+          console.log('Failed to parse response as JSON directly, trying to extract JSON from text');
+        }
+        
+        // Try to extract JSON array from the response
+        const jsonArrayRegex = /\[\s*\{[\s\S]*\}\s*\]/;
+        const jsonArrayMatch = response.content.match(jsonArrayRegex);
+        
+        if (jsonArrayMatch) {
+          try {
+            const tests = JSON.parse(jsonArrayMatch[0]);
+            return tests;
+          } catch (e) {
+            console.error('Failed to parse extracted JSON array:', e);
+          }
+        }
+        
+        // Try to extract a single JSON object
+        const jsonObjectRegex = /\{\s*"[\s\S]*"\s*:[\s\S]*\}/;
+        const jsonObjectMatch = response.content.match(jsonObjectRegex);
+        
+        if (jsonObjectMatch) {
+          try {
+            const test = JSON.parse(jsonObjectMatch[0]);
+            return [test];
+          } catch (e) {
+            console.error('Failed to parse extracted JSON object:', e);
+          }
+        }
+        
+        // If we couldn't extract JSON, create a fallback test definition
+        console.log('Creating fallback test definition');
+        return [{
+          id: `test-${component.id}`,
+          description: `Auto-generated test for ${component.id}`,
+          steps: [
+            {
+              type: 'verify-state',
+              description: 'Component should be defined',
+              params: { condition: 'component != null' }
+            }
+          ]
+        }];
+      }
     } catch (error: unknown) {
       console.error('Failed to parse test definitions:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
       throw new Error(`Failed to generate tests: ${errorMessage}`);
+    }
+  }
+  
+  /**
+   * Analyze feedback and suggest fixes
+   */
+  async analyzeFeedback(feedback: SystemFeedback): Promise<SystemFixes> {
+    console.log('Analyzing system feedback');
+    
+    // Create enhanced prompt with feedback
+    const enhancedPrompt = this.createFeedbackPrompt(feedback);
+    
+    // Generate with enhanced prompt
+    const response = await this.llm.invoke([
+      new SystemMessage(this.config.systemPrompt || ''),
+      new HumanMessage(enhancedPrompt)
+    ]);
+    
+    if (this.config.debug) {
+      console.log('Response received from OpenRouter API');
+      console.log('Response text (first 500 chars):', response.content.substring(0, 500));
+      console.log('Response structure:', JSON.stringify(response, null, 2));
+    }
+    
+    try {
+      // First try to parse the response as JSON directly
+      try {
+        const fixes = JSON.parse(response.content);
+        return fixes;
+      } catch (jsonError) {
+        if (this.config.debug) {
+          console.log('Failed to parse response as JSON directly, trying to extract JSON from text');
+        }
+        
+        // Try to extract JSON object from the response
+        const jsonObjectRegex = /\{\s*"[\s\S]*"\s*:[\s\S]*\}/;
+        const jsonObjectMatch = response.content.match(jsonObjectRegex);
+        
+        if (jsonObjectMatch) {
+          try {
+            const fixes = JSON.parse(jsonObjectMatch[0]);
+            return fixes;
+          } catch (e) {
+            console.error('Failed to parse extracted JSON object:', e);
+          }
+        }
+        
+        // If we couldn't extract JSON, create a fallback fixes object
+        console.log('Creating fallback system fixes');
+        return {
+          processes: {},
+          tasks: {},
+          explanation: 'Failed to generate automatic fixes. Please review the feedback manually.',
+          metadata: {
+            error: 'Failed to parse response',
+            component: feedback.validation?.component || 'unknown'
+          }
+        };
+      }
+    } catch (error: unknown) {
+      console.error('Failed to parse system fixes:', error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to analyze feedback: ${errorMessage}`);
     }
   }
   
@@ -1939,55 +2134,21 @@ Return ONLY the TypeScript/TSX code for the component file.
    * @param language The language of the code to extract
    * @returns The extracted code
    */
-  private extractCodeFromResponse(response: string, language: string): string {
-    try {
-      // Try to extract code from markdown code blocks with the specified language
-      const languageCodeBlockRegex = new RegExp(`\`\`\`(?:${language})?\\n([\\s\\S]*?)\\n\`\`\``, 'i');
-      const languageMatch = response.match(languageCodeBlockRegex);
-      
-      if (languageMatch && languageMatch[1]) {
-        return languageMatch[1].trim();
-      }
-      
-      // If no language-specific code block found, try any code block
-      const anyCodeBlockRegex = /```\n([\s\S]*?)\n```/;
-      const anyMatch = response.match(anyCodeBlockRegex);
-      
-      if (anyMatch && anyMatch[1]) {
-        return anyMatch[1].trim();
-      }
-      
-      // If no code block found, try to clean up the response
-      // Remove any markdown or explanatory text
-      const lines = response.split('\n');
-      
-      // Filter out common non-code lines
-      const codeLines = lines.filter(line => 
-        !line.startsWith('#') && 
-        !line.startsWith('>') && 
-        !line.startsWith('*') &&
-        !line.startsWith('-') &&
-        !line.match(/^[0-9]+\./) && // Numbered lists
-        !line.match(/^[A-Za-z]+:/) && // Key-value pairs
-        line.trim() !== '' // Empty lines
-      );
-      
-      // If we have at least some lines left, return them
-      if (codeLines.length > 0) {
-        return codeLines.join('\n').trim();
-      }
-      
-      // Last resort: just return the whole response with minimal cleaning
-      return response
-        .replace(/^# .*$/gm, '') // Remove markdown headers
-        .replace(/^> .*$/gm, '') // Remove blockquotes
-        .replace(/\n\n+/g, '\n\n') // Normalize multiple newlines
-        .trim();
-    } catch (error) {
-      console.error('Error extracting code from response:', error);
-      // Return the original response as a fallback
-      return response.trim();
-    }
+  private extractCodeFromResponse(response: string, language: string = 'typescript'): string {
+    return extractCodeFromResponse(response, language, this.config.debug);
+  }
+
+  /**
+   * Remove import statements from code
+   * @param code The code to process
+   * @returns The code without import statements
+   */
+  private removeImportStatements(code: string): string {
+    // Remove import statements
+    return code.replace(/^\s*import\s+.*?;?\s*$/gm, '')
+      .replace(/^\s*export\s+.*?;?\s*$/gm, '')
+      .replace(/from\s+['"].*?['"];?\s*$/gm, ';')
+      .trim();
   }
 
   /**

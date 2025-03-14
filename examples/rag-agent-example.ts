@@ -1,198 +1,184 @@
 /**
- * RAG-Enhanced Agent Example
+ * RAG-Enhanced Agent Example with ts-morph
  * 
- * This example demonstrates how to use the RAG-enhanced agent to generate
- * processes, tasks, and systems with context from the codebase.
+ * This example demonstrates how to use the RAG-Enhanced Agent extension
+ * with ts-morph for safer code extraction and processing.
  */
 
-import { System, Process, Task, createRuntime } from '../src';
-import { createRAGAgent, RAGAgentConfig, RAGAgentExtension } from '../src/core/extensions/rag-agent';
-import { ProcessSpec, TaskSpec, SystemSpec, SystemFeedback, ValidationResult, TestResult, StaticAnalysisResult } from '../src/core/types';
+import { createRAGAgent, RAGAgentConfig } from '../src/core/extensions/rag-agent';
+import { createRuntime } from '../src/core/implementations/runtime';
 
-// Define simplified specs for our examples
-interface SimpleProcessSpec {
-  name: string;
-  description: string;
-  states: string[];
-  events: string[];
-  domainConcepts: string[];
-  businessRules: string[];
-}
-
-interface SimpleTaskSpec {
-  name: string;
-  description: string;
-  input: Record<string, string>;
-  output: Record<string, string>;
-}
-
-interface SimpleSystemSpec {
-  name: string;
-  description: string;
-  components: string[];
-  integrations: string[];
-}
-
-// Patch the RAGAgentExtension initialize method to work without registerService
-const originalInitialize = RAGAgentExtension.prototype.initialize;
-RAGAgentExtension.prototype.initialize = async function(runtime: any): Promise<void> {
-  this.runtime = runtime;
-  
-  // Skip the registerService call if it doesn't exist
-  if (typeof runtime.registerService === 'function') {
-    runtime.registerService('rag-agent', this);
-  } else {
-    console.log('Note: runtime.registerService is not available, skipping service registration');
-  }
-  
-  // Index the codebase
-  await this.indexCodebase();
-  
-  console.log(`RAG Agent extension initialized with provider: ${this.config.provider}, model: ${this.config.model}`);
-};
-
+/**
+ * Main function to run the example
+ */
 async function main() {
-  console.log('Starting RAG-Enhanced Agent Example...');
+  console.log('--- RAG-Enhanced Agent Example with ts-morph ---');
   
-  // Initialize the RAG agent with configuration
+  // Create a configuration for the RAG agent
   const config: Partial<RAGAgentConfig> = {
-    provider: 'openai',
-    model: 'gpt-3.5-turbo',
-    apiKey: process.env.OPENAI_API_KEY || '',
+    provider: 'openrouter',
+    model: 'meta-llama/llama-3.3-70b-instruct:free',
+    apiKey: process.env.OPENROUTER_API_KEY || '',
+    baseUrl: 'https://openrouter.ai/api/v1',
     temperature: 0.7,
+    maxTokens: 4000,
     codebasePath: './src',
-    useInMemoryVectorStore: true
+    useInMemoryVectorStore: true,
+    debug: true,
+    systemPrompt: `You are an expert TypeScript developer specializing in the ArchitectLM framework.
+Your task is to generate code using the ArchitectLM DSL.
+
+When generating code:
+1. DO NOT use import statements
+2. DO NOT wrap your code in markdown code blocks
+3. ONLY return the exact code that defines the requested component
+4. Use the ReactiveSystem.Process.create() and ReactiveSystem.Task.create() methods directly
+5. Follow the examples provided exactly
+
+Your code should be ready to run with minimal modifications.`
   };
   
   // Create the RAG agent
   const ragAgent = createRAGAgent(config);
   
-  // Create a simple system
-  const systemConfig = System.create('example-system')
-    .withName('Example System')
-    .withDescription('A system for demonstrating RAG-enhanced agent capabilities')
-    .build();
+  // Create a runtime
+  const runtime = createRuntime({}, {}, {});
   
-  // Initialize the runtime and the agent
-  const runtime = createRuntime(systemConfig);
+  // Initialize the RAG agent
   await ragAgent.initialize(runtime);
   
-  console.log('\n--- Example: Generate a Process Definition ---');
-  // Example 1: Generate a process definition
-  const orderProcessSpec: SimpleProcessSpec = {
-    name: 'OrderProcess',
-    description: 'Manages orders from creation to fulfillment',
-    states: ['created', 'processing', 'shipped', 'delivered', 'cancelled'],
-    events: ['CREATE_ORDER', 'PROCESS_ORDER', 'SHIP_ORDER', 'DELIVER_ORDER', 'CANCEL_ORDER'],
-    domainConcepts: ['Order', 'Customer', 'Product', 'Payment'],
-    businessRules: [
-      'Orders must be paid before processing',
-      'Cancelled orders cannot be shipped',
-      'Delivered orders cannot be cancelled'
-    ]
-  };
+  console.log('RAG-Enhanced Agent started and indexed the codebase');
   
-  console.log('Generating process definition...');
+  // Example: Generate a Process Definition
+  console.log('\n--- Example: Generate a Process Definition ---');
+  console.log('Generating process...');
+  
   try {
-    const orderProcess = await ragAgent.generateProcess(orderProcessSpec as unknown as ProcessSpec);
-    console.log('Generated Process:', JSON.stringify(orderProcess, null, 2));
+    const processSpec = {
+      name: 'OrderProcess',
+      description: 'Manages orders from creation to fulfillment',
+      domainConcepts: ['Order', 'Customer', 'Product', 'Payment'],
+      businessRules: [
+        'Orders must be paid before processing',
+        'Cancelled orders cannot be shipped',
+        'Delivered orders cannot be cancelled'
+      ],
+      states: ['created', 'processing', 'shipped', 'delivered', 'cancelled'],
+      events: ['CREATE_ORDER', 'PROCESS_ORDER', 'SHIP_ORDER', 'DELIVER_ORDER', 'CANCEL_ORDER']
+    };
+    
+    const processDefinition = await ragAgent.generateProcess(processSpec);
+    console.log(JSON.stringify(processDefinition, null, 2));
   } catch (error) {
     console.error('Error generating process:', error);
   }
   
+  // Example: Generate a Task Definition
   console.log('\n--- Example: Generate a Task Definition ---');
-  // Example 2: Generate a task definition
-  const processOrderSpec: SimpleTaskSpec = {
-    name: 'ProcessOrder',
-    description: 'Processes an order for shipment',
-    input: {
-      orderId: 'string',
-      customerId: 'string',
-      items: 'array',
-      paymentStatus: 'string'
-    },
-    output: {
-      success: 'boolean',
-      processedAt: 'string',
-      estimatedShippingDate: 'string'
-    }
-  };
-  
   console.log('Generating task definition...');
+  
   try {
-    const processOrderTask = await ragAgent.generateTask(processOrderSpec as unknown as TaskSpec);
-    console.log('Generated Task:', JSON.stringify(processOrderTask, null, 2));
+    const taskSpec = {
+      name: 'ProcessOrder',
+      description: 'Processes an order for shipment',
+      input: {
+        orderId: 'string',
+        customerId: 'string',
+        items: 'array',
+        paymentStatus: 'string'
+      },
+      output: {
+        success: 'boolean',
+        processedAt: 'string',
+        estimatedShippingDate: 'string'
+      }
+    };
+    
+    const taskDefinition = await ragAgent.generateTask(taskSpec);
+    console.log(JSON.stringify(taskDefinition, null, 2));
   } catch (error) {
     console.error('Error generating task:', error);
   }
   
+  // Example: Generate a System Definition
   console.log('\n--- Example: Generate a System Definition ---');
-  // Example 3: Generate a system definition
-  const ecommerceSystemSpec: SimpleSystemSpec = {
-    name: 'EcommerceSystem',
-    description: 'An e-commerce system for managing products, orders, and customers',
-    components: ['OrderManagement', 'ProductCatalog', 'CustomerManagement', 'PaymentProcessing'],
-    integrations: ['InventorySystem', 'ShippingProvider', 'PaymentGateway']
-  };
-  
-  // Convert to the expected SystemSpec format
-  const fullSystemSpec: SystemSpec = {
-    name: ecommerceSystemSpec.name,
-    description: ecommerceSystemSpec.description,
-    processes: [],
-    tasks: []
-  };
-  
   console.log('Generating system definition...');
+  
   try {
-    const ecommerceSystem = await ragAgent.generateSystem(fullSystemSpec);
-    console.log('Generated System:', JSON.stringify(ecommerceSystem, null, 2));
+    const systemSpec = {
+      name: 'EcommerceSystem',
+      description: 'An e-commerce system for managing products, orders, and customers',
+      processes: [],
+      tasks: []
+    };
+    
+    const systemDefinition = await ragAgent.generateSystem(systemSpec);
+    console.log(JSON.stringify(systemDefinition, null, 2));
   } catch (error) {
     console.error('Error generating system:', error);
   }
   
+  // Example: Generate Tests
   console.log('\n--- Example: Generate Tests ---');
-  // Example 4: Generate tests for the process
   console.log('Generating tests...');
+  
   try {
-    // Create a process definition object that matches the expected type
-    const processDefinition = await ragAgent.generateProcess(orderProcessSpec as unknown as ProcessSpec);
+    // Use the process definition we generated earlier
+    const processSpec = {
+      name: 'OrderProcess',
+      description: 'Manages orders from creation to fulfillment',
+      states: ['created', 'processing', 'shipped', 'delivered', 'cancelled'],
+      events: ['CREATE_ORDER', 'PROCESS_ORDER', 'SHIP_ORDER', 'DELIVER_ORDER', 'CANCEL_ORDER']
+    };
+    
+    const processDefinition = await ragAgent.generateProcess(processSpec);
     const tests = await ragAgent.generateTests(processDefinition);
-    console.log('Generated Tests:', JSON.stringify(tests, null, 2));
+    console.log(JSON.stringify(tests, null, 2));
   } catch (error) {
     console.error('Error generating tests:', error);
   }
   
+  // Example: Generate Documentation
   console.log('\n--- Example: Generate Documentation ---');
-  // Example 5: Generate documentation
   console.log('Generating documentation...');
+  
   try {
-    // Create a process definition object that matches the expected type
-    const processDefinition = await ragAgent.generateProcess(orderProcessSpec as unknown as ProcessSpec);
+    // Use the process definition we generated earlier
+    const processSpec = {
+      name: 'OrderProcess',
+      description: 'Manages orders from creation to fulfillment',
+      states: ['created', 'processing', 'shipped', 'delivered', 'cancelled'],
+      events: ['CREATE_ORDER', 'PROCESS_ORDER', 'SHIP_ORDER', 'DELIVER_ORDER', 'CANCEL_ORDER']
+    };
+    
+    const processDefinition = await ragAgent.generateProcess(processSpec);
     const docs = await ragAgent.generateDocs(processDefinition);
-    console.log('Generated Documentation:', docs);
+    console.log(docs);
   } catch (error) {
     console.error('Error generating documentation:', error);
   }
   
+  // Example: Analyze Feedback
   console.log('\n--- Example: Analyze Feedback ---');
-  // Example 6: Analyze feedback
-  const feedback: SystemFeedback = {
-    validation: [
-      {
-        component: 'OrderProcess',
-        valid: false,
-        errors: ['The process does not handle partial shipments. We need to add support for splitting orders into multiple shipments.']
-      }
-    ] as ValidationResult[],
-    tests: [] as TestResult[],
-    staticAnalysis: [] as StaticAnalysisResult[]
-  };
-  
   console.log('Analyzing feedback...');
+  
   try {
-    const analysis = await ragAgent.analyzeFeedback(feedback);
-    console.log('Feedback Analysis:', JSON.stringify(analysis, null, 2));
+    const feedback = {
+      validation: [
+        {
+          component: 'OrderProcess',
+          valid: false,
+          errors: [
+            'The process does not handle partial shipments. We need to add support for splitting orders into multiple shipments.'
+          ]
+        }
+      ],
+      tests: [],
+      staticAnalysis: []
+    };
+    
+    const fixes = await ragAgent.analyzeFeedback(feedback);
+    console.log(JSON.stringify(fixes, null, 2));
   } catch (error) {
     console.error('Error analyzing feedback:', error);
   }
@@ -201,11 +187,7 @@ async function main() {
 }
 
 // Run the example
-if (require.main === module) {
-  main().catch(error => {
-    console.error('Error in RAG agent example:', error);
-    process.exit(1);
-  });
-}
-
-export default main; 
+main().catch(error => {
+  console.error('Error running example:', error);
+  process.exit(1);
+}); 
