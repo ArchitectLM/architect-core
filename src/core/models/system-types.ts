@@ -3,7 +3,24 @@
  */
 import { ProcessDefinition } from './process-types';
 import { TaskDefinition } from './task-types';
+import { TestDefinition } from './testing-types';
 import { Plugin } from '../dsl/plugin';
+import { Extension } from '../extensions/interfaces';
+
+/**
+ * Observability configuration
+ */
+export interface ObservabilityConfig {
+  metrics?: boolean;                            // Whether to collect metrics
+  tracing?: {
+    provider: 'opentelemetry' | 'custom';       // Tracing provider
+    exporters?: string[];                       // Tracing exporters
+  };
+  logging?: {
+    level: 'debug' | 'info' | 'warn' | 'error'; // Logging level
+    format?: 'json' | 'text';                   // Logging format
+  };
+}
 
 /**
  * System configuration
@@ -14,21 +31,13 @@ export interface SystemConfig {
   description?: string;                           // System description
   processes: Record<string, ProcessDefinition>;   // Process definitions
   tasks: Record<string, TaskDefinition>;          // Task definitions
+  tests?: TestDefinition[];                       // Test definitions
+  extensions?: Record<string, Extension>;         // System extensions
   plugins?: Plugin[];                             // System plugins
   metadata?: Record<string, unknown>;             // Additional metadata
   
   // Observability configuration
-  observability?: {
-    metrics?: boolean;                            // Whether to collect metrics
-    tracing?: {
-      provider: 'opentelemetry' | 'custom';       // Tracing provider
-      exporters?: string[];                       // Tracing exporters
-    };
-    logging?: {
-      level: 'debug' | 'info' | 'warn' | 'error'; // Logging level
-      format?: 'json' | 'text';                   // Logging format
-    };
-  };
+  observability?: ObservabilityConfig;
   
   // LLM-specific metadata to help with generation and understanding
   llmMetadata?: {

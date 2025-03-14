@@ -6,19 +6,22 @@
  */
 
 import { 
-  ArchitectAgent, 
   ProcessDefinition, 
   TaskDefinition, 
   SystemConfig, 
-  ProcessSpec, 
-  TaskSpec, 
-  SystemSpec, 
-  SystemFeedback, 
-  SystemFixes, 
   TestDefinition, 
-  Extension,
   Runtime
 } from '../types';
+
+import {
+  ArchitectAgent,
+  ProcessSpec,
+  TaskSpec,
+  SystemSpec,
+  SystemFeedback,
+  SystemFixes,
+  Extension
+} from './interfaces';
 
 /**
  * Configuration for the Agent extension
@@ -262,7 +265,7 @@ Return ONLY the JSON object representing the ProcessDefinition.
     // Simple template replacement
     return template
       .replace('{{name}}', spec.name)
-      .replace('{{description}}', spec.description)
+      .replace('{{description}}', spec.description || '')
       .replace('{{#if domainConcepts}}', spec.domainConcepts ? '' : '<!--')
       .replace('{{/if}}', spec.domainConcepts ? '' : '-->')
       .replace('{{domainConcepts}}', spec.domainConcepts?.join(', ') || '')
@@ -311,7 +314,7 @@ Return ONLY the JSON object representing the TaskDefinition.
     // Simple template replacement
     return template
       .replace('{{name}}', spec.name)
-      .replace('{{description}}', spec.description)
+      .replace('{{description}}', spec.description || '')
       .replace('{{#if input}}', spec.input ? '' : '<!--')
       .replace('{{/if}}', spec.input ? '' : '-->')
       .replace('{{input}}', spec.input ? JSON.stringify(spec.input) : '')
@@ -349,9 +352,9 @@ Return ONLY the JSON object representing the SystemConfig.
     // Simple template replacement
     return template
       .replace('{{name}}', spec.name)
-      .replace('{{description}}', spec.description)
-      .replace('{{processes}}', JSON.stringify(spec.processes))
-      .replace('{{tasks}}', JSON.stringify(spec.tasks));
+      .replace('{{description}}', spec.description || '')
+      .replace('{{processes}}', JSON.stringify(spec.processes || []))
+      .replace('{{tasks}}', JSON.stringify(spec.tasks || []));
   }
   
   /**

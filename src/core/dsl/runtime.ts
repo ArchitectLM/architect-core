@@ -395,22 +395,24 @@ export class ReactiveSystemRuntime {
         // Use setTimeout to avoid blocking the current execution
         setTimeout(() => {
           // Check if the instance still exists (it might have been removed)
-          const currentInstance = this.getProcessInstance(context.instanceId);
-          if (currentInstance) {
-            // Get the process definition
-            const process = this.system.processes[currentInstance.processId];
-            if (process) {
-              // Get the current state
-              const currentState = process.stateMachine.getState(currentInstance.state);
-              if (currentState) {
-                // Check if there's a transition for this event
-                const transition = currentState.getTransition(type);
-                if (transition) {
-                  // Send the event to the instance
-                  this.sendEvent(context.instanceId as string, type, payload)
-                    .catch(error => {
-                      this.services.logger.error(`Error sending event '${type}' to instance '${context.instanceId}':`, error);
-                    });
+          if (context.instanceId) {
+            const currentInstance = this.getProcessInstance(context.instanceId);
+            if (currentInstance) {
+              // Get the process definition
+              const process = this.system.processes[currentInstance.processId];
+              if (process) {
+                // Get the current state
+                const currentState = process.stateMachine.getState(currentInstance.state);
+                if (currentState) {
+                  // Check if there's a transition for this event
+                  const transition = currentState.getTransition(type);
+                  if (transition) {
+                    // Send the event to the instance
+                    this.sendEvent(context.instanceId as string, type, payload)
+                      .catch(error => {
+                        this.services.logger.error(`Error sending event '${type}' to instance '${context.instanceId}':`, error);
+                      });
+                  }
                 }
               }
             }

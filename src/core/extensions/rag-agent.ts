@@ -6,18 +6,21 @@
  */
 
 import { 
-  ArchitectAgent, 
   ProcessDefinition, 
   TaskDefinition, 
   SystemConfig, 
-  ProcessSpec, 
-  TaskSpec, 
-  SystemSpec, 
-  SystemFeedback, 
-  SystemFixes, 
   TestDefinition, 
+  Runtime
+} from '../types';
+
+import {
+  ArchitectAgent,
+  ProcessSpec,
+  TaskSpec,
+  SystemSpec,
+  SystemFeedback,
+  SystemFixes,
   Extension,
-  Runtime,
   ServiceRegistry,
   DatabaseSchemaSpec,
   DatabaseSchemaDefinition,
@@ -25,7 +28,7 @@ import {
   APIEndpointDefinition,
   UIComponentSpec,
   UIComponentDefinition
-} from '../types';
+} from './interfaces';
 
 // Import our DSL components
 import { ReactiveSystem } from '../dsl/reactive-system';
@@ -80,7 +83,7 @@ class OpenAIEmbeddings {
   async embedDocuments(texts: string[]): Promise<number[][]> {
     // In a real implementation, this would call the OpenAI API
     // For now, just return dummy embeddings
-    return texts.map(() => new Array(1536).fill(0.1));
+    return texts.map((_: string) => new Array(1536).fill(0.1));
   }
 
   async embedQuery(text: string): Promise<number[]> {
@@ -761,7 +764,9 @@ export class RAGAgentExtension implements Extension, ArchitectAgent {
         try {
           const simplePrompt = `
 Generate a TypeScript file with a Mongoose schema for a ${schemaSpec.name} model with these fields:
-${schemaSpec.fields.map(f => `- ${f.name}: ${f.type}${f.required ? ' (required)' : ''}`).join('\n')}
+${schemaSpec.fields.map((f: { name: string; type: string; required?: boolean }) => 
+  `- ${f.name}: ${f.type}${f.required ? ' (required)' : ''}`
+).join('\n')}
 
 Include a TypeScript interface and Mongoose model export.
 `;
@@ -867,10 +872,10 @@ Include a TypeScript interface and Mongoose model export.
       }
       
       // Check for route handlers
-      const missingOperations = endpointSpec.operations.filter(op => 
-        !endpointDefinition.includes(op) && 
-        !endpointDefinition.toLowerCase().includes(op.toLowerCase())
-      );
+      const missingOperations = endpointSpec.operations.filter((op: string) => {
+        const typedDefinition = endpointDefinition as unknown as { operations: Array<{ name: string }> };
+        return !typedDefinition.operations || !typedDefinition.operations.some((impl: { name: string }) => impl.name === op);
+      });
       
       if (missingOperations.length > 0) {
         console.warn(`Generated API endpoint may be missing handlers for: ${missingOperations.join(', ')}`);
@@ -915,7 +920,7 @@ Include a TypeScript interface and Mongoose model export.
         try {
           const simplePrompt = `
 Generate an Express router TypeScript file for a ${endpointSpec.model} API with these operations:
-${endpointSpec.operations.map(op => `- ${op}`).join('\n')}
+${endpointSpec.operations.map((op: string) => `- ${op}`).join('\n')}
 
 Include proper error handling and TypeScript types.
 `;
@@ -1056,12 +1061,13 @@ Include proper error handling and TypeScript types.
       }
       
       // Check for props usage
-      const missingProps = componentSpec.props.filter(prop => 
-        !componentDefinition.includes(prop.name)
-      );
+      const missingProps = componentSpec.props.filter((prop: { name: string; type: string; required?: boolean }) => {
+        const typedDefinition = componentDefinition as unknown as { props: Array<{ name: string }> };
+        return !typedDefinition.props || !typedDefinition.props.some((p: { name: string }) => p.name === prop.name);
+      });
       
       if (missingProps.length > 0) {
-        console.warn(`Generated UI component may be missing usage of props: ${missingProps.map(p => p.name).join(', ')}`);
+        console.warn(`Generated UI component may be missing usage of props: ${missingProps.map((p: { name: string }) => p.name).join(', ')}`);
       }
       
       console.log('UI component generated successfully');
@@ -1082,7 +1088,7 @@ Include proper error handling and TypeScript types.
         try {
           const simplePrompt = `
 Generate a ${componentSpec.framework} component named ${componentSpec.name} with these props:
-${componentSpec.props.map(p => `- ${p.name}: ${p.type}${p.required ? ' (required)' : ''}`).join('\n')}
+${componentSpec.props.map((p: { name: string; type: string; required?: boolean }) => `- ${p.name}: ${p.type}${p.required ? ' (required)' : ''}`).join('\n')}
 
 Include TypeScript interfaces and proper error handling.
 `;
@@ -1202,7 +1208,7 @@ Include TypeScript interfaces and proper error handling.
       case 'database-schema':
         query = `Database schema for ${spec.name}: ${spec.description || ''}`;
         if (spec.fields) {
-          query += ` Fields: ${spec.fields.map((field: any) => field.name).join(', ')}`;
+          query += ` Fields: ${spec.fields.map((field: { name: string; type: string; required?: boolean }) => field.name).join(', ')}`;
         }
         break;
         
@@ -1219,7 +1225,7 @@ Include TypeScript interfaces and proper error handling.
       case 'ui-component':
         query = `UI component for ${spec.name}: ${spec.description || ''}`;
         if (spec.props) {
-          query += ` Props: ${spec.props.map((prop: any) => prop.name).join(', ')}`;
+          query += ` Props: ${spec.props.map((prop: { name: string; type: string; required?: boolean }) => prop.name).join(', ')}`;
         }
         if (spec.framework) {
           query += ` Framework: ${spec.framework}`;
@@ -1327,9 +1333,9 @@ Use the following pattern:
 const process = ReactiveSystem.Process.create("${spec.name.toLowerCase().replace(/\s+/g, '-')}")
   .withDescription("${spec.description || ''}")
   .withInitialState("${spec.states && spec.states.length > 0 ? spec.states[0] : 'initial'}")
-  ${spec.states && spec.states.length > 0 ? spec.states.map(state => `\n  .addState("${state}")`).join('') : ''}
+  ${spec.states && spec.states.length > 0 ? spec.states.map((state: string) => `\n  .addState("${state}")`).join('') : ''}
   ${spec.events && spec.events.length > 0 && spec.states && spec.states.length > 0 ? 
-    spec.events.map((event, index) => {
+    spec.events.map((event: string, index: number) => {
       const fromState = spec.states![Math.min(index, spec.states!.length - 1)];
       const toState = spec.states![Math.min(index + 1, spec.states!.length - 1)];
       return `\n  .addTransition({\n    from: "${fromState}",\n    to: "${toState}",\n    on: "${event}"\n  })`;
@@ -1390,7 +1396,13 @@ Return ONLY the TypeScript code that defines the process using our DSL.
     });
     
     // Convert transitions
-    const transitions = process.transitions.map((transition: any) => {
+    const transitions = process.transitions.map((transition: {
+      from: string | string[];
+      to: string;
+      on: string;
+      guard?: Function;
+      action?: Function;
+    }) => {
       return {
         from: Array.isArray(transition.from) ? transition.from : [transition.from],
         to: transition.to,
@@ -1488,10 +1500,18 @@ Use the following pattern:
 const task = ReactiveSystem.Task.create("${spec.name.toLowerCase().replace(/\s+/g, '-')}")
   .withDescription("${spec.description || ''}")
   ${spec.input ? `.withInputSchema(z.object({
-    ${Object.entries(spec.input).map(([key, type]) => `${key}: z.${type.toLowerCase()}`).join(',\n    ')}
+    ${Object.entries(spec.input).map(entry => {
+      const key = entry[0];
+      const type = entry[1] as string;
+      return `${key}: z.${type.toLowerCase()}`;
+    }).join(',\n    ')}
   }))` : ''}
   ${spec.output ? `.withOutputSchema(z.object({
-    ${Object.entries(spec.output).map(([key, type]) => `${key}: z.${type.toLowerCase()}`).join(',\n    ')}
+    ${Object.entries(spec.output).map(entry => {
+      const key = entry[0];
+      const type = entry[1] as string;
+      return `${key}: z.${type.toLowerCase()}`;
+    }).join(',\n    ')}
   }))` : ''}
   .withImplementation(async (input, context) => {
     // Implement the task logic here
@@ -1681,7 +1701,7 @@ Schema Specification:
 - Name: ${spec.name}
 - Description: ${spec.description || ''}
 - Fields:
-${spec.fields.map((field: any) => 
+${spec.fields.map((field: { name: string; type: string; required?: boolean; default?: any }) =>
   `  - ${field.name}: ${field.type}${field.required ? ' (required)' : ''}${field.default ? ` (default: ${field.default})` : ''}`
 ).join('\n')}
 ${spec.timestamps ? '- Timestamps: true (include createdAt and updatedAt fields)' : ''}
@@ -1809,12 +1829,13 @@ Your generated code should follow similar patterns while implementing the specif
 
 IMPORTANT: Analyze the examples carefully to understand:
 1. The project's coding style and conventions
-2. How error handling is implemented
-3. How validation is structured
-4. How authentication is handled
-5. How responses are formatted
-6. How middleware is used
-7. How database operations are performed
+2. How components are structured
+3. How props are typed and validated
+4. How state is managed
+5. How events are handled
+6. How styling is implemented
+7. How accessibility is addressed
+8. How error handling is implemented
 
 Now, please generate the API endpoint according to the specification above.
 Return ONLY the TypeScript code for the API endpoint file.
@@ -1837,7 +1858,7 @@ Component Specification:
 - Name: ${spec.name}
 - Description: ${spec.description || ''}
 - Props:
-${spec.props.map((prop: any) => 
+${spec.props.map((prop: { name: string; type: string; required?: boolean }) =>
   `  - ${prop.name}: ${prop.type}${prop.required ? ' (required)' : ''}`
 ).join('\n')}
 ${spec.styling ? `- Styling: ${spec.styling}` : ''}
@@ -1975,7 +1996,6 @@ Return ONLY the TypeScript/TSX code for the component file.
   private convertDSLTaskToDefinition(task: any): TaskDefinition {
     // Extract the task definition from the DSL task
     const id = task.id;
-    const name = task.name || id;
     const description = task.description || '';
     const implementation = task.implementation;
     
@@ -1989,7 +2009,6 @@ Return ONLY the TypeScript/TSX code for the component file.
     // Create the TaskDefinition
     return {
       id,
-      name,
       description,
       implementation,
       inputSchema: task.inputSchema,

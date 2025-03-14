@@ -10,7 +10,7 @@ import { ProcessDefinition, ProcessState, Transition } from '../types';
 export class ProcessBuilder<
   TState extends string = string,
   TEvent extends string = string,
-  TContext = any
+  TContext = Record<string, unknown>
 > {
   private definition: Partial<ProcessDefinition<TState, TEvent, TContext>> = {
     states: [],
@@ -24,7 +24,7 @@ export class ProcessBuilder<
    *   .withDescription('Handles order fulfillment')
    *   .withInitialState('created');
    */
-  static create<S extends string = string, E extends string = string, C = any>(
+  static create<S extends string = string, E extends string = string, C = Record<string, unknown>>(
     id: string
   ): ProcessBuilder<S, E, C> {
     const builder = new ProcessBuilder<S, E, C>();
@@ -177,9 +177,17 @@ export class ProcessBuilder<
    *   }))
    * }))
    */
-  withContextSchema<T extends TContext>(schema: z.ZodType<T>): ProcessBuilder<TState, TEvent, T> {
-    (this.definition as any).contextSchema = schema;
-    return this as any;
+  withContextSchema<T>(schema: z.ZodType<T>): ProcessBuilder<TState, TEvent, T> {
+    // Create a new builder with the updated context type
+    const newBuilder = new ProcessBuilder<TState, TEvent, T>();
+    
+    // Copy all properties from the current definition
+    Object.assign(newBuilder.definition, this.definition);
+    
+    // Set the context schema
+    newBuilder.definition.contextSchema = schema;
+    
+    return newBuilder;
   }
 
   /**

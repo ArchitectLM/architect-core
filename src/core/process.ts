@@ -35,7 +35,15 @@ export function defineProcess(config: ProcessDefinition): ProcessDefinition {
   // Convert states object to array if needed for validation
   let stateNames: string[];
   if (Array.isArray(config.states)) {
-    stateNames = config.states;
+    // Extract state names from the array
+    stateNames = [];
+    for (const state of config.states) {
+      if (typeof state === 'string') {
+        stateNames.push(state);
+      } else if (typeof state === 'object' && state !== null && 'name' in state) {
+        stateNames.push(state.name as string);
+      }
+    }
   } else {
     stateNames = Object.keys(config.states);
   }

@@ -7,6 +7,24 @@
 // Import ServiceIntegration
 import { ServiceIntegration } from './service-integration';
 
+// Export extension interfaces from interfaces.ts
+export {
+  Extension,
+  ServiceRegistry,
+  ArchitectAgent,
+  ProcessSpec,
+  TaskSpec,
+  SystemSpec,
+  SystemFeedback,
+  SystemFixes,
+  DatabaseSchemaSpec,
+  DatabaseSchemaDefinition,
+  APIEndpointSpec,
+  APIEndpointDefinition,
+  UIComponentSpec,
+  UIComponentDefinition
+} from './interfaces';
+
 // Export extension interfaces (except ExtensionConfig which is already exported from types.ts)
 export {
   SagaCoordinator, SagaDefinition, SagaInstance, SagaStatus, SagaStepStatus, SagaEventType, SagaEvent,

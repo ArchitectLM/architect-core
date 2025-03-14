@@ -465,7 +465,8 @@ export class MockSupervisor implements Supervisor {
       state: 'recovered',
       context: {},
       createdAt: new Date(),
-      updatedAt: new Date()
+      updatedAt: new Date(),
+      history: []
     };
   }
 

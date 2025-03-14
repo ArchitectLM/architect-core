@@ -66,12 +66,13 @@ export class TestBuilder<T = any> {
   }
 
   /**
-   * Add a step to create a process instance
+   * Add a step to create a process
    * @example
    * .createProcess('order-process', { orderId: '123' })
    */
   createProcess(processId: string, input: any, expectedState?: string): this {
     this.addStep({
+      type: 'create-process',
       action: 'createProcess',
       input: { processId, ...input },
       expectedState
@@ -86,6 +87,7 @@ export class TestBuilder<T = any> {
    */
   transitionProcess(event: string, data?: any, expectedState?: string): this {
     this.addStep({
+      type: 'emit-event',
       action: 'transition',
       event,
       data,
@@ -101,6 +103,7 @@ export class TestBuilder<T = any> {
    */
   executeTask(taskId: string, input: any, expectedOutput?: any): this {
     this.addStep({
+      type: 'execute-task',
       action: 'executeTask',
       taskId,
       input,
@@ -110,12 +113,13 @@ export class TestBuilder<T = any> {
   }
 
   /**
-   * Add a step to verify the process state
+   * Add a step to verify the state
    * @example
    * .verifyState('completed')
    */
   verifyState(state: string | ((state: string) => boolean)): this {
     this.addStep({
+      type: 'verify-state',
       action: 'verifyState',
       state
     });
@@ -125,7 +129,7 @@ export class TestBuilder<T = any> {
   /**
    * Add a step to verify a mock was called
    * @example
-   * .verifyMockCalled('emailService', 'sendEmail')
+   * .verifyMockCalled('paymentService', 'processPayment', args => args.orderId === '123')
    */
   verifyMockCalled(
     service: string,
@@ -134,6 +138,7 @@ export class TestBuilder<T = any> {
     times?: number
   ): this {
     this.addStep({
+      type: 'verify-state',
       action: 'verifyMockCalled',
       service,
       method,
@@ -146,10 +151,11 @@ export class TestBuilder<T = any> {
   /**
    * Add a step to set a mock implementation
    * @example
-   * .setMock('emailService', 'sendEmail', async () => ({ sent: true }))
+   * .setMock('paymentService', 'processPayment', () => ({ success: true }))
    */
   setMock(service: string, method: string, implementation: Function): this {
     this.addStep({
+      type: 'wait',
       action: 'setMock',
       service,
       method,
@@ -161,12 +167,13 @@ export class TestBuilder<T = any> {
   /**
    * Add a step to emit an event
    * @example
-   * .emitEvent('ORDER_COMPLETED', { orderId: '123' })
+   * .emitEvent('ORDER_CREATED', { orderId: '123' })
    */
   emitEvent(type: string, payload: any): this {
     this.addStep({
+      type: 'emit-event',
       action: 'emitEvent',
-      type,
+      event: type,
       payload
     });
     return this;
@@ -176,12 +183,13 @@ export class TestBuilder<T = any> {
    * Add a step to execute custom code
    * @example
    * .executeCode((context, runtime) => {
-   *   // Custom test logic
+   *   // Custom code
    *   return { result: 'success' };
    * })
    */
   executeCode(code: (context: any, runtime: any) => any): this {
     this.addStep({
+      type: 'wait',
       action: 'executeCode',
       code
     });
@@ -189,11 +197,11 @@ export class TestBuilder<T = any> {
   }
 
   /**
-   * Add an expectation for the test
+   * Set the expected final state
    * @example
-   * .expectFinalState('completed')
+   * .expectFinalState({ status: 'completed' })
    */
-  expectFinalState(state: string): this {
+  expectFinalState(state: Record<string, any>): this {
     if (!this.definition.expected) {
       this.definition.expected = {};
     }

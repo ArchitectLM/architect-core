@@ -19,7 +19,8 @@ import {
   CircuitBreakerOptions,
   CircuitBreaker
 } from './types';
-import { Extension, Runtime } from '../types';
+import { Runtime } from '../types';
+import { Extension } from './interfaces';
 import { ReactiveEventBus } from '../event-bus';
 import { DefaultCircuitBreaker } from './circuit-breaker';
 

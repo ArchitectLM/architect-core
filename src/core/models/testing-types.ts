@@ -7,11 +7,28 @@ import { ProcessInstance } from './process-types';
  * Test step definition
  */
 export interface TestStep {
-  type: 'create-process' | 'execute-task' | 'emit-event' | 'verify-state' | 'wait';
+  type?: 'create-process' | 'execute-task' | 'emit-event' | 'verify-state' | 'wait' | string;
+  action?: string; // For backward compatibility
   description?: string;
   params?: Record<string, any>;
   expected?: any;
   timeout?: number;
+  
+  // Additional properties used in test-builder.ts
+  input?: Record<string, any>;
+  event?: string;
+  taskId?: string;
+  state?: string | Record<string, any> | ((state: string) => boolean);
+  service?: string;
+  code?: string | ((context: any, runtime: any) => any);
+  expectedState?: any;
+  data?: any;
+  expectedOutput?: any;
+  method?: string;
+  payload?: any;
+  withArgs?: (args: any) => boolean;
+  implementation?: Function;
+  times?: number;
 }
 
 /**
@@ -22,6 +39,12 @@ export interface TestDefinition {
   name?: string;
   description?: string;
   steps: TestStep[];
+  expected?: {
+    finalState?: Record<string, any>;
+    events?: string[];
+    errors?: string[];
+    output?: any;
+  };
   timeout?: number;
   metadata?: Record<string, unknown>;
 }

@@ -7,8 +7,8 @@ import { TaskDefinition, TaskImplementation, TaskContext } from '../types';
 /**
  * Builder class for creating task definitions with a fluent interface
  */
-export class TaskBuilder<Input = any, Output = any, State = any> {
-  private definition: Partial<TaskDefinition<Input, Output, State>> = {};
+export class TaskBuilder<Input = any, Output = any> {
+  private definition: Partial<TaskDefinition<Input, Output>> = {};
 
   /**
    * Create a new task with the given ID
@@ -20,16 +20,14 @@ export class TaskBuilder<Input = any, Output = any, State = any> {
    *     return { processed: true };
    *   });
    */
-  static create<I = any, O = any, S = any>(id: string): TaskBuilder<I, O, S> {
-    const builder = new TaskBuilder<I, O, S>();
+  static create<I = any, O = any>(id: string): TaskBuilder<I, O> {
+    const builder = new TaskBuilder<I, O>();
     builder.definition.id = id;
     return builder;
   }
 
   /**
-   * Add a description to help understand the task purpose
-   * @example
-   * .withDescription('Processes an order and updates inventory')
+   * Set the task description
    */
   withDescription(description: string): this {
     this.definition.description = description;
@@ -37,79 +35,53 @@ export class TaskBuilder<Input = any, Output = any, State = any> {
   }
 
   /**
-   * Set the implementation function for the task
-   * @example
-   * .withImplementation(async (input, context) => {
-   *   // Task implementation
-   *   return { processed: true };
-   * })
+   * Set the task implementation function
    */
-  withImplementation(implementation: TaskImplementation<Input, Output, State>): this {
+  withImplementation(implementation: TaskImplementation<Input, Output>): this {
     this.definition.implementation = implementation;
     return this;
   }
 
   /**
-   * Add a schema for validating task input
-   * @example
-   * .withInputSchema(z.object({
-   *   orderId: z.string(),
-   *   items: z.array(z.object({
-   *     productId: z.string(),
-   *     quantity: z.number().positive()
-   *   }))
-   * }))
+   * Set the input schema for validation
    */
-  withInputSchema<T extends Input>(schema: z.ZodType<T>): TaskBuilder<T, Output, State> {
-    (this.definition as any).inputSchema = schema;
-    return this as any;
+  withInputSchema<T extends Input>(schema: z.ZodType<T>): TaskBuilder<T, Output> {
+    const builder = this as unknown as TaskBuilder<T, Output>;
+    builder.definition.inputSchema = schema;
+    return builder;
   }
 
   /**
-   * Add a schema for validating task output
-   * @example
-   * .withOutputSchema(z.object({
-   *   processed: z.boolean(),
-   *   orderNumber: z.string()
-   * }))
+   * Set the output schema for validation
    */
-  withOutputSchema<T extends Output>(schema: z.ZodType<T>): TaskBuilder<Input, T, State> {
-    (this.definition as any).outputSchema = schema;
-    return this as any;
+  withOutputSchema<T extends Output>(schema: z.ZodType<T>): TaskBuilder<Input, T> {
+    const builder = this as unknown as TaskBuilder<Input, T>;
+    builder.definition.outputSchema = schema;
+    return builder;
   }
 
   /**
-   * Add an error handler for the task
-   * @example
-   * .withErrorHandler(async (error, input, context) => {
-   *   context.emitEvent('TASK_FAILED', { error: error.message });
-   * })
+   * Set the error handler
    */
   withErrorHandler(
-    handler: (error: Error, input: Input, context: TaskContext<State>) => Promise<void>
+    handler: (error: Error, input: Input, context: TaskContext) => Promise<void>
   ): this {
-    this.definition.onError = handler;
+    this.definition.errorHandler = handler;
     return this;
   }
 
   /**
-   * Add a success handler for the task
-   * @example
-   * .withSuccessHandler(async (result, input, context) => {
-   *   context.emitEvent('TASK_SUCCEEDED', { result });
-   * })
+   * Set the success handler
    */
   withSuccessHandler(
-    handler: (result: Output, input: Input, context: TaskContext<State>) => Promise<void>
+    handler: (result: Output, input: Input, context: TaskContext) => Promise<void>
   ): this {
-    this.definition.onSuccess = handler;
+    this.definition.successHandler = handler;
     return this;
   }
 
   /**
-   * Set a timeout for the task execution
-   * @example
-   * .withTimeout(5000) // 5 seconds
+   * Set the task timeout
    */
   withTimeout(timeoutMs: number): this {
     this.definition.timeout = timeoutMs;
@@ -117,45 +89,33 @@ export class TaskBuilder<Input = any, Output = any, State = any> {
   }
 
   /**
-   * Configure retry behavior for the task
-   * @example
-   * .withRetry({
-   *   maxAttempts: 3,
-   *   backoff: 'exponential',
-   *   delayMs: 1000
-   * })
+   * Set the retry policy
    */
   withRetry(config: {
     maxAttempts: number;
     backoff: 'fixed' | 'exponential';
     delayMs: number;
   }): this {
-    this.definition.retry = config;
-    return this;
-  }
-
-  /**
-   * Add metadata to the task
-   * @example
-   * .withMetadata({
-   *   version: '1.0.0',
-   *   owner: 'order-team',
-   *   tags: ['critical', 'core']
-   * })
-   */
-  withMetadata(metadata: Record<string, unknown>): this {
-    this.definition.metadata = {
-      ...this.definition.metadata,
-      ...metadata
+    this.definition.retry = {
+      maxAttempts: config.maxAttempts,
+      backoff: config.backoff,
+      delayMs: config.delayMs
     };
     return this;
   }
 
   /**
-   * Builds the complete task definition
+   * Set additional metadata
    */
-  build(): TaskDefinition<Input, Output, State> {
-    // Validate the definition before returning
+  withMetadata(metadata: Record<string, unknown>): this {
+    this.definition.metadata = metadata;
+    return this;
+  }
+
+  /**
+   * Build the task definition
+   */
+  build(): TaskDefinition<Input, Output> {
     if (!this.definition.id) {
       throw new Error('Task ID is required');
     }
@@ -164,7 +124,7 @@ export class TaskBuilder<Input = any, Output = any, State = any> {
       throw new Error('Task implementation is required');
     }
 
-    return this.definition as TaskDefinition<Input, Output, State>;
+    return this.definition as TaskDefinition<Input, Output>;
   }
 }
 

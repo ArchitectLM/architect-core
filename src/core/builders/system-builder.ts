@@ -1,7 +1,10 @@
 /**
  * System Builder - Fluent API for defining systems
  */
-import { SystemConfig, ProcessDefinition, TaskDefinition, Extension, ObservabilityConfig, TestDefinition } from '../types';
+import { SystemConfig, ProcessDefinition, TaskDefinition } from '../types';
+import { TestDefinition } from '../models/testing-types';
+import { ObservabilityConfig } from '../models/system-types';
+import { Extension } from '../extensions/interfaces';
 import { Plugin } from '../dsl/plugin';
 
 /**

@@ -16,11 +16,11 @@ import {
 /**
  * Service Builder class for the fluent API
  */
-export class ServiceBuilder<T = any> {
+export class ServiceBuilder<T = Record<string, unknown>> {
   private id: string;
   private type?: ServiceType;
   private provider?: string;
-  private config: Record<string, any> = {};
+  private config: Record<string, unknown> = {};
   private operations: Record<string, ServiceOperation> = {};
   private retryPolicy?: RetryPolicy;
   private webhookHandlerConfig?: WebhookHandlerConfig;
@@ -38,7 +38,7 @@ export class ServiceBuilder<T = any> {
    * @param id Unique identifier for the service
    * @returns A new service builder instance
    */
-  static create<T = any>(id: string): ServiceBuilder<T> {
+  static create<T = Record<string, unknown>>(id: string): ServiceBuilder<T> {
     return new ServiceBuilder<T>(id);
   }
   
@@ -64,7 +64,7 @@ export class ServiceBuilder<T = any> {
    * Set the service configuration
    * @param config Configuration object for the service
    */
-  withConfig(config: Record<string, any>): this {
+  withConfig(config: Record<string, unknown>): this {
     this.config = config;
     return this;
   }
@@ -74,7 +74,7 @@ export class ServiceBuilder<T = any> {
    * @param name Operation name
    * @param operation Operation implementation function
    */
-  withOperation<I = any, O = any>(name: string, operation: ServiceOperation<I, O>): this {
+  withOperation<I = unknown, O = unknown>(name: string, operation: ServiceOperation<I, O>): this {
     this.operations[name] = operation;
     return this;
   }
@@ -130,5 +130,5 @@ export const Service = {
    * @param id Unique identifier for the service
    * @returns A new service builder instance
    */
-  create: <T = any>(id: string) => ServiceBuilder.create<T>(id)
+  create: <T = Record<string, unknown>>(id: string) => ServiceBuilder.create<T>(id)
 }; 
