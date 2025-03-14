@@ -95,6 +95,19 @@ ArchitectLM achieves the perfect balance between structure and scalability:
 - **TypeScript AST Processing**: Advanced code generation and validation using ts-morph
 - **Multi-Provider Support**: Compatible with OpenAI, Anthropic, and OpenRouter language models
 - **LLM Performance Metrics**: Detailed model comparison for optimal AI integration
+- **Enhanced CLI Experience**: User-friendly CLI with progress indicators, model fallback, and interactive feedback
+- **Model Fallback Mechanism**: Automatic switching between models when one fails or times out
+- **Graceful Error Handling**: Comprehensive error handling with clear user feedback
+- **DSL-Based Architecture**: Define your system's behavior using a domain-specific language that's both powerful and easy to understand.
+- **Reactive System Design**: Build systems that respond to events and state changes in a predictable and maintainable way.
+- **AI-Powered Development**: Leverage AI to help design, implement, and modify your system.
+- **Enhanced CLI Tools**: Use the command-line interface to quickly make changes to your DSL files:
+  - `enhanced-editor-test.ts`: AI-powered editor with model fallback mechanism
+  - `simple-editor-test.ts`: Direct editing tool for quick DSL modifications without API calls
+- **Command-Line Arguments**: Pass your editing requests directly as command-line arguments for easier testing and debugging:
+  ```
+  npx tsx examples/simple-editor-test.ts "Add a completed state and a transition from processing to completed on COMPLETE event"
+  ```
 
 ## Installation
 

@@ -17,6 +17,7 @@ import * as path from 'path';
 import inquirer from 'inquirer';
 import * as diff from 'diff';
 import { z } from 'zod';
+import { loadDSLFile, loadDSLDirectory } from '../dsl/dsl-sandbox';
 
 // Simple message classes for LLM communication
 class SystemMessage {
@@ -25,6 +26,18 @@ class SystemMessage {
 
 class HumanMessage {
   constructor(public content: string) {}
+}
+
+/**
+ * Edit context for generating edit plans
+ */
+interface EditContext {
+  files: Record<string, string>;
+  userRequest: string;
+  editHistory?: Array<{
+    userRequest: string;
+    changes: EditPlan['changes'];
+  }>;
 }
 
 /**
@@ -40,7 +53,7 @@ export class EnhancedRAGAgentEditorExtension extends RAGAgentEditorExtension {
   }> = [];
   
   /**
-   * Create a new enhanced RAG agent editor extension
+   * Create a new enhanced RAG agent editor
    * @param config The configuration for the RAG agent
    */
   constructor(config: Partial<RAGAgentConfig> = {}) {
@@ -79,15 +92,27 @@ export class EnhancedRAGAgentEditorExtension extends RAGAgentEditorExtension {
     // Initialize edit history
     this.editHistory = [];
     
-    // Discover DSL files to save history before first edit
-    const files = await this.discoverDSLFiles(dslDirectory);
-    const fileContents = await this.readDSLFiles(files);
+    // Load all DSL files in the directory using the sandbox
+    const dslFiles = loadDSLDirectory(dslDirectory);
+    
+    // Create a context with the DSL files
+    const context: EditContext = {
+      files: {},
+      userRequest
+    };
+    
+    // Add each DSL file to the context
+    for (const fileName of Object.keys(dslFiles)) {
+      const filePath = path.join(dslDirectory, `${fileName}.ts`);
+      const content = fs.readFileSync(filePath, 'utf-8');
+      context.files[filePath] = content;
+    }
     
     // Create an initial edit plan to save history
     const initialEditPlan: EditPlan = {
-      changes: Object.entries(fileContents).map(([filePath, content]) => ({
+      changes: Object.entries(context.files).map(([filePath, content]) => ({
         filePath,
-        newContent: content,
+        newContent: content as string,
         isNewFile: false
       }))
     };
@@ -111,7 +136,7 @@ export class EnhancedRAGAgentEditorExtension extends RAGAgentEditorExtension {
       changes: Object.entries(firstEditContents).map(([filePath, content]) => ({
         filePath,
         newContent: content,
-        isNewFile: !Object.keys(fileContents).includes(filePath)
+        isNewFile: !Object.keys(context.files).includes(filePath)
       }))
     });
     
@@ -183,19 +208,23 @@ export class EnhancedRAGAgentEditorExtension extends RAGAgentEditorExtension {
   private async editWithContext(options: EditDSLOptions): Promise<string> {
     const { dslDirectory, userRequest, debug = this.getDebugMode() } = options;
     
-    // Discover DSL files
-    const files = await this.discoverDSLFiles(dslDirectory);
+    // Load all DSL files in the directory using the sandbox
+    const dslFiles = loadDSLDirectory(dslDirectory);
     
-    // Read DSL files
-    const fileContents = await this.readDSLFiles(files);
-    
-    // Generate edit plan with context from previous edits
-    const context = {
-      files: fileContents,
-      userRequest,
-      editHistory: this.editHistory
+    // Create a context with the DSL files
+    const context: EditContext = {
+      files: {},
+      userRequest
     };
     
+    // Add each DSL file to the context
+    for (const fileName of Object.keys(dslFiles)) {
+      const filePath = path.join(dslDirectory, `${fileName}.ts`);
+      const content = fs.readFileSync(filePath, 'utf-8');
+      context.files[filePath] = content;
+    }
+    
+    // Generate edit plan with context from previous edits
     const editPlan = await this.generateEditPlanWithContext(context);
     
     if (debug) {
@@ -227,16 +256,15 @@ export class EnhancedRAGAgentEditorExtension extends RAGAgentEditorExtension {
    * @param context The context containing files, user request, and edit history
    * @returns An edit plan with changes to apply
    */
-  private async generateEditPlanWithContext(context: {
-    files: Record<string, string>;
-    userRequest: string;
-    editHistory: Array<{
-      userRequest: string;
-      changes: EditPlan['changes'];
-    }>;
-  }): Promise<EditPlan> {
-    // Create a prompt for the LLM that includes edit history
-    const prompt = this.createEditPromptWithContext(context);
+  private async generateEditPlanWithContext(context: EditContext): Promise<EditPlan> {
+    // Add edit history to the context if not provided
+    const contextWithHistory: EditContext = {
+      ...context,
+      editHistory: context.editHistory || this.editHistory
+    };
+    
+    // Create a prompt for the LLM with edit history
+    const prompt = this.createEditPromptWithContext(contextWithHistory);
     
     // Send the prompt to the LLM
     const response = await (this as any).llm.invoke([
@@ -247,9 +275,6 @@ export class EnhancedRAGAgentEditorExtension extends RAGAgentEditorExtension {
     // Parse the response to extract the edit plan
     const editPlan = (this as any).parseEditPlanResponse(response.content, context.files);
     
-    // Validate the edit plan against schemas
-    await this.validateEditPlan(editPlan);
-    
     return editPlan;
   }
   
@@ -258,14 +283,7 @@ export class EnhancedRAGAgentEditorExtension extends RAGAgentEditorExtension {
    * @param context The context containing files, user request, and edit history
    * @returns A prompt for the LLM
    */
-  private createEditPromptWithContext(context: {
-    files: Record<string, string>;
-    userRequest: string;
-    editHistory: Array<{
-      userRequest: string;
-      changes: EditPlan['changes'];
-    }>;
-  }): string {
+  private createEditPromptWithContext(context: EditContext): string {
     // Get the base prompt
     let prompt = (this as any).config.systemPrompt || (this as any).getDefaultSystemPrompt();
     
@@ -277,19 +295,28 @@ export class EnhancedRAGAgentEditorExtension extends RAGAgentEditorExtension {
       prompt += `File: ${fileName}\n\`\`\`typescript\n${content}\n\`\`\`\n\n`;
     }
     
-    // Add edit history for context
-    if (context.editHistory.length > 0) {
-      prompt += '\n\nPrevious edits in this session:\n\n';
+    // Add edit history to the prompt if available
+    if (context.editHistory && context.editHistory.length > 0) {
+      prompt += '\n\nHere is the history of previous edits:\n\n';
       
       for (const edit of context.editHistory) {
-        prompt += `Request: "${edit.userRequest}"\n`;
+        prompt += `Request: ${edit.userRequest}\n`;
+        prompt += `Changes:\n`;
+        
+        for (const change of edit.changes) {
+          const fileName = path.basename(change.filePath);
+          prompt += `- Modified ${fileName}\n`;
+        }
+        
+        prompt += '\n';
       }
     }
     
-    // Add instructions
-    prompt += `\nPlease edit the DSL files according to this request: "${context.userRequest}"\n`;
-    prompt += 'For each file you modify, provide the complete new content.\n';
-    prompt += 'Explain your changes clearly.\n';
+    // Add instructions for the response format
+    prompt += '\n\nPlease respond with your changes in the following format:\n';
+    prompt += '1. For each file you want to modify, provide the complete new content\n';
+    prompt += '2. Explain your changes clearly\n';
+    prompt += '3. If you need to create a new file, specify the file name and content\n';
     
     return prompt;
   }
