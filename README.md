@@ -91,6 +91,7 @@ ArchitectLM achieves the perfect balance between structure and scalability:
 - **Testing Utilities**: Comprehensive testing tools for verifying system behavior
 - **AI-Assisted Development**: Agent mode for generating components using LLMs
 - **RAG-Enhanced Generation**: Retrieval-augmented generation for context-aware AI assistance
+- **Enhanced RAG Agent Editor**: Interactive editing of DSL files with visual diffs, undo functionality, and schema validation
 - **TypeScript AST Processing**: Advanced code generation and validation using ts-morph
 - **Multi-Provider Support**: Compatible with OpenAI, Anthropic, and OpenRouter language models
 - **LLM Performance Metrics**: Detailed model comparison for optimal AI integration
@@ -592,6 +593,59 @@ const processSpec = {
 const processDefinition = await ragAgent.generateProcess(processSpec);
 ```
 
+### Enhanced RAG Agent Editor
+
+The Enhanced RAG Agent Editor extends the base RAG agent editor with advanced features for interactive, user-friendly editing of DSL files:
+
+```typescript
+// Create an enhanced RAG agent editor
+import { createEnhancedRAGAgentEditor } from 'architectlm/extensions';
+
+const editor = createEnhancedRAGAgentEditor({
+  provider: 'openrouter',
+  model: 'meta-llama/llama-3.3-70b-instruct',
+  apiKey: process.env.OPENROUTER_API_KEY,
+  baseUrl: 'https://openrouter.ai/api/v1',
+  debug: true
+});
+
+// Edit DSL files in a directory
+const result = await editor.editDSL({
+  dslDirectory: './src/dsl',
+  userRequest: 'Add a completed state and a transition from processing to completed on COMPLETE event',
+  interactive: true // Enable interactive mode
+});
+
+console.log('Edit result:', result);
+```
+
+#### Key Features
+
+1. **Interactive Mode with Inquirer.js**:
+   - User-friendly prompts for confirming changes
+   - Multiple edit iterations in a single session
+   - Step-by-step guidance through the editing process
+
+2. **Visual Diffs**:
+   - See exactly what changes will be made before applying them
+   - Clear visualization of additions, modifications, and deletions
+
+3. **Undo Functionality**:
+   - Revert to previous versions of files
+   - File history is saved in a `.history` directory
+
+4. **Context-Aware Editing**:
+   - Previous edits are used as context for subsequent edits
+   - Maintains continuity between edits
+
+5. **Schema Validation**:
+   - Validates DSL files against schemas
+   - Provides feedback on validation errors
+
+6. **Creating New Files**:
+   - Support for creating new DSL files
+   - Automatically validates new files against schemas
+
 #### Advanced Error Handling with ts-morph
 
 The RAG agent includes robust error handling with ts-morph:
@@ -675,6 +729,7 @@ We're continuously improving ArchitectLM. Here are some planned enhancements:
 10. **Compliance Features**: Audit logging and compliance reporting
 11. **Enhanced TypeScript AST Processing**: Deeper integration with ts-morph for code transformation and generation
 12. **Advanced RAG Integration**: Improved vector database support and multi-model agent orchestration
+13. **Enhanced RAG Agent Editor Improvements**: Web-based UI, collaborative editing, and integration with version control systems
 
 ## Examples
 
@@ -686,6 +741,7 @@ Key examples include:
 - **Event-Driven Communication**: Using events for communication between components
 - **Distributed Caching**: Setting up and using distributed caching
 - **RAG Agent with ts-morph**: Demonstrates using the RAG-enhanced agent with ts-morph for safe code extraction and processing
+- **Enhanced RAG Agent Editor**: Interactive editing of DSL files with visual diffs, undo functionality, and schema validation
 - **OpenRouter Integration**: Using OpenRouter to access various LLM providers
 - **Error Handling Patterns**: Implementing robust error handling
 - **Testing Examples**: Writing tests for processes and tasks

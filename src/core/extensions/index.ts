@@ -38,6 +38,8 @@ export {
 // Export agent extensions
 export { AgentExtension, AgentConfig, createAgent } from './agent';
 export { RAGAgentExtension, RAGAgentConfig, createRAGAgent } from './rag-agent';
+export { RAGAgentEditorExtension, EditPlan, EditDSLOptions, createRAGAgentEditor } from './rag-agent-editor';
+export { EnhancedRAGAgentEditorExtension, createEnhancedRAGAgentEditor } from './rag-agent-editor-enhanced';
 export { ServiceIntegration } from './service-integration';
 
 // Export mock implementations
@@ -72,6 +74,8 @@ export const createServiceIntegration = (config = {}) => {
 interface ExtensionsConfig {
   agent?: Record<string, unknown>;
   ragAgent?: Record<string, unknown>;
+  ragAgentEditor?: Record<string, unknown>;
+  enhancedRagAgentEditor?: Record<string, unknown>;
   serviceIntegration?: Record<string, unknown>;
 }
 
@@ -79,6 +83,8 @@ interface ExtensionsConfig {
 export const createExtensions = (config: ExtensionsConfig = {}) => {
   const { createAgent } = require('./agent');
   const { createRAGAgent } = require('./rag-agent');
+  const { createRAGAgentEditor } = require('./rag-agent-editor');
+  const { createEnhancedRAGAgentEditor } = require('./rag-agent-editor-enhanced');
   
   return {
     sagaCoordinator: createSagaCoordinator(),
@@ -87,6 +93,8 @@ export const createExtensions = (config: ExtensionsConfig = {}) => {
     loadManager: createLoadManager(),
     agent: config.agent ? createAgent(config.agent) : undefined,
     ragAgent: config.ragAgent ? createRAGAgent(config.ragAgent) : undefined,
+    ragAgentEditor: config.ragAgentEditor ? createRAGAgentEditor(config.ragAgentEditor) : undefined,
+    enhancedRagAgentEditor: config.enhancedRagAgentEditor ? createEnhancedRAGAgentEditor(config.enhancedRagAgentEditor) : undefined,
     serviceIntegration: config.serviceIntegration ? new ServiceIntegration(config.serviceIntegration) : undefined
   };
 }; 

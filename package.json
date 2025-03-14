@@ -16,7 +16,8 @@
     "example:rag-agent": "tsx examples/rag-agent-example.ts",
     "example:plugin": "tsx examples/plugin-runtime-example.ts",
     "example:runtime": "tsx examples/reactive-runtime-example.ts",
-    "test:openrouter": "tsx examples/openrouter-rag-test.ts"
+    "test:openrouter": "tsx examples/openrouter-rag-test.ts",
+    "edit-dsl": "tsx src/cli/edit-dsl.ts"
   },
   "keywords": [
     "llm",
@@ -29,6 +30,7 @@
   "author": "",
   "license": "MIT",
   "devDependencies": {
+    "@types/diff": "^7.0.1",
     "@types/node": "^20.17.24",
     "@types/uuid": "^10.0.0",
     "@typescript-eslint/eslint-plugin": "^6.21.0",
@@ -45,7 +47,9 @@
     "@types/axios": "^0.14.4",
     "axios": "^1.8.3",
     "chromadb": "^2.0.1",
+    "diff": "^7.0.0",
     "dotenv": "^16.4.7",
+    "inquirer": "^12.4.3",
     "langchain": "^0.3.19",
     "ts-morph": "^25.0.1",
     "uuid": "^11.1.0",
