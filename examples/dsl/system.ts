@@ -4,10 +4,12 @@
  * This file contains an example system definition that combines the order process and task.
  */
 
-// Import the ReactiveSystem namespace
-import { ReactiveSystem } from '../../src/core/dsl/reactive-system';
-import orderProcess from './process';
-import processOrderTask from './task';
+// Using global defined functions
+// No imports needed
+
+// Get the process and task from the registry
+const orderProcess = ReactiveSystem.getProcess('orderProcess');
+const processOrderTask = ReactiveSystem.getTask('process-order');
 
 // Define the e-commerce system
 const ecommerceSystem = ReactiveSystem.define('ecommerce-system')
@@ -18,8 +20,9 @@ const ecommerceSystem = ReactiveSystem.define('ecommerce-system')
     author: 'ArchitectLM',
     tags: ['e-commerce', 'orders', 'processing']
   })
-  .withProcess(orderProcess)
-  .withTask(processOrderTask)
+  // Add the process and task to the system
+  .addProcess(orderProcess)
+  .addTask(processOrderTask)
   .build();
 
 export default ecommerceSystem; 

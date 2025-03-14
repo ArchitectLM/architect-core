@@ -212,6 +212,21 @@ export class ReactiveSystemBuilder {
   }
 
   /**
+   * Build the reactive system definition
+   */
+  build(): ReactiveSystemDefinition {
+    if (!this.definition.id) {
+      throw new Error('System ID is required');
+    }
+
+    if (!this.definition.processes || this.definition.processes.length === 0) {
+      throw new Error('System must have at least one process');
+    }
+
+    return this.definition as ReactiveSystemDefinition;
+  }
+
+  /**
    * Add a process definition to the system
    * @internal
    */
@@ -236,18 +251,19 @@ export class ReactiveSystemBuilder {
   }
 
   /**
-   * Build the reactive system definition
+   * Add an existing process to the system
    */
-  build(): ReactiveSystemDefinition {
-    if (!this.definition.id) {
-      throw new Error('System ID is required');
-    }
+  addProcess(process: ProcessDefinition): this {
+    this._addProcess(process);
+    return this;
+  }
 
-    if (!this.definition.processes || this.definition.processes.length === 0) {
-      throw new Error('System must have at least one process');
-    }
-
-    return this.definition as ReactiveSystemDefinition;
+  /**
+   * Add an existing task to the system
+   */
+  addTask(task: TaskDefinition): this {
+    this._addTask(task);
+    return this;
   }
 }
 
@@ -363,6 +379,7 @@ export class ProcessBuilder {
     }
 
     const processDefinition = this.definition as ProcessDefinition;
+    
     this.parent._addProcess(processDefinition);
     return processDefinition;
   }
@@ -665,6 +682,7 @@ export class TaskBuilder<Input = any, Output = any, Context = any> {
     }
 
     const taskDefinition = this.definition as TaskDefinition;
+    
     this.parent._addTask(taskDefinition);
     return taskDefinition;
   }

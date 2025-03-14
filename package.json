@@ -9,15 +9,19 @@
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
     "build": "tsc",
-    "lint": "eslint src --ext .ts",
-    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "lint": "eslint . --ext .ts",
+    "dev": "ts-node src/index.ts",
     "example": "tsx examples/order-processing.ts",
     "example:agent": "tsx examples/agent-example.ts",
     "example:rag-agent": "tsx examples/rag-agent-example.ts",
     "example:plugin": "tsx examples/plugin-runtime-example.ts",
     "example:runtime": "tsx examples/reactive-runtime-example.ts",
     "test:openrouter": "tsx examples/openrouter-rag-test.ts",
-    "edit-dsl": "tsx src/cli/edit-dsl.ts"
+    "edit-dsl": "tsx examples/simple-editor-test.ts",
+    "edit-dsl-ai": "tsx examples/enhanced-editor-test.ts",
+    "sandbox-dsl": "tsx examples/dsl-sandbox-test.ts",
+    "format": "prettier --write \"src/**/*.ts\""
   },
   "keywords": [
     "llm",
