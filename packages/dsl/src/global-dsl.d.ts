@@ -1,12 +1,13 @@
 /**
  * Global DSL Type Declarations
- * 
+ *
  * This file provides TypeScript type definitions for the global DSL objects
  * that are available in DSL files without explicit imports.
  */
 
-import { ProcessBuilder } from '../builders/process-builder';
-import { TaskBuilder } from '../builders/task-builder';
+import { ProcessBuilder } from './builders/process-builder';
+import { TaskBuilder } from './builders/task-builder';
+
 import { ReactiveSystemBuilder } from './reactive-system';
 
 declare global {
@@ -14,9 +15,7 @@ declare global {
    * Global Process object for creating process definitions
    */
   const Process: {
-    create: <S extends string = string, E extends string = string, C = Record<string, unknown>>(
-      id: string
-    ) => ProcessBuilder<S, E, C>;
+    create: (id: string) => ProcessBuilder;
   };
 
   /**
@@ -30,11 +29,11 @@ declare global {
    * Global ReactiveSystem object for creating system definitions
    */
   const ReactiveSystem: {
-    define: (id: string) => ReturnType<typeof ReactiveSystemBuilder.define>;
+    define: (id: string) => ReturnType<typeof ReactiveSystemBuilder.create>;
     getProcess: (id: string) => any;
     getTask: (id: string) => any;
     getSystem: (id: string) => any;
   };
 }
 
-export {}; 
+export {};
