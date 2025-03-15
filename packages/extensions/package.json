@@ -1,0 +1,40 @@
+{
+  "name": "@architectlm/extensions",
+  "version": "1.0.0",
+  "description": "Extensions for ArchitectLM framework",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint . --ext .ts,.js",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "start": "tsx src/index.ts",
+    "test:coverage": "vitest run --coverage",
+    "lint:fix": "eslint . --ext .ts,.js --fix"
+  },
+  "keywords": [
+    "llm",
+    "architecture",
+    "workflow",
+    "process",
+    "task",
+    "event-driven"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@architectlm/core": "workspace:*",
+    "@langchain/openai": "^0.4.4",
+    "axios": "^1.8.3",
+    "chromadb": "^2.0.1",
+    "diff": "^7.0.0",
+    "dotenv": "^16.4.7",
+    "langchain": "^0.3.19",
+    "ts-morph": "^25.0.1",
+    "uuid": "^11.1.0",
+    "zod": "^3.24.2",
+    "@architectlm/dsl": "workspace:*"
+  },
+  "devDependencies": {}
+}

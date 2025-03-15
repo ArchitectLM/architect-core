@@ -1,0 +1,33 @@
+{
+  "name": "@architectlm/core",
+  "version": "1.0.0",
+  "description": "Core components of ArchitectLM framework",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint . --ext .ts,.js",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "start": "tsx src/index.ts",
+    "test:coverage": "vitest run --coverage",
+    "lint:fix": "eslint . --ext .ts,.js --fix"
+  },
+  "keywords": [
+    "llm",
+    "architecture",
+    "workflow",
+    "process",
+    "task",
+    "event-driven"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "uuid": "^11.1.0",
+    "zod": "^3.24.2",
+    "@architectlm/dsl": "workspace:*",
+    "@architectlm/extensions": "workspace:*"
+  },
+  "devDependencies": {}
+}

@@ -1,0 +1,48 @@
+{
+  "name": "@architectlm/cli",
+  "version": "1.0.0",
+  "description": "Command-line tools for ArchitectLM framework",
+  "main": "src/index.ts",
+  "bin": {
+    "architectlm": "src/index.ts"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint . --ext .ts,.js",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "start": "tsx src/index.ts",
+    "test:coverage": "vitest run --coverage",
+    "lint:fix": "eslint . --ext .ts,.js --fix"
+  },
+  "keywords": [
+    "llm",
+    "architecture",
+    "workflow",
+    "process",
+    "task",
+    "event-driven"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@architectlm/core": "workspace:*",
+    "@architectlm/extensions": "workspace:*",
+    "@architectlm/dsl": "workspace:*",
+    "boxen": "^8.0.1",
+    "chalk": "^4.1.2",
+    "commander": "^11.0.0",
+    "diff": "^7.0.0",
+    "dotenv": "^16.4.7",
+    "inquirer": "^12.4.3",
+    "ora": "^8.2.0",
+    "uuid": "^11.1.0",
+    "fs-extra": "^11.1.1"
+  },
+  "devDependencies": {
+    "@types/commander": "^2.12.2",
+    "@types/fs-extra": "^11.0.4",
+    "@types/node": "^20.10.5"
+  }
+}
