@@ -15,13 +15,5 @@
     "noEmit": true
   },
   "exclude": ["node_modules", "dist"],
-  "files": [],
-  "references": [
-    { "path": "packages/core" },
-    { "path": "packages/extensions" },
-    { "path": "packages/dsl" },
-    { "path": "packages/cli" },
-    { "path": "packages/examples" },
-    { "path": "packages/architectlm" }
-  ]
+  "references": []
 }
