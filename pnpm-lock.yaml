@@ -129,18 +129,25 @@ importers:
 
   packages/core:
     dependencies:
-      '@architectlm/dsl':
-        specifier: workspace:*
-        version: link:../dsl
-      '@architectlm/extensions':
-        specifier: workspace:*
-        version: link:../extensions
+      rxjs:
+        specifier: ^7.8.2
+        version: 7.8.2
       uuid:
         specifier: ^11.1.0
         version: 11.1.0
       zod:
-        specifier: ^3.24.2
+        specifier: ^3.22.4
         version: 3.24.2
+    devDependencies:
+      '@types/node':
+        specifier: ^20.17.24
+        version: 20.17.24
+      typescript:
+        specifier: ^5.8.2
+        version: 5.8.2
+      vitest:
+        specifier: ^3.0.8
+        version: 3.0.8(@types/node@20.17.24)(tsx@4.19.3)(yaml@2.7.0)
 
   packages/dsl:
     dependencies:

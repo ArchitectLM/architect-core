@@ -1,0 +1,39 @@
+{
+  "name": "@architectlm/rag",
+  "version": "0.1.0",
+  "description": "Retrieval Augmented Generation (RAG) integration for the ArchitectLM reactive system",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest watch",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix"
+  },
+  "keywords": [
+    "architectlm",
+    "rag",
+    "vector-db",
+    "llm",
+    "ai",
+    "retrieval"
+  ],
+  "author": "ArchitectLM Team",
+  "license": "MIT",
+  "dependencies": {
+    "@architectlm/core": "^0.1.0",
+    "@architectlm/extensions": "^0.1.0",
+    "chromadb": "^1.7.3",
+    "langchain": "^0.1.17",
+    "openai": "^4.28.0",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^0.34.0"
+  }
+}
