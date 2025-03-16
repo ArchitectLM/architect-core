@@ -11,12 +11,6 @@
     "lint:fix": "pnpm -r lint:fix",
     "format": "prettier --write \"**/*.{ts,js,json,md}\"",
     "format:check": "prettier --check \"**/*.{ts,js,json,md}\"",
-    "dev:core": "pnpm --filter @architectlm/core dev",
-    "dev:extensions": "pnpm --filter @architectlm/extensions dev",
-    "dev:cli": "pnpm --filter @architectlm/cli dev",
-    "dev:dsl": "pnpm --filter @architectlm/dsl dev",
-    "example": "pnpm --filter @architectlm/examples run",
-    "clean": "rm -rf node_modules **/*/node_modules **/*/dist",
     "typecheck": "pnpm -r --filter=!examples exec tsc --noEmit --skipLibCheck",
     "typecheck:tests": "pnpm -r exec tsc -p tsconfig.test.json --noEmit --skipLibCheck",
     "start": "pnpm -r start"
