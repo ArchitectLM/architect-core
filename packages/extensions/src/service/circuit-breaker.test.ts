@@ -255,5 +255,30 @@ describe('DefaultCircuitBreaker', () => {
       // We'll just check that the state is valid rather than assuming a specific behavior
       expect([CircuitBreakerState.CLOSED, CircuitBreakerState.OPEN].includes(cb.state)).toBe(true);
     });
+
+    it('should use fallback when circuit is open', async () => {
+      // Set up circuit breaker with low threshold
+      const circuitBreaker = new DefaultCircuitBreaker({
+        failureThreshold: 1,
+        resetTimeoutMs: 10000,
+      });
+
+      // Mock functions
+      const mockFn = vi.fn().mockRejectedValue(new Error('Service error'));
+      const mockFallback = vi.fn().mockResolvedValue('fallback result');
+
+      // First call - should fail and open the circuit
+      await expect(circuitBreaker.execute(mockFn)).rejects.toThrow('Service error');
+
+      expect(circuitBreaker.state).toBe(CircuitBreakerState.OPEN);
+      expect(mockFn).toHaveBeenCalledTimes(1);
+
+      // Second call with fallback - should use fallback
+      const result = await circuitBreaker.execute(mockFn, mockFallback);
+
+      expect(result).toBe('fallback result');
+      expect(mockFn).toHaveBeenCalledTimes(1); // Original function not called again
+      expect(mockFallback).toHaveBeenCalledTimes(1);
+    });
   });
 });

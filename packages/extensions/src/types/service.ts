@@ -119,6 +119,7 @@ export interface CircuitBreakerOptions {
   failureThreshold: number;
   resetTimeoutMs: number;
   halfOpenSuccessThreshold?: number;
+  id?: string; // Optional identifier for the circuit breaker
 }
 
 /**
