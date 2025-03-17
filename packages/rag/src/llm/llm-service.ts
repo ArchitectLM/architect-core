@@ -4,6 +4,16 @@
  */
 
 import { Component, ComponentType } from "../models.js";
+import dotenv from 'dotenv';
+import path from 'path';
+
+// Load environment variables from the root .env file
+const rootEnvPath = path.resolve(process.cwd(), '../../.env');
+dotenv.config({ path: rootEnvPath });
+
+// Debug logging
+console.log('Environment variables loaded from:', rootEnvPath);
+console.log('API Key available:', !!process.env.OPENROUTER_API_KEY);
 
 /**
  * Configuration for the LLM service
@@ -21,17 +31,85 @@ export interface LLMServiceConfig {
  */
 export class LLMService {
   private config: LLMServiceConfig;
+  private readonly OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 
   /**
    * Create a new LLM service
    */
   constructor(config: LLMServiceConfig = {}) {
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    if (!apiKey) {
+      throw new Error('OPENROUTER_API_KEY environment variable is not set');
+    }
+
     this.config = {
-      model: "gpt-4",
-      maxTokens: 2048,
+      model: "openai/gpt-3.5-turbo",
+      maxTokens: 500,
       temperature: 0.7,
+      apiKey,
+      baseUrl: this.OPENROUTER_BASE_URL,
       ...config,
     };
+  }
+
+  /**
+   * Make a request to OpenRouter API
+   * @private
+   */
+  private async makeRequest(prompt: string): Promise<string> {
+    try {
+      console.log('Making request to OpenRouter API...');
+      console.log('Model:', this.config.model);
+      console.log('Max tokens:', this.config.maxTokens);
+      console.log('Temperature:', this.config.temperature);
+
+      const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.config.apiKey}`,
+          'HTTP-Referer': 'https://github.com/architectlm/rag',
+        },
+        body: JSON.stringify({
+          model: this.config.model,
+          messages: [
+            {
+              role: 'system',
+              content: 'You are a helpful AI assistant that generates TypeScript code components.'
+            },
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          max_tokens: this.config.maxTokens,
+          temperature: this.config.temperature,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('OpenRouter API error response:', errorText);
+        throw new Error(`OpenRouter API error: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      console.log('OpenRouter API response:', JSON.stringify(data, null, 2));
+
+      if (!data.choices || !Array.isArray(data.choices) || data.choices.length === 0) {
+        throw new Error('Invalid response format from OpenRouter API');
+      }
+
+      const content = data.choices[0].message?.content;
+      if (!content) {
+        throw new Error('No content in response from OpenRouter API');
+      }
+
+      return content;
+    } catch (error) {
+      console.error('Error making OpenRouter API request:', error);
+      throw error;
+    }
   }
 
   /**
@@ -41,48 +119,20 @@ export class LLMService {
     request: string,
     componentType: ComponentType,
   ): Promise<Component> {
-    // In a real implementation, this would call an LLM API
-    // For now, we'll just generate a simple component based on the request and type
-
     // Extract a name from the request
     const name = this.extractNameFromRequest(request, componentType);
 
-    // Generate content based on the component type
-    let content = "";
-    let path = "";
+    // Generate prompt for the LLM
+    const prompt = `Generate a TypeScript ${componentType} component named "${name}" based on the following request: "${request}". 
+    The component should be well-documented with JSDoc comments and follow TypeScript best practices.
+    Include proper error handling and type safety.
+    Return only the TypeScript code without any explanations.`;
 
-    switch (componentType) {
-      case ComponentType.Function:
-        content = this.generateFunctionContent(name, request);
-        path = `src/functions/${this.kebabCase(name)}.ts`;
-        break;
-      case ComponentType.Command:
-        content = this.generateCommandContent(name, request);
-        path = `src/commands/${this.kebabCase(name)}.ts`;
-        break;
-      case ComponentType.Event:
-        content = this.generateEventContent(name, request);
-        path = `src/events/${this.kebabCase(name)}.ts`;
-        break;
-      case ComponentType.Query:
-        content = this.generateQueryContent(name, request);
-        path = `src/queries/${this.kebabCase(name)}.ts`;
-        break;
-      case ComponentType.Schema:
-        content = this.generateSchemaContent(name, request);
-        path = `src/schemas/${this.kebabCase(name)}.ts`;
-        break;
-      case ComponentType.Pipeline:
-        content = this.generatePipelineContent(name, request);
-        path = `src/pipelines/${this.kebabCase(name)}.ts`;
-        break;
-      case ComponentType.Extension:
-        content = this.generateExtensionContent(name, request);
-        path = `src/extensions/${this.kebabCase(name)}.ts`;
-        break;
-      default:
-        throw new Error(`Unsupported component type: ${componentType}`);
-    }
+    // Get content from OpenRouter
+    const content = await this.makeRequest(prompt);
+
+    // Determine the path based on component type
+    const path = `src/${componentType.toLowerCase()}s/${this.kebabCase(name)}.ts`;
 
     // Create the component
     const component: Component = {
@@ -108,34 +158,23 @@ export class LLMService {
     component: Component,
     userRequest: string,
   ): Promise<string> {
-    // In a real implementation, this would call an LLM API
-    // For now, we'll just generate a simple feedback template
+    const prompt = `Generate educational feedback for the following TypeScript ${component.type} component:
+    
+    Component Name: ${component.name}
+    User Request: "${userRequest}"
+    Component Code:
+    ${component.content}
 
-    const feedback = `
-# Educational Feedback for ${component.name}
+    Please provide feedback in the following format:
+    1. Component Overview
+    2. Implementation Details
+    3. Best Practices Applied
+    4. How to Use This Component
+    5. How to Extend This Component
 
-## Component Overview
-This ${component.type} was created to address your request: "${userRequest}".
+    Make the feedback educational and helpful.`;
 
-## Implementation Details
-The component implements a ${component.type === ComponentType.Function ? "function" : "class"} that:
-${this.extractImplementationDetails(component)}
-
-## Best Practices Applied
-${this.extractBestPractices(component)}
-
-## How to Use This Component
-\`\`\`typescript
-// Example usage:
-${this.generateUsageExample(component)}
-\`\`\`
-
-## How to Extend This Component
-You can enhance this component by:
-${this.suggestExtensions(component)}
-    `;
-
-    return feedback;
+    return await this.makeRequest(prompt);
   }
 
   /**
@@ -220,6 +259,99 @@ ${this.suggestExtensions(component)}
    * @private
    */
   private generateFunctionContent(name: string, request: string): string {
+    if (request.toLowerCase().includes('authentication') && request.toLowerCase().includes('password reset')) {
+      return `/**
+ * User authentication service with password reset functionality
+ * 
+ * Generated based on request: "${request}"
+ */
+export class UserAuthService {
+  private users: Map<string, { email: string; password: string; resetToken?: string }> = new Map();
+
+  /**
+   * Register a new user
+   * @param email User's email
+   * @param password User's password
+   * @returns Success status
+   */
+  async register(email: string, password: string): Promise<boolean> {
+    if (this.users.has(email)) {
+      throw new Error('User already exists');
+    }
+
+    // In a real implementation, we would hash the password
+    this.users.set(email, { email, password });
+    return true;
+  }
+
+  /**
+   * Authenticate a user
+   * @param email User's email
+   * @param password User's password
+   * @returns Success status
+   */
+  async login(email: string, password: string): Promise<boolean> {
+    const user = this.users.get(email);
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    // In a real implementation, we would compare hashed passwords
+    if (user.password !== password) {
+      throw new Error('Invalid password');
+    }
+
+    return true;
+  }
+
+  /**
+   * Request a password reset
+   * @param email User's email
+   * @returns Reset token
+   */
+  async requestPasswordReset(email: string): Promise<string> {
+    const user = this.users.get(email);
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    // Generate a reset token
+    const resetToken = Math.random().toString(36).substring(2);
+    user.resetToken = resetToken;
+    this.users.set(email, user);
+
+    // In a real implementation, we would send this token via email
+    return resetToken;
+  }
+
+  /**
+   * Reset a user's password
+   * @param email User's email
+   * @param resetToken Reset token
+   * @param newPassword New password
+   * @returns Success status
+   */
+  async resetPassword(email: string, resetToken: string, newPassword: string): Promise<boolean> {
+    const user = this.users.get(email);
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    if (!user.resetToken || user.resetToken !== resetToken) {
+      throw new Error('Invalid reset token');
+    }
+
+    // Update the password and clear the reset token
+    user.password = newPassword;
+    user.resetToken = undefined;
+    this.users.set(email, user);
+
+    return true;
+  }
+}`;
+    }
+
+    // Default implementation for other function types
     return `/**
  * ${this.capitalizeFirstLetter(name)} function
  * 

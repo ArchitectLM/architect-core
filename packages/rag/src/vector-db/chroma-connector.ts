@@ -41,7 +41,35 @@ export class ChromaDBConnector implements VectorDBConnector {
    */
   constructor(config: VectorDBConfig) {
     this.config = VectorDBConfigSchema.parse(config);
-    this.client = new ChromaClient();
+    this.client = new ChromaClient({
+      path: 'http://localhost:8000'
+    });
+  }
+
+  private serializeMetadata(metadata: Record<string, unknown>): Record<string, string | number | boolean> {
+    return Object.entries(metadata).reduce((acc, [key, value]) => {
+      if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+        acc[key] = value;
+      } else {
+        acc[key] = JSON.stringify(value);
+      }
+      return acc;
+    }, {} as Record<string, string | number | boolean>);
+  }
+
+  private deserializeMetadata(metadata: Record<string, string | number | boolean>): Record<string, unknown> {
+    return Object.entries(metadata).reduce((acc, [key, value]) => {
+      if (typeof value === 'string' && (value.startsWith('[') || value.startsWith('{'))) {
+        try {
+          acc[key] = JSON.parse(value);
+        } catch {
+          acc[key] = value;
+        }
+      } else {
+        acc[key] = value;
+      }
+      return acc;
+    }, {} as Record<string, unknown>);
   }
 
   /**
@@ -134,7 +162,7 @@ export class ChromaDBConnector implements VectorDBConnector {
 
     await this.collection.add({
       ids: [id],
-      metadatas: [{ ...documentWithId }],
+      metadatas: [this.serializeMetadata({ ...documentWithId })],
       documents: [document.content],
     });
 
@@ -157,7 +185,7 @@ export class ChromaDBConnector implements VectorDBConnector {
 
     await this.collection.add({
       ids,
-      metadatas: documentsWithIds.map((doc) => ({ ...doc })),
+      metadatas: documentsWithIds.map((doc) => this.serializeMetadata({ ...doc })),
       documents: documents.map((doc) => doc.content),
     });
 
@@ -195,8 +223,9 @@ export class ChromaDBConnector implements VectorDBConnector {
     const distances = results.distances[0] || [];
 
     return metadatas
-      .map((metadata: Record<string, unknown>, index: number) => {
-        const component = metadata as unknown as Component;
+      .map((metadata: Record<string, string | number | boolean>, index: number) => {
+        const deserializedMetadata = this.deserializeMetadata(metadata);
+        const component = deserializedMetadata as unknown as Component;
         const distance = distances[index];
 
         // Filter by threshold
@@ -267,7 +296,7 @@ export class ChromaDBConnector implements VectorDBConnector {
     // Then add the updated document with the same ID
     await this.collection.add({
       ids: [id],
-      metadatas: [{ ...updatedDocument }],
+      metadatas: [this.serializeMetadata({ ...updatedDocument })],
       documents: [updatedDocument.content],
     });
   }
@@ -311,7 +340,7 @@ export class ChromaDBConnector implements VectorDBConnector {
 
     await this.feedbackCollection.add({
       ids: [id],
-      metadatas: [{ ...feedbackWithId }],
+      metadatas: [this.serializeMetadata({ ...feedbackWithId })],
       documents: [feedback.message],
     });
 
@@ -337,8 +366,8 @@ export class ChromaDBConnector implements VectorDBConnector {
     }
 
     return results.metadatas.map(
-      (metadata: Record<string, unknown>) =>
-        metadata as unknown as FeedbackRecord,
+      (metadata: Record<string, string | number | boolean>) =>
+        this.deserializeMetadata(metadata) as unknown as FeedbackRecord,
     );
   }
 
@@ -367,8 +396,8 @@ export class ChromaDBConnector implements VectorDBConnector {
     }
 
     return (results.metadatas[0] || []).map(
-      (metadata: Record<string, unknown>) =>
-        metadata as unknown as FeedbackRecord,
+      (metadata: Record<string, string | number | boolean>) =>
+        this.deserializeMetadata(metadata) as unknown as FeedbackRecord,
     );
   }
 
@@ -385,7 +414,7 @@ export class ChromaDBConnector implements VectorDBConnector {
 
     await this.retrievalCollection.add({
       ids: [id],
-      metadatas: [{ ...retrievalWithId }],
+      metadatas: [this.serializeMetadata({ ...retrievalWithId })],
       documents: [retrieval.query],
     });
 
@@ -425,7 +454,7 @@ export class ChromaDBConnector implements VectorDBConnector {
     // Then add the updated retrieval with the same ID
     await this.retrievalCollection.add({
       ids: [retrievalId],
-      metadatas: [{ ...updatedRetrieval }],
+      metadatas: [this.serializeMetadata({ ...updatedRetrieval })],
       documents: [retrieval.query],
     });
   }
@@ -449,8 +478,8 @@ export class ChromaDBConnector implements VectorDBConnector {
       }
 
       return results.metadatas.map(
-        (metadata: Record<string, unknown>) =>
-          metadata as unknown as RetrievalRecord,
+        (metadata: Record<string, string | number | boolean>) =>
+          this.deserializeMetadata(metadata) as unknown as RetrievalRecord,
       );
     }
 
@@ -465,8 +494,8 @@ export class ChromaDBConnector implements VectorDBConnector {
     }
 
     return (results.metadatas[0] || []).map(
-      (metadata: Record<string, unknown>) =>
-        metadata as unknown as RetrievalRecord,
+      (metadata: Record<string, string | number | boolean>) =>
+        this.deserializeMetadata(metadata) as unknown as RetrievalRecord,
     );
   }
 
@@ -522,7 +551,7 @@ export class ChromaDBConnector implements VectorDBConnector {
 
     await this.versionCollection.add({
       ids: [id],
-      metadatas: [{ ...versionWithId }],
+      metadatas: [this.serializeMetadata({ ...versionWithId })],
       documents: [version.content],
     });
 
@@ -546,8 +575,8 @@ export class ChromaDBConnector implements VectorDBConnector {
     }
 
     return results.metadatas.map(
-      (metadata: Record<string, unknown>) =>
-        metadata as unknown as ComponentVersion,
+      (metadata: Record<string, string | number | boolean>) =>
+        this.deserializeMetadata(metadata) as unknown as ComponentVersion,
     );
   }
 
@@ -611,7 +640,7 @@ export class ChromaDBConnector implements VectorDBConnector {
 
     await this.learningCollection.add({
       ids: [id],
-      metadatas: [{ ...taskWithId, type: "task" }],
+      metadatas: [this.serializeMetadata({ ...taskWithId, type: "task" })],
       documents: [`${task.title}: ${task.description}`],
     });
 
@@ -634,8 +663,8 @@ export class ChromaDBConnector implements VectorDBConnector {
       return [];
     }
 
-    return results.metadatas.map((metadata: Record<string, unknown>) => {
-      const { type, ...task } = metadata as unknown as LearningTask & {
+    return results.metadatas.map((metadata: Record<string, string | number | boolean>) => {
+      const { type, ...task } = this.deserializeMetadata(metadata) as unknown as LearningTask & {
         type: string;
       };
       return task;
@@ -655,7 +684,7 @@ export class ChromaDBConnector implements VectorDBConnector {
 
     await this.learningCollection.add({
       ids: [id],
-      metadatas: [{ ...solutionWithId, type: "exemplar" }],
+      metadatas: [this.serializeMetadata({ ...solutionWithId, type: "exemplar" })],
       documents: [solution.content],
     });
 
@@ -678,8 +707,8 @@ export class ChromaDBConnector implements VectorDBConnector {
       return [];
     }
 
-    return results.metadatas.map((metadata: Record<string, unknown>) => {
-      const { type, ...solution } = metadata as unknown as ExemplarSolution & {
+    return results.metadatas.map((metadata: Record<string, string | number | boolean>) => {
+      const { type, ...solution } = this.deserializeMetadata(metadata) as unknown as ExemplarSolution & {
         type: string;
       };
       return solution;
@@ -704,8 +733,8 @@ export class ChromaDBConnector implements VectorDBConnector {
       return [];
     }
 
-    return results.metadatas.map((metadata: Record<string, unknown>) => {
-      const { type, ...task } = metadata as unknown as LearningTask & {
+    return results.metadatas.map((metadata: Record<string, string | number | boolean>) => {
+      const { type, ...task } = this.deserializeMetadata(metadata) as unknown as LearningTask & {
         type: string;
       };
       return task;

@@ -12,6 +12,7 @@ import { VectorConfigStore } from './vector-config-store.js';
 import { ErrorFormatter } from './error-formatter.js';
 import { ChromaDBConnector } from '../vector-db/chroma-connector.js';
 import { VectorDBConfig } from '../models.js';
+import { ComponentSearch } from '../search/component-search.js';
 
 /**
  * Run the DSL editor
@@ -39,19 +40,20 @@ async function runDslEditor() {
     });
     
     const codeValidator = new CodeValidator();
-    const commandHandler = new CliCommandHandler();
-    const sessionManager = new SessionManager(llmService, codeValidator, commandHandler);
+    const commandHandler = new CliCommandHandler(llmService, codeValidator);
+    const sessionManager = new SessionManager(commandHandler);
     const vectorConfigStore = new VectorConfigStore(chromaConnector);
     const errorFormatter = new ErrorFormatter();
+    const componentSearch = new ComponentSearch(chromaConnector);
     
     // Initialize CLI tool
     const cliTool = new CliTool(
       llmService,
       codeValidator,
-      commandHandler,
       sessionManager,
       vectorConfigStore,
-      errorFormatter
+      errorFormatter,
+      componentSearch
     );
     
     // Get command from command line arguments
