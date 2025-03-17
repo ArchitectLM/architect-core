@@ -1,161 +1,259 @@
-# @architectlm/dsl
+# Domain-Specific Language (DSL) Framework
 
-Domain-Specific Language for the ArchitectLM reactive system.
+This package provides a powerful and extensible framework for creating domain-specific languages (DSLs) that enable low-code/no-code development experiences.
 
-## Overview
+## Architecture Overview
 
-The DSL package provides a domain-specific language for defining components in the ArchitectLM reactive system. It includes:
+The DSL framework is built around a component-based architecture that allows for flexible composition and extension. The core architecture consists of:
 
-- Component models for schemas, commands, events, and more
-- Component validation and compilation
-- Integration with vector databases and external systems
-- Event-driven architecture for component management
-- Extension system for customizing component processing
-- Plugin system for adding new functionality
+### Core Components
 
-## Key Features
+- **Component Registry**: Central repository for all component definitions
+- **System Loader**: Loads and manages system definitions and their components
+- **DSL Compiler**: Compiles component definitions into executable code
+- **Plugin System**: Provides extension points for customizing behavior
+- **Event-Driven Architecture**: Enables reactive programming patterns
 
-### Event-Driven Component Registry
+### Key Features
 
-The event-driven component registry provides a reactive way to manage components, emitting events when components are registered, updated, or removed.
+- **Component-Based Design**: Build systems from reusable components
+- **Lazy Loading**: Load components on-demand for better performance
+- **Caching**: Optimize performance with intelligent caching
+- **Validation**: Validate components and systems at multiple levels
+- **Extensibility**: Extend functionality through plugins and extensions
+- **Vector Database Integration**: Store and search components semantically
+
+## Component Types
+
+The framework supports several component types:
+
+- **Schema**: Define data structures and validation rules
+- **Command**: Define executable operations
+- **Event**: Define messages that can be published and subscribed to
+- **Query**: Define data retrieval operations
+- **Workflow**: Define multi-step processes
+
+## Usage Examples
+
+### Defining a Component
 
 ```typescript
-import { EventDrivenComponentRegistry, ReactiveEventBus } from '@architectlm/dsl';
+import { ComponentType } from '@architectlm/dsl';
 
-const eventBus = new ReactiveEventBus();
-const registry = new EventDrivenComponentRegistry(eventBus);
-
-// Subscribe to component events
-eventBus.subscribe('DSL_COMPONENT_REGISTERED', (event) => {
-  console.log(`Component registered: ${event.payload.component.name}`);
-});
-
-// Register a component
-registry.registerComponent({
-  type: 'SCHEMA',
+// Define a schema component
+const userSchema = {
+  type: ComponentType.SCHEMA,
   name: 'User',
   description: 'User schema',
   definition: {
     type: 'object',
     properties: {
       id: { type: 'string' },
-      name: { type: 'string' }
-    }
+      name: { type: 'string' },
+      email: { type: 'string', format: 'email' }
+    },
+    required: ['id', 'name']
   }
-});
+};
+
+// Define a command component
+const createUserCommand = {
+  type: ComponentType.COMMAND,
+  name: 'CreateUser',
+  description: 'Create a new user',
+  input: { ref: 'User' },
+  output: { ref: 'User' }
+};
 ```
 
-### DSL Extension System
-
-The DSL extension system allows for extending the component processing pipeline with custom functionality.
+### Registering Components
 
 ```typescript
-import { 
-  DSLExtensionSystem, 
-  createExtensionSystem, 
-  DSL_EXTENSION_POINTS 
-} from '@architectlm/dsl';
+import { ComponentRegistry } from '@architectlm/dsl';
 
-const extensionSystem = createExtensionSystem();
-const dslExtensionSystem = new DSLExtensionSystem(extensionSystem);
+// Create a registry
+const registry = new ComponentRegistry();
 
-// Initialize the extension system
-dslExtensionSystem.initialize();
+// Register components
+registry.register(userSchema);
+registry.register(createUserCommand);
 
-// Register an extension for component validation
-extensionSystem.registerExtension({
-  name: 'schema-validator',
-  extensionPoint: DSL_EXTENSION_POINTS.VALIDATE_COMPONENT,
-  execute: (context) => {
-    // Custom validation logic
-    if (context.component.type === 'SCHEMA') {
-      // Validate schema component
-      if (!context.component.definition.properties) {
-        context.validationResult.isValid = false;
-        context.validationResult.errors.push('Schema must have properties');
-      }
-    }
-    return context;
-  }
-});
+// Find components by type
+const schemas = registry.findComponents({ type: ComponentType.SCHEMA });
 ```
 
-### DSL Plugin System
-
-The DSL plugin system provides a way to add new functionality to the DSL through plugins.
+### Defining a System
 
 ```typescript
-import { 
-  DSLPluginSystem, 
-  createDSLPluginSystem, 
-  ComponentType 
-} from '@architectlm/dsl';
+import { SystemDefinition } from '@architectlm/dsl';
 
-const pluginSystem = createDSLPluginSystem();
-
-// Register a plugin
-pluginSystem.registerPlugin({
-  name: 'schema-validation-plugin',
-  version: '1.0.0',
-  description: 'Provides enhanced validation for schema components',
-  supportedComponentTypes: [ComponentType.SCHEMA],
-  extensions: [],
-  interceptors: [],
-  onComponentValidation: (component, validationResult) => {
-    // Custom validation logic
-    return validationResult;
+// Define a system
+const ecommerceSystem: SystemDefinition = {
+  name: 'E-Commerce',
+  description: 'E-commerce system',
+  components: {
+    schemas: [
+      { ref: 'User', required: true },
+      { ref: 'Product', required: true },
+      { ref: 'Order', required: true }
+    ],
+    commands: [
+      { ref: 'CreateUser', required: true },
+      { ref: 'CreateProduct', required: true },
+      { ref: 'PlaceOrder', required: true }
+    ],
+    events: [
+      { ref: 'UserCreated' },
+      { ref: 'ProductCreated' },
+      { ref: 'OrderPlaced' }
+    ]
   }
-});
+};
 ```
 
-### Event-Driven DSL Compiler
-
-The event-driven DSL compiler provides a reactive way to compile components, emitting events during the compilation process.
+### Loading a System
 
 ```typescript
-import { 
-  EventDrivenDSLCompiler, 
-  DSLExtensionSystem, 
-  DSLPluginSystem, 
-  ReactiveEventBus 
-} from '@architectlm/dsl';
+import { SystemLoader } from '@architectlm/dsl';
 
-const eventBus = new ReactiveEventBus();
-const extensionSystem = createExtensionSystem();
-const dslExtensionSystem = new DSLExtensionSystem(extensionSystem);
-const dslPluginSystem = createDSLPluginSystem();
-
-const compiler = new EventDrivenDSLCompiler({
-  eventBus,
-  dslExtensionSystem,
-  dslPluginSystem
+// Create a system loader
+const loader = new SystemLoader(registry, {
+  useLazyLoading: true,
+  validateOnLoad: true
 });
 
-// Register a component
-await compiler.registerComponent({
-  type: 'SCHEMA',
-  name: 'User',
-  description: 'User schema',
-  definition: {
-    type: 'object',
-    properties: {
-      id: { type: 'string' },
-      name: { type: 'string' }
-    }
-  }
-});
+// Load the system
+const system = loader.loadSystem(ecommerceSystem);
+
+// Get a component from the system
+const userComponent = await loader.getSystemComponent('E-Commerce', 'User');
+```
+
+### Using the DSL Compiler
+
+```typescript
+import { EventDrivenDSLCompiler } from '@architectlm/dsl';
+
+// Create a compiler
+const compiler = new EventDrivenDSLCompiler(registry);
 
 // Compile a component
-const code = await compiler.compileComponent('User');
-console.log(code);
+const compiledComponent = await compiler.compileComponent('User');
+
+// Execute a command
+const result = await compiler.executeCommand('CreateUser', {
+  id: '123',
+  name: 'John Doe',
+  email: 'john@example.com'
+});
 ```
 
-## Installation
+### Using Plugins
 
-```bash
-npm install @architectlm/dsl
+```typescript
+import { schemaValidationPlugin } from '@architectlm/dsl';
+
+// Create a compiler with plugins
+const compiler = new EventDrivenDSLCompiler(registry, {
+  plugins: [schemaValidationPlugin]
+});
 ```
+
+## Advanced Features
+
+### Caching
+
+The framework includes a sophisticated caching system that improves performance by caching compiled components and validation results.
+
+```typescript
+// Configure caching
+const compiler = new EventDrivenDSLCompiler(registry, {
+  cache: {
+    enabled: true,
+    ttl: 3600000, // 1 hour
+    maxEntries: 1000
+  }
+});
+
+// Get cache statistics
+const stats = compiler.getCacheStats();
+```
+
+### Circular Dependency Detection
+
+The system loader can detect circular dependencies between components:
+
+```typescript
+// Detect circular dependencies
+const circularDeps = loader.detectCircularDependencies('Order');
+```
+
+### Vector Database Integration
+
+Store and search components semantically using vector database integration:
+
+```typescript
+import { ChromaVectorDBAdapter, VectorDBFactory } from '@architectlm/dsl';
+
+// Create a vector database adapter
+const adapter = VectorDBFactory.createAdapter('chroma', {
+  url: 'http://localhost:8000',
+  collectionName: 'components'
+});
+
+// Store a component
+await adapter.storeComponent(userSchema);
+
+// Search for components
+const results = await adapter.searchComponents('user schema');
+```
+
+## Extension Points
+
+The framework provides several extension points:
+
+### Plugins
+
+Plugins can hook into various lifecycle events:
+
+- `onComponentValidation`: Validate components
+- `onComponentCompilation`: Modify compiled code
+- `onSystemValidation`: Validate systems
+- `onCommandExecution`: Intercept command execution
+
+### Custom Component Types
+
+You can define custom component types by extending the base types.
+
+### Custom Loaders
+
+You can create custom loaders for specific use cases.
+
+## Error Handling
+
+The framework provides comprehensive error handling:
+
+- Validation errors
+- Compilation errors
+- Execution errors
+- System loading errors
+
+## Best Practices
+
+- **Component Design**: Keep components small and focused
+- **Dependency Management**: Avoid circular dependencies
+- **Validation**: Validate components at design time
+- **Testing**: Write tests for components and systems
+- **Documentation**: Document component interfaces and behaviors
+
+## API Reference
+
+For detailed API documentation, see the [API Reference](./docs/api.md).
+
+## Contributing
+
+Contributions are welcome! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for details.
 
 ## License
 
-MIT
+This project is licensed under the MIT License - see the [LICENSE](./LICENSE) file for details.

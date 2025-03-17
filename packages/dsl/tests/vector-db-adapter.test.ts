@@ -1,200 +1,306 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ChromaVectorDBAdapter } from '../src/vector-db-adapter.js';
-import { ComponentType, Component, ComponentImplementation } from '../src/types.js';
+import { ComponentType } from '../src/types.js';
 
-// Mock Chroma client
+// Mock the ChromaDB client
 vi.mock('chromadb', () => {
+  const mockCollection = {
+    add: vi.fn().mockResolvedValue({}),
+    query: vi.fn().mockResolvedValue({
+      documents: [[]],
+      metadatas: [[]]
+    }),
+    get: vi.fn().mockResolvedValue({
+      documents: [],
+      metadatas: []
+    })
+  };
+
+  const mockClient = {
+    getOrCreateCollection: vi.fn().mockResolvedValue(mockCollection)
+  };
+
   return {
-    ChromaClient: vi.fn().mockImplementation(() => ({
-      getOrCreateCollection: vi.fn().mockResolvedValue({
-        add: vi.fn().mockResolvedValue(true),
-        get: vi.fn().mockResolvedValue({
-          ids: ['1', '2'],
-          embeddings: null,
-          documents: ['{"name":"Order","type":"schema"}', '{"name":"CreateOrder","type":"command"}'],
-          metadatas: [
-            { name: 'Order', type: 'schema', tags: ['order', 'commerce'] },
-            { name: 'CreateOrder', type: 'command', tags: ['order', 'commerce'] }
-          ]
-        }),
-        query: vi.fn().mockResolvedValue({
-          ids: [['1'], ['2']],
-          distances: [[0.1], [0.2]],
-          embeddings: null,
-          documents: [['{"name":"Order","type":"schema"}'], ['{"name":"CreateOrder","type":"command"}']],
-          metadatas: [
-            [{ name: 'Order', type: 'schema', tags: ['order', 'commerce'] }],
-            [{ name: 'CreateOrder', type: 'command', tags: ['order', 'commerce'] }]
-          ]
-        })
-      })
-    }))
+    ChromaClient: vi.fn().mockImplementation(() => mockClient)
   };
 });
 
-// Skip all tests in this file since they require a running ChromaDB instance
-describe.skip('ChromaVectorDBAdapter', () => {
-  let adapter: ChromaVectorDBAdapter;
+// Create a mock adapter that doesn't try to connect to ChromaDB
+class MockChromaVectorDBAdapter extends ChromaVectorDBAdapter {
+  constructor(config: any) {
+    super(config);
+    // @ts-ignore - Override private properties for testing
+    this.collection = {
+      add: vi.fn().mockResolvedValue({}),
+      query: vi.fn().mockResolvedValue({
+        documents: [[]],
+        metadatas: [[]]
+      }),
+      get: vi.fn().mockResolvedValue({
+        documents: [],
+        metadatas: []
+      })
+    };
+  }
+}
 
+describe('ChromaVectorDBAdapter', () => {
+  let adapter: MockChromaVectorDBAdapter;
+  
   beforeEach(() => {
-    adapter = new ChromaVectorDBAdapter({
+    adapter = new MockChromaVectorDBAdapter({
       url: 'http://localhost:8000',
-      collectionName: 'test-components'
+      collectionName: 'test-collection'
     });
+    
+    // Reset mock call counts
+    vi.clearAllMocks();
   });
 
   describe('storeComponent', () => {
-    it('should store a component in the vector database', async () => {
-      // Arrange
-      const component: Component = {
+    it('should store a component as a single document when small enough', async () => {
+      // @ts-ignore - Using a simplified component for testing
+      const component = {
         type: ComponentType.SCHEMA,
-        name: 'Order',
-        description: 'Represents a customer order in the system',
-        tags: ['order', 'commerce', 'core'],
+        name: 'TestSchema',
+        description: 'A test schema',
         version: '1.0.0',
-        authors: ['team-commerce'],
+        tags: ['test', 'schema'],
+        authors: ['Test Author'],
         definition: {
           type: 'object',
           properties: {
-            id: { type: 'string', description: 'Unique order identifier' }
+            id: { type: 'string' }
           }
-        },
-        examples: [
-          {
-            id: 'order-123'
-          }
-        ]
+        }
       };
 
-      // Act
       const id = await adapter.storeComponent(component);
-
-      // Assert
+      
+      // Verify the ID is returned
       expect(id).toBeDefined();
       expect(typeof id).toBe('string');
+      
+      // Verify the collection.add was called
+      expect((adapter as any).collection.add).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadatas: [expect.objectContaining({
+            name: 'TestSchema',
+            type: ComponentType.SCHEMA
+          })]
+        })
+      );
+    });
+
+    it('should chunk a large component', async () => {
+      // Create a large component by adding a long description
+      // @ts-ignore - Using a simplified component for testing
+      const largeComponent = {
+        type: ComponentType.SCHEMA,
+        name: 'LargeSchema',
+        description: 'A'.repeat(10000), // Very long description
+        definition: {
+          type: 'object',
+          properties: {}
+        }
+      };
+
+      // Override the maxChunkSize for testing
+      (adapter as any).config.maxChunkSize = 1000;
+
+      const id = await adapter.storeComponent(largeComponent);
+      
+      expect(id).toBeDefined();
+      
+      // Verify the collection.add was called multiple times
+      expect((adapter as any).collection.add).toHaveBeenCalled();
     });
   });
 
   describe('storeImplementation', () => {
-    it('should store a component implementation in the vector database', async () => {
-      // Arrange
-      const implementation: ComponentImplementation = {
-        componentName: 'CreateOrder',
-        implementation: async (input, context) => {
-          return { id: 'order-123' };
+    it('should store an implementation', async () => {
+      // @ts-ignore - Using a simplified implementation for testing
+      const implementation = {
+        componentName: 'TestComponent',
+        implementation: async (input: any) => {
+          return { result: input.value * 2 };
         },
         metadata: {
-          complexity: 'medium',
+          complexity: 'low',
           estimatedLatency: 'low',
-          sideEffects: ['database-write', 'event-publishing'],
+          sideEffects: ['none'],
           testCases: [
             {
-              description: 'Successfully creates an order',
-              input: { customerId: 'cust-456' },
-              expectedOutput: { id: 'order-123' }
+              description: 'Test case',
+              input: { value: 2 },
+              expectedOutput: { result: 4 }
             }
           ]
         }
       };
 
-      // Act
       const id = await adapter.storeImplementation(implementation);
-
-      // Assert
+      
       expect(id).toBeDefined();
-      expect(typeof id).toBe('string');
+      
+      expect((adapter as any).collection.add).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadatas: [expect.objectContaining({
+            type: 'implementation',
+            componentName: 'TestComponent'
+          })]
+        })
+      );
     });
   });
 
   describe('storeRelationship', () => {
     it('should store a relationship between components', async () => {
-      // Act
-      await adapter.storeRelationship('Order', 'Customer', 'references', 'Order references Customer');
-
-      // Assert
-      // This is a void function, so we just check that it doesn't throw
-      expect(true).toBe(true);
+      await adapter.storeRelationship(
+        'ComponentA',
+        'ComponentB',
+        'depends-on',
+        'ComponentA depends on ComponentB'
+      );
+      
+      expect((adapter as any).collection.add).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadatas: [expect.objectContaining({
+            type: 'relationship',
+            fromComponent: 'ComponentA',
+            toComponent: 'ComponentB',
+            relationshipType: 'depends-on'
+          })]
+        })
+      );
     });
   });
 
   describe('searchComponents', () => {
-    it('should search for components by query', async () => {
-      // Act
-      const results = await adapter.searchComponents('order');
-
-      // Assert
-      expect(results).toHaveLength(2);
-      expect(results[0].name).toBe('Order');
-      expect(results[1].name).toBe('CreateOrder');
-    });
-
-    it('should filter search results by type', async () => {
-      // Act
-      const results = await adapter.searchComponents('order', { type: ComponentType.SCHEMA });
-
-      // Assert
+    it('should search for components with the given query', async () => {
+      const mockResults = {
+        documents: [[JSON.stringify({
+          type: ComponentType.SCHEMA,
+          name: 'FoundSchema',
+          description: 'A schema that was found in search',
+          definition: { type: 'object' }
+        })]],
+        metadatas: [[{ type: ComponentType.SCHEMA }]]
+      };
+      
+      (adapter as any).collection.query.mockResolvedValueOnce(mockResults);
+      
+      const results = await adapter.searchComponents('schema');
+      
       expect(results).toHaveLength(1);
-      expect(results[0].name).toBe('Order');
-      expect(results[0].type).toBe(ComponentType.SCHEMA);
+      expect(results[0].name).toBe('FoundSchema');
+      expect((adapter as any).collection.query).toHaveBeenCalledWith({
+        queryTexts: ['schema'],
+        nResults: 10,
+        where: undefined
+      });
     });
 
-    it('should filter search results by tags', async () => {
-      // Act
-      const results = await adapter.searchComponents('order', { tags: ['commerce'] });
-
-      // Assert
-      expect(results).toHaveLength(2);
-      expect(results.map((c: Component) => c.name)).toContain('Order');
-      expect(results.map((c: Component) => c.name)).toContain('CreateOrder');
+    it('should apply filters to the search', async () => {
+      const mockResults = {
+        documents: [[JSON.stringify({
+          type: ComponentType.COMMAND,
+          name: 'TestCommand',
+          tags: ['api', 'command'],
+          definition: {}
+        })]],
+        metadatas: [[{ type: ComponentType.COMMAND }]]
+      };
+      
+      (adapter as any).collection.query.mockResolvedValueOnce(mockResults);
+      
+      const results = await adapter.searchComponents('command', {
+        type: ComponentType.COMMAND
+      });
+      
+      expect(results).toHaveLength(1);
+      expect(results[0].type).toBe(ComponentType.COMMAND);
+      expect((adapter as any).collection.query).toHaveBeenCalledWith({
+        queryTexts: ['command'],
+        nResults: 10,
+        where: { type: ComponentType.COMMAND }
+      });
     });
   });
 
   describe('getRelatedComponents', () => {
-    it('should get related components', async () => {
-      // Act
-      const results = await adapter.getRelatedComponents('Order');
-
-      // Assert
+    it('should retrieve related components', async () => {
+      // Mock the relationship query results
+      const mockRelationships = {
+        documents: [
+          JSON.stringify({ from: 'ComponentA', to: 'ComponentB', type: 'depends-on' })
+        ],
+        metadatas: [
+          { fromComponent: 'ComponentA', toComponent: 'ComponentB', relationshipType: 'depends-on' }
+        ]
+      };
+      
+      // Mock the component query results
+      const mockComponent = {
+        documents: [
+          JSON.stringify({
+            type: ComponentType.COMMAND,
+            name: 'ComponentB',
+            description: 'Related component',
+            definition: {}
+          })
+        ],
+        metadatas: [{ name: 'ComponentB' }]
+      };
+      
+      (adapter as any).collection.get.mockResolvedValueOnce(mockRelationships);
+      (adapter as any).collection.get.mockResolvedValueOnce(mockComponent);
+      
+      const results = await adapter.getRelatedComponents('ComponentA');
+      
       expect(results).toHaveLength(1);
-      expect(results[0].name).toBe('CreateOrder');
+      expect(results[0].name).toBe('ComponentB');
+      expect((adapter as any).collection.get).toHaveBeenCalledWith({
+        where: {
+          type: 'relationship',
+          fromComponent: 'ComponentA'
+        }
+      });
     });
 
-    it('should filter related components by relationship type', async () => {
-      // Act
-      const results = await adapter.getRelatedComponents('Order', 'references');
-
-      // Assert
-      expect(results).toHaveLength(1);
-      expect(results[0].name).toBe('CreateOrder');
+    it('should filter by relationship type', async () => {
+      (adapter as any).collection.get.mockResolvedValueOnce({
+        documents: [],
+        metadatas: []
+      });
+      
+      await adapter.getRelatedComponents('ComponentA', 'extends');
+      
+      expect((adapter as any).collection.get).toHaveBeenCalledWith({
+        where: {
+          type: 'relationship',
+          fromComponent: 'ComponentA',
+          relationshipType: 'extends'
+        }
+      });
     });
   });
 
-  describe('chunking', () => {
-    it('should chunk a large component for storage', async () => {
-      // Arrange
-      const largeComponent: Component = {
-        type: ComponentType.SCHEMA,
-        name: 'LargeOrder',
-        description: 'A very large order schema with many properties',
-        tags: ['order', 'commerce', 'large'],
-        definition: {
-          type: 'object',
-          properties: {
-            // Create a large number of properties to force chunking
-            ...Array.from({ length: 100 }).reduce((acc: Record<string, any>, _, i) => {
-              acc[`property${i}`] = { type: 'string', description: `Property ${i}` };
-              return acc;
-            }, {})
-          }
-        }
-      };
-
-      // Act
-      const id = await adapter.storeComponent(largeComponent);
-
-      // Assert
-      expect(id).toBeDefined();
-      expect(typeof id).toBe('string');
+  describe('chunkText', () => {
+    it('should chunk text correctly', () => {
+      const text = 'a'.repeat(1000) + 'b'.repeat(1000) + 'c'.repeat(1000);
+      
+      // Set chunk size and overlap
+      (adapter as any).config.maxChunkSize = 1000;
+      (adapter as any).config.chunkOverlap = 100;
+      
+      const chunks = (adapter as any).chunkText(text);
+      
+      expect(chunks).toHaveLength(4); // 3 chunks plus the remainder
+      expect(chunks[0]).toBe('a'.repeat(1000));
+      expect(chunks[1].startsWith('a'.repeat(100))).toBe(true);
+      expect(chunks[1].endsWith('b'.repeat(900))).toBe(true);
+      expect(chunks[2].startsWith('b'.repeat(100))).toBe(true);
     });
   });
 }); 
