@@ -6,6 +6,8 @@ import {
   Command,
   Pipeline,
   ExtensionPoint,
+  BackoffStrategy,
+  RateLimitStrategy,
 } from "./models.js";
 
 /**
@@ -21,6 +23,90 @@ const metadataSchema = z
     tags: z.array(z.string()).optional(),
   })
   .passthrough();
+
+/**
+ * Zod schema for circuit breaker configuration
+ */
+const circuitBreakerSchema = z.object({
+  failureThreshold: z.number(),
+  resetTimeout: z.number(),
+  halfOpenSuccessThreshold: z.number().optional(),
+});
+
+/**
+ * Zod schema for basic retry configuration
+ */
+const retrySchema = z.object({
+  maxAttempts: z.number(),
+  backoff: z.enum(["fixed", "exponential", "linear"]),
+  initialDelay: z.number().optional(),
+  maxDelay: z.number().optional(),
+});
+
+/**
+ * Zod schema for enhanced retry configuration
+ */
+const enhancedRetrySchema = z.object({
+  maxAttempts: z.number(),
+  strategy: z.nativeEnum(BackoffStrategy),
+  initialDelay: z.number(),
+  maxDelay: z.number(),
+  factor: z.number().optional(),
+  onRetry: z.string().optional(),
+  shouldRetry: z.string().optional(),
+});
+
+/**
+ * Zod schema for bulkhead configuration
+ */
+const bulkheadSchema = z.object({
+  maxConcurrent: z.number(),
+  maxQueue: z.number().optional(),
+  timeout: z.number().optional(),
+});
+
+/**
+ * Zod schema for rate limiter configuration
+ */
+const rateLimiterSchema = z.object({
+  strategy: z.nativeEnum(RateLimitStrategy),
+  limit: z.number(),
+  window: z.number().optional(),
+  refillRate: z.number().optional(),
+  refillInterval: z.number().optional(),
+});
+
+/**
+ * Zod schema for cache configuration
+ */
+const cacheSchema = z.object({
+  ttl: z.number(),
+  maxSize: z.number().optional(),
+  staleWhileRevalidate: z.boolean().optional(),
+});
+
+/**
+ * Zod schema for dead letter queue configuration
+ */
+const deadLetterQueueSchema = z.object({
+  maxRetries: z.number().optional(),
+  retryDelay: z.number().optional(),
+  errorHandler: z.string().optional(),
+});
+
+/**
+ * Zod schema for resilience configuration
+ */
+const resilienceSchema = z.object({
+  circuitBreaker: circuitBreakerSchema.optional(),
+  retry: retrySchema.optional(),
+  enhancedRetry: enhancedRetrySchema.optional(),
+  bulkhead: bulkheadSchema.optional(),
+  rateLimit: rateLimiterSchema.optional(),
+  cache: cacheSchema.optional(),
+  deadLetterQueue: deadLetterQueueSchema.optional(),
+  timeout: z.number().optional(),
+});
 
 /**
  * Zod schema for validating the DSL configuration
@@ -45,24 +131,7 @@ const dslConfigSchema = z.object({
         input: z.string(),
         output: z.string(),
         implementation: z.function().optional(),
-        resilience: z
-          .object({
-            circuitBreaker: z
-              .object({
-                failureThreshold: z.number(),
-                resetTimeout: z.number(),
-              })
-              .optional(),
-            retry: z
-              .object({
-                maxAttempts: z.number(),
-                backoff: z.enum(["fixed", "exponential", "linear"]),
-                initialDelay: z.number().optional(),
-              })
-              .optional(),
-            timeout: z.number().optional(),
-          })
-          .optional(),
+        resilience: resilienceSchema.optional(),
       })
       .passthrough(),
   ),
@@ -80,6 +149,7 @@ const dslConfigSchema = z.object({
             input: z.string().optional(),
             output: z.string().optional(),
             condition: z.string().optional(),
+            resilience: resilienceSchema.optional(),
           }),
         ),
         errorHandling: z
@@ -87,8 +157,10 @@ const dslConfigSchema = z.object({
             fallback: z.string().optional(),
             retryable: z.array(z.string()).optional(),
             maxRetries: z.number().optional(),
+            deadLetterQueue: z.string().optional(),
           })
           .optional(),
+        resilience: resilienceSchema.optional(),
       })
       .passthrough(),
   ),
@@ -109,10 +181,12 @@ const dslConfigSchema = z.object({
           meta: metadataSchema,
           hooks: z.record(
             z.string(),
-            z.object({
-              meta: metadataSchema.optional(),
-              implementation: z.function(),
-            }),
+            z
+              .object({
+                meta: metadataSchema.optional(),
+                implementation: z.function().optional(),
+              })
+              .passthrough(),
           ),
           configuration: z.record(z.string(), z.any()).optional(),
         })

@@ -199,7 +199,11 @@ export class ReactiveRuntime implements Runtime {
           );
           return execution?.result;
         },
-        logger: this.logger,
+        logger: this.logger || {
+          info: (message: string, data?: any) => console.info(message, data),
+          warn: (message: string, data?: any) => console.warn(message, data),
+          error: (message: string, data?: any) => console.error(message, data)
+        },
       };
 
       // Execute task

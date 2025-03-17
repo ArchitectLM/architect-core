@@ -77,9 +77,11 @@ export class ReactiveEventBus {
    */
   pipe<T = any, R = any>(
     eventType: string,
-    ...operators: OperatorFunction<Event<T>, R>[]
+    ...operators: OperatorFunction<Event<T>, any>[]
   ): Observable<R> {
-    return this.observe<T>(eventType).pipe(...operators);
+    const source = this.observe<T>(eventType);
+    // Apply operators one by one to handle type transformations
+    return operators.reduce((obs, op) => obs.pipe(op), source) as Observable<R>;
   }
 
   /**

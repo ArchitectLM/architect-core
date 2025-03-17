@@ -12,4 +12,9 @@ export default defineConfig({
       exclude: ['**/*.test.ts', '**/tests/**'],
     },
   },
+  resolve: {
+    // Allow direct imports from TypeScript files
+    conditions: ['import', 'node', 'default'],
+    extensions: ['.ts', '.js', '.json'],
+  },
 });

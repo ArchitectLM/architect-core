@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { filter, map, firstValueFrom, take } from 'rxjs';
+import { filter, map, firstValueFrom, take, of } from 'rxjs';
 import { ReactiveEventBus } from '../src/implementations/event-bus.js';
 import { Event } from '../src/models/index.js';
 
@@ -84,6 +84,48 @@ describe('ReactiveEventBus', () => {
       // Cleanup
       unsubscribe();
     });
+
+    it('should allow unsubscribing from wildcard subscriptions', async () => {
+      // Given a wildcard subscriber that unsubscribes
+      const handler = vi.fn();
+      const unsubscribe = eventBus.subscribe('*', handler);
+      unsubscribe();
+
+      // When publishing events
+      eventBus.publish('test-event-1', { message: 'Hello 1' });
+      eventBus.publish('test-event-2', { message: 'Hello 2' });
+
+      // Then the handler should not be called
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('should handle errors in wildcard subscribers', async () => {
+      // Given a wildcard subscriber that throws an error
+      const errorHandler = vi.fn().mockImplementation(() => {
+        throw new Error('Wildcard handler error');
+      });
+      
+      // Add the wildcard subscription to the subscriptions map directly
+      // This is a more direct way to test the error handling in notifySubscribers
+      eventBus['subscriptions'].set('*', new Set([errorHandler]));
+
+      // Spy on console.error to prevent actual error output during tests
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      // When publishing an event
+      eventBus.publish('test-event', { message: 'Hello' });
+
+      // Then it should not throw and the error should be logged
+      expect(errorHandler).toHaveBeenCalled();
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Error in wildcard event handler'),
+        expect.any(Error)
+      );
+
+      // Cleanup
+      eventBus['subscriptions'].delete('*');
+      consoleErrorSpy.mockRestore();
+    });
   });
 
   describe('Observable Streams', () => {
@@ -137,6 +179,35 @@ describe('ReactiveEventBus', () => {
       subscription.unsubscribe();
     });
 
+    it('should provide a pipe method for direct operator application', async () => {
+      // Given a piped observable with a simple operator
+      const results: Event<{value: number}>[] = [];
+      
+      // When using the pipe method directly
+      const subscription = eventBus
+        .pipe(
+          'number-event',
+          filter((event: Event<{value: number}>) => event.payload.value > 2)
+        )
+        .subscribe(event => {
+          results.push(event);
+        });
+
+      // And publishing events
+      eventBus.publish('number-event', { value: 1 });
+      eventBus.publish('number-event', { value: 2 });
+      eventBus.publish('number-event', { value: 3 });
+      eventBus.publish('number-event', { value: 4 });
+
+      // Then the subscriber should receive filtered events
+      expect(results.length).toBe(2);
+      expect(results[0].payload.value).toBe(3);
+      expect(results[1].payload.value).toBe(4);
+
+      // Cleanup
+      subscription.unsubscribe();
+    });
+
     it('should observe just the payload of events', async () => {
       // Given an observable for payloads
       const results: any[] = [];
@@ -156,6 +227,33 @@ describe('ReactiveEventBus', () => {
         { id: 1, name: 'Item 1' },
         { id: 2, name: 'Item 2' },
       ]);
+
+      // Cleanup
+      subscription.unsubscribe();
+    });
+
+    // Test for pipe method with wildcard event type (lines 67-68)
+    it('should provide a pipe method for wildcard events', async () => {
+      // Create a piped observable with a simple map operator
+      const results: number[] = [];
+      const subscription = eventBus.pipe('*', 
+        map((event: Event) => {
+          if (typeof event.payload === 'number') {
+            return event.payload * 2;
+          }
+          return 0;
+        })
+      ).subscribe(value => {
+        results.push(value);
+      });
+
+      // Publish events of different types
+      eventBus.publish('type1', 1);
+      eventBus.publish('type2', 2);
+      eventBus.publish('type3', 3);
+
+      // Check that all events were processed
+      expect(results).toEqual([2, 4, 6]);
 
       // Cleanup
       subscription.unsubscribe();

@@ -406,7 +406,7 @@ describe("DefaultExtensionSystem", () => {
 
         expect(() => {
           extensionSystem.registerExtensionPoint(extensionPoint);
-        }).toThrow(/Extension point.*already exists/);
+        }).toThrow(/Extension point .* is already registered/);
       });
     });
 
@@ -422,7 +422,7 @@ describe("DefaultExtensionSystem", () => {
 
         expect(() => {
           extensionSystem.registerExtension(extension);
-        }).toThrow(/Extension point.*does not exist/);
+        }).toThrow(/Extension point .* is not registered/);
       });
 
       it("THEN should register the extension for an existing extension point", () => {
@@ -474,7 +474,7 @@ describe("DefaultExtensionSystem", () => {
         // Try to register the same extension again
         expect(() => {
           extensionSystem.registerExtension(extension);
-        }).toThrow(/Extension.*already exists/);
+        }).toThrow(/Extension .* is already registered/);
       });
     });
 

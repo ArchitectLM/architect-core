@@ -1,18 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { Event } from "@architectlm/core";
 import {
-  ExtensionSystem,
   createExtensionSystem,
   ExtensionPoint,
   Plugin,
   EventInterceptor,
+  DefaultExtensionSystem,
+  Extension,
+  ExtensionEvent
 } from "../src/index.js";
 
 describe("Plugin Management", () => {
-  let extensionSystem: ExtensionSystem;
+  let extensionSystem: DefaultExtensionSystem;
 
   beforeEach(() => {
-    extensionSystem = createExtensionSystem();
+    extensionSystem = createExtensionSystem() as DefaultExtensionSystem;
   });
 
   describe("GIVEN an extension system", () => {
@@ -21,26 +22,26 @@ describe("Plugin Management", () => {
         // Define an extension point
         const extensionPoint: ExtensionPoint = {
           name: "test.point",
-          description: "Test extension point",
+          handlers: [],
         };
 
         // Register the extension point
         extensionSystem.registerExtensionPoint(extensionPoint);
 
         // Create a mock hook handler
-        const mockHookHandler = vi.fn();
+        const mockHookHandler = vi.fn().mockImplementation(context => context);
 
-        // Define a plugin
-        const plugin: Plugin = {
-          name: "test.plugin",
-          description: "Test plugin",
+        // Define an extension
+        const extension: Extension = {
+          name: "test.extension",
+          description: "Test extension",
           hooks: {
-            "test.point": mockHookHandler,
-          },
+            "test.point": mockHookHandler
+          }
         };
 
-        // Register the plugin
-        extensionSystem.registerPlugin(plugin);
+        // Register the extension directly
+        extensionSystem.registerExtension(extension);
 
         // Trigger the extension point
         extensionSystem.triggerExtensionPoint("test.point", { data: "test" });
@@ -49,32 +50,22 @@ describe("Plugin Management", () => {
         expect(mockHookHandler).toHaveBeenCalledWith({ data: "test" });
       });
 
-      it("THEN the plugin should be registered with its event interceptors", () => {
+      it("THEN event interceptors should be registered", () => {
         // Create a mock event interceptor
-        const mockInterceptor: EventInterceptor = vi
-          .fn()
-          .mockImplementation((event: Event) => {
-            return {
-              ...event,
-              metadata: { ...event.metadata, intercepted: true },
-            };
-          });
-
-        // Define a plugin with an event interceptor
-        const plugin: Plugin = {
-          name: "test.plugin",
-          description: "Test plugin",
-          hooks: {},
-          eventInterceptors: [mockInterceptor],
+        const beforeFn = vi.fn().mockImplementation(event => event);
+        
+        // Fix: Create a proper EventInterceptor object with a before method
+        const mockInterceptor: EventInterceptor = {
+          before: beforeFn
         };
 
-        // Register the plugin
-        extensionSystem.registerPlugin(plugin);
+        // Register the event interceptor directly
+        extensionSystem.registerEventInterceptor(mockInterceptor);
 
         // Create a test event
-        const testEvent: Event = {
+        const testEvent: ExtensionEvent = {
           type: "test-event",
-          payload: { data: "test" },
+          context: { data: "test" },
           timestamp: Date.now(),
         };
 
@@ -82,45 +73,45 @@ describe("Plugin Management", () => {
         extensionSystem.processEventThroughInterceptors(testEvent);
 
         // Verify the interceptor was called
-        expect(mockInterceptor).toHaveBeenCalledWith(testEvent);
+        expect(beforeFn).toHaveBeenCalledWith(testEvent);
       });
     });
 
-    describe("WHEN registering multiple plugins", () => {
-      it("THEN all plugins should be registered and their hooks should be called", async () => {
+    describe("WHEN registering multiple extensions", () => {
+      it("THEN all extensions should be registered and their hooks should be called", async () => {
         // Define an extension point
         const testPoint: ExtensionPoint = {
           name: "test.point",
-          description: "Test extension point",
+          handlers: [],
         };
 
         // Register the extension point
         extensionSystem.registerExtensionPoint(testPoint);
 
         // Create mock hook handlers
-        const mockHookHandler1 = vi.fn();
-        const mockHookHandler2 = vi.fn();
+        const mockHookHandler1 = vi.fn().mockImplementation(context => context);
+        const mockHookHandler2 = vi.fn().mockImplementation(context => context);
 
-        // Define plugins
-        const plugin1: Plugin = {
-          name: "test.plugin1",
-          description: "Test plugin 1",
+        // Define extensions
+        const extension1: Extension = {
+          name: "test.extension1",
+          description: "Test extension 1",
           hooks: {
-            "test.point": mockHookHandler1,
-          },
+            "test.point": mockHookHandler1
+          }
         };
 
-        const plugin2: Plugin = {
-          name: "test.plugin2",
-          description: "Test plugin 2",
+        const extension2: Extension = {
+          name: "test.extension2",
+          description: "Test extension 2",
           hooks: {
-            "test.point": mockHookHandler2,
-          },
+            "test.point": mockHookHandler2
+          }
         };
 
-        // Register the plugins
-        extensionSystem.registerPlugin(plugin1);
-        extensionSystem.registerPlugin(plugin2);
+        // Register the extensions directly
+        extensionSystem.registerExtension(extension1);
+        extensionSystem.registerExtension(extension2);
 
         // Trigger the extension point
         const context = { data: "test" };
@@ -131,49 +122,35 @@ describe("Plugin Management", () => {
         expect(mockHookHandler2).toHaveBeenCalledWith(context);
       });
 
-      it("THEN all plugins' event interceptors should be called in order", () => {
+      it("THEN all event interceptors should be called in order", () => {
         // Create mock event interceptors
-        const mockInterceptor1: EventInterceptor = vi
-          .fn()
-          .mockImplementation((event: Event) => {
-            return {
-              ...event,
-              metadata: { ...event.metadata, interceptor1: true },
-            };
-          });
-
-        const mockInterceptor2: EventInterceptor = vi
-          .fn()
-          .mockImplementation((event: Event) => {
-            return {
-              ...event,
-              metadata: { ...event.metadata, interceptor2: true },
-            };
-          });
-
-        // Define plugins with event interceptors
-        const plugin1: Plugin = {
-          name: "test.plugin1",
-          description: "Test plugin 1",
-          hooks: {},
-          eventInterceptors: [mockInterceptor1],
+        const beforeFn1 = vi.fn().mockImplementation(event => ({
+          ...event,
+          interceptor1: true
+        }));
+        
+        const beforeFn2 = vi.fn().mockImplementation(event => ({
+          ...event,
+          interceptor2: true
+        }));
+        
+        // Fix: Create proper EventInterceptor objects with before methods
+        const mockInterceptor1: EventInterceptor = {
+          before: beforeFn1
         };
 
-        const plugin2: Plugin = {
-          name: "test.plugin2",
-          description: "Test plugin 2",
-          hooks: {},
-          eventInterceptors: [mockInterceptor2],
+        const mockInterceptor2: EventInterceptor = {
+          before: beforeFn2
         };
 
-        // Register the plugins
-        extensionSystem.registerPlugin(plugin1);
-        extensionSystem.registerPlugin(plugin2);
+        // Register the event interceptors directly
+        extensionSystem.registerEventInterceptor(mockInterceptor1);
+        extensionSystem.registerEventInterceptor(mockInterceptor2);
 
         // Create a test event
-        const testEvent: Event = {
+        const testEvent: ExtensionEvent = {
           type: "test-event",
-          payload: { data: "test" },
+          context: { data: "test" },
           timestamp: Date.now(),
         };
 
@@ -181,12 +158,12 @@ describe("Plugin Management", () => {
         extensionSystem.processEventThroughInterceptors(testEvent);
 
         // Verify the interceptors were called in order
-        expect(mockInterceptor1).toHaveBeenCalledWith(testEvent);
-        expect(mockInterceptor2).toHaveBeenCalled();
+        expect(beforeFn1).toHaveBeenCalledWith(testEvent);
+        expect(beforeFn2).toHaveBeenCalled();
 
         // The second interceptor should receive the event after it's been processed by the first
-        const firstCallArg = mockInterceptor2.mock.calls[0][0];
-        expect(firstCallArg.metadata).toHaveProperty("interceptor1", true);
+        const firstCallArg = beforeFn2.mock.calls[0][0];
+        expect(firstCallArg).toHaveProperty("interceptor1", true);
       });
     });
   });

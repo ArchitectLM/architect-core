@@ -13,6 +13,18 @@ The `@architectlm/extensions` package provides a flexible extension system for t
 - **Event Interception**: Intercept and modify events flowing through the system
 - **Plugins**: Combine extensions and event interceptors into reusable packages
 
+### New Extensions
+
+This package now includes several extensions that were previously part of the core package:
+
+- **Caching Strategy Extension**: Provides caching strategies, including time-based and sliding expiration, with support for custom key generation and caching rules.
+- **Backoff Strategy Extension**: Provides specialized backoff strategies for retry policies, including adaptive backoff that adjusts based on system load and stepped backoff that increases delay in steps.
+- **Contextual Resilience Policy Extension**: Adjusts resilience configurations based on runtime context, such as tenant, service, environment, and system metrics.
+- **Error Classification Extension**: Classifies errors for better retry decisions, with built-in classifiers for network, HTTP, and database errors.
+- **Distributed Tracing Extension**: Adds distributed tracing to events, with support for extracting and injecting trace context, and adding custom attributes to spans.
+- **Event Transformation Extension**: Transforms, enriches, and filters events, with support for chaining multiple transformations.
+- **Monitoring Extension**: Collects metrics on resilience patterns, including circuit breaker state changes, retry attempts, bulkhead rejections, rate limiting events, and cache access.
+
 ## Installation
 
 ```bash

@@ -10,6 +10,22 @@ import {
   Pipeline,
   ExtensionPoint,
   Extension,
+  BackoffStrategy,
+  RateLimitStrategy,
+  CircuitBreakerConfig,
+  EnhancedCircuitBreakerConfig,
+  RetryConfig,
+  EnhancedRetryConfig,
+  BulkheadConfig,
+  RateLimiterConfig,
+  CacheConfig,
+  DeadLetterQueueConfig,
+  DistributedTracingConfig,
+  ErrorClassificationConfig,
+  ContextualPolicyConfig,
+  EventTransformationConfig,
+  MonitoringConfig,
+  ResilienceConfig,
 } from "./models.js";
 
 /**
@@ -248,4 +264,255 @@ export function createExtension(
     meta,
     hooks: extensionHooks as any,
   };
+}
+
+/**
+ * Helper function to create a circuit breaker configuration
+ */
+export function createCircuitBreakerConfig(
+  failureThreshold: number,
+  resetTimeout: number,
+  halfOpenSuccessThreshold?: number
+): CircuitBreakerConfig {
+  return {
+    failureThreshold,
+    resetTimeout,
+    halfOpenSuccessThreshold,
+  };
+}
+
+/**
+ * Helper function to create an enhanced circuit breaker configuration
+ */
+export function createEnhancedCircuitBreakerConfig(
+  failureThreshold: number,
+  resetTimeout: number,
+  options?: {
+    halfOpenSuccessThreshold?: number;
+    isFailure?: string;
+    onStateChange?: string;
+    onReset?: string;
+    onSuccess?: string;
+    onFailure?: string;
+  }
+): EnhancedCircuitBreakerConfig {
+  return {
+    failureThreshold,
+    resetTimeout,
+    ...options,
+  };
+}
+
+/**
+ * Helper function to create a basic retry configuration
+ */
+export function createRetryConfig(
+  maxAttempts: number,
+  backoff: "fixed" | "exponential" | "linear",
+  initialDelay?: number,
+  maxDelay?: number
+): RetryConfig {
+  return {
+    maxAttempts,
+    backoff,
+    initialDelay,
+    maxDelay,
+  };
+}
+
+/**
+ * Helper function to create an enhanced retry configuration
+ */
+export function createEnhancedRetryConfig(
+  maxAttempts: number,
+  strategy: BackoffStrategy,
+  initialDelay: number,
+  maxDelay: number,
+  options?: {
+    factor?: number;
+    onRetry?: string;
+    shouldRetry?: string;
+  }
+): EnhancedRetryConfig {
+  return {
+    maxAttempts,
+    strategy,
+    initialDelay,
+    maxDelay,
+    ...options,
+  };
+}
+
+/**
+ * Helper function to create a bulkhead configuration
+ */
+export function createBulkheadConfig(
+  maxConcurrent: number,
+  maxQueue?: number,
+  timeout?: number
+): BulkheadConfig {
+  return {
+    maxConcurrent,
+    maxQueue,
+    timeout,
+  };
+}
+
+/**
+ * Helper function to create a rate limiter configuration
+ */
+export function createRateLimiterConfig(
+  strategy: RateLimitStrategy,
+  limit: number,
+  options?: {
+    window?: number;
+    refillRate?: number;
+    refillInterval?: number;
+  }
+): RateLimiterConfig {
+  return {
+    strategy,
+    limit,
+    ...options,
+  };
+}
+
+/**
+ * Helper function to create a cache configuration
+ */
+export function createCacheConfig(
+  ttl: number,
+  maxSize?: number,
+  staleWhileRevalidate?: boolean
+): CacheConfig {
+  return {
+    ttl,
+    maxSize,
+    staleWhileRevalidate,
+  };
+}
+
+/**
+ * Helper function to create a dead letter queue configuration
+ */
+export function createDeadLetterQueueConfig(
+  maxRetries?: number,
+  retryDelay?: number,
+  errorHandler?: string
+): DeadLetterQueueConfig {
+  return {
+    maxRetries,
+    retryDelay,
+    errorHandler,
+  };
+}
+
+/**
+ * Helper function to create a distributed tracing configuration
+ */
+export function createDistributedTracingConfig(
+  serviceName: string,
+  options?: {
+    sampleRate?: number;
+    propagationHeaders?: string[];
+    exporterEndpoint?: string;
+    tags?: Record<string, string>;
+  }
+): DistributedTracingConfig {
+  return {
+    serviceName,
+    ...options,
+  };
+}
+
+/**
+ * Helper function to create an error classification configuration
+ */
+export function createErrorClassificationConfig(
+  options?: {
+    retryableErrors?: string[];
+    fatalErrors?: string[];
+    timeoutErrors?: string[];
+    networkErrors?: string[];
+    classifier?: string;
+  }
+): ErrorClassificationConfig {
+  return {
+    ...options,
+  };
+}
+
+/**
+ * Helper function to create a contextual policy configuration
+ */
+export function createContextualPolicyConfig(
+  policies: Record<string, ResilienceConfig>,
+  selector: string
+): ContextualPolicyConfig {
+  return {
+    policies,
+    selector,
+  };
+}
+
+/**
+ * Helper function to create an event transformation configuration
+ */
+export function createEventTransformationConfig(
+  transformers: Record<string, string>,
+  globalTransformer?: string
+): EventTransformationConfig {
+  return {
+    transformers,
+    globalTransformer,
+  };
+}
+
+/**
+ * Helper function to create a monitoring configuration
+ */
+export function createMonitoringConfig(
+  options?: {
+    metrics?: {
+      enabled: boolean;
+      prefix?: string;
+      tags?: Record<string, string>;
+    };
+    logging?: {
+      enabled: boolean;
+      level?: string;
+      format?: string;
+    };
+    alerting?: {
+      enabled: boolean;
+      thresholds?: Record<string, number>;
+      handlers?: string[];
+    };
+  }
+): MonitoringConfig {
+  return {
+    ...options,
+  };
+}
+
+/**
+ * Helper function to create a complete resilience configuration
+ */
+export function createResilienceConfig(config: {
+  circuitBreaker?: CircuitBreakerConfig;
+  enhancedCircuitBreaker?: EnhancedCircuitBreakerConfig;
+  retry?: RetryConfig;
+  enhancedRetry?: EnhancedRetryConfig;
+  bulkhead?: BulkheadConfig;
+  rateLimit?: RateLimiterConfig;
+  cache?: CacheConfig;
+  deadLetterQueue?: DeadLetterQueueConfig;
+  distributedTracing?: DistributedTracingConfig;
+  errorClassification?: ErrorClassificationConfig;
+  contextualPolicy?: ContextualPolicyConfig;
+  eventTransformation?: EventTransformationConfig;
+  monitoring?: MonitoringConfig;
+  timeout?: number;
+}): ResilienceConfig {
+  return config;
 }

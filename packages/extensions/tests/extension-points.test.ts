@@ -21,6 +21,7 @@ describe("Extension Points", () => {
         const extensionPoint: ExtensionPoint = {
           name: "test.point",
           description: "Test extension point",
+          handlers: [],
         };
 
         // Register the extension point
@@ -35,6 +36,7 @@ describe("Extension Points", () => {
         const extensionPoint: ExtensionPoint = {
           name: "test.point",
           description: "Test extension point",
+          handlers: [],
         };
 
         // Register the extension point
@@ -43,7 +45,7 @@ describe("Extension Points", () => {
         // Try to register the same extension point again
         expect(() => {
           extensionSystem.registerExtensionPoint(extensionPoint);
-        }).toThrow(/Extension point.*already exists/);
+        }).toThrow(/Extension point .* is already registered/);
       });
     });
 
@@ -53,6 +55,7 @@ describe("Extension Points", () => {
         const extensionPoint: ExtensionPoint = {
           name: "test.point",
           description: "Test extension point",
+          handlers: [],
         };
 
         // Register the extension point
@@ -93,7 +96,7 @@ describe("Extension Points", () => {
         // Try to register the extension
         expect(() => {
           extensionSystem.registerExtension(extension);
-        }).toThrow(/Extension point.*does not exist/);
+        }).toThrow(/Extension point .* is not registered/);
       });
     });
 
@@ -103,14 +106,15 @@ describe("Extension Points", () => {
         const testPoint: ExtensionPoint = {
           name: "test.point",
           description: "Test extension point",
+          handlers: [],
         };
 
         // Register the extension point
         extensionSystem.registerExtensionPoint(testPoint);
 
         // Create mock hook handlers
-        const mockHookHandler1 = vi.fn();
-        const mockHookHandler2 = vi.fn();
+        const mockHookHandler1 = vi.fn().mockImplementation(context => context);
+        const mockHookHandler2 = vi.fn().mockImplementation(context => context);
 
         // Define extensions
         const extension1: Extension = {
@@ -142,13 +146,13 @@ describe("Extension Points", () => {
         expect(mockHookHandler2).toHaveBeenCalledWith(context);
       });
 
-      it("THEN should not throw an error when triggering a non-existent extension point", async () => {
+      it("THEN should throw an error when triggering a non-existent extension point", async () => {
         // Trigger a non-existent extension point
         await expect(
           extensionSystem.triggerExtensionPoint("non.existent.point", {
             data: "test",
           }),
-        ).resolves.toEqual({ data: "test" });
+        ).rejects.toThrow(/Extension point .* is not registered/);
       });
     });
   });

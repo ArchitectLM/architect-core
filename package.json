@@ -2,6 +2,7 @@
   "name": "architectlm-monorepo",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "description": "An architecture for building LLM-powered applications",
   "scripts": {
     "test": "pnpm -r test",

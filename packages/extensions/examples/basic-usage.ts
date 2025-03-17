@@ -6,25 +6,23 @@ import {
   ExtensionPoint,
   Extension,
   Plugin,
-} from "../src/index.js";
+} from "../src/extension-system.js";
 
 // Create a new extension system
 const extensionSystem = createExtensionSystem();
 
-// Define extension points
-const beforeStartPoint: ExtensionPoint = {
-  name: "app.beforeStart",
-  description: "Called before the application starts",
-};
-
-const afterStartPoint: ExtensionPoint = {
-  name: "app.afterStart",
-  description: "Called after the application starts",
-};
-
 // Register extension points
-extensionSystem.registerExtensionPoint(beforeStartPoint);
-extensionSystem.registerExtensionPoint(afterStartPoint);
+extensionSystem.registerExtensionPoint({
+  name: "greeting",
+  description: "Provides greeting functionality",
+  handlers: []
+});
+
+extensionSystem.registerExtensionPoint({
+  name: "farewell",
+  description: "Provides farewell functionality",
+  handlers: []
+});
 
 // Define an extension
 const loggingExtension: Extension = {
@@ -89,3 +87,17 @@ const event = {
 // Process the event through interceptors
 const processedEvent = extensionSystem.processEventThroughInterceptors(event);
 console.log("Processed event:", processedEvent);
+
+// Log extension events
+extensionSystem.on("extension.event", (event) => {
+  console.log(`Extension event: ${event.type}`);
+  console.log(`Timestamp: ${new Date(event.timestamp).toISOString()}`);
+  console.log(`Context:`, event.context);
+});
+
+// Trigger an extension point
+const result = await extensionSystem.triggerExtensionPoint("user.login", {
+  type: "user.login",
+  context: { userId: "user123" },
+  timestamp: Date.now()
+});

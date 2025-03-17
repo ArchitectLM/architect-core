@@ -40,10 +40,11 @@ export abstract class CommandHandler<TCommand, TResult> {
 
     // Create middleware pipeline (functional composition)
     const pipeline = this.middleware.reduce(
-      (next, middleware) => async ctx => middleware.execute(ctx, next),
-      async ctx => {
+      (next, middleware) => async (ctx: { command: TCommand; result?: TResult }) => 
+        middleware.execute<TCommand, TResult>(ctx, next as any),
+      async (ctx: { command: TCommand; result?: TResult }) => {
         ctx.result = await this.handleCommand(ctx.command);
-        return ctx;
+        return ctx as { command: TCommand; result: TResult };
       }
     );
 

@@ -3,7 +3,47 @@
  * @module @architectlm/extensions
  */
 
-import { Event } from "@architectlm/core";
+/**
+ * Local models for the extensions package
+ * 
+ * This file contains local definitions of models that are normally imported from @architectlm/core
+ * to avoid build-time dependencies.
+ */
+
+/**
+ * Event interface (local copy to avoid dependency on @architectlm/core)
+ */
+export interface Event<T = any> {
+  /**
+   * The type of the event
+   */
+  type: string;
+  
+  /**
+   * The payload of the event
+   */
+  payload: T;
+  
+  /**
+   * Timestamp when the event was created
+   */
+  timestamp: number;
+  
+  /**
+   * Additional metadata for the event
+   */
+  metadata?: Record<string, any>;
+}
+
+/**
+ * BackoffStrategy enum (local copy to avoid dependency on @architectlm/core)
+ */
+export enum BackoffStrategy {
+  FIXED = 'fixed',
+  LINEAR = 'linear',
+  EXPONENTIAL = 'exponential',
+  JITTER = 'jitter'
+}
 
 /**
  * Represents an extension point in the system

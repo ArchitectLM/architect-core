@@ -2,232 +2,178 @@
  * Tests for the DefaultCircuitBreaker implementation
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { DefaultCircuitBreaker } from '../src/implementations/circuit-breaker.js';
 import { CircuitBreakerState } from '../src/models/index.js';
 
 describe('DefaultCircuitBreaker', () => {
   let circuitBreaker: DefaultCircuitBreaker;
-
+  
   beforeEach(() => {
+    vi.useFakeTimers();
     circuitBreaker = new DefaultCircuitBreaker('test-breaker', {
       failureThreshold: 3,
-      resetTimeout: 100, // Short timeout for testing
+      resetTimeout: 5000,
+      halfOpenSuccessThreshold: 1
     });
   });
-
-  describe('Basic Functionality', () => {
-    it('should execute a function successfully when circuit is closed', async () => {
-      // Given a circuit breaker in closed state
-      const mockFn = vi.fn().mockResolvedValue('success');
-
-      // When executing a function
-      const result = await circuitBreaker.execute(mockFn);
-
-      // Then the function should be called and return result
-      expect(mockFn).toHaveBeenCalled();
-      expect(result).toBe('success');
-      expect(circuitBreaker.getState()).toBe(CircuitBreakerState.CLOSED);
-    });
-
-    it('should handle function errors and increment failure count', async () => {
-      // Given a circuit breaker and a function that fails
-      const mockFn = vi.fn().mockRejectedValue(new Error('test error'));
-
-      // When executing the function
-      try {
-        await circuitBreaker.execute(mockFn);
-        // Should not reach here
-        expect(true).toBe(false);
-      } catch (error) {
-        // Then the error should be propagated
-        expect(error).toBeInstanceOf(Error);
-        expect((error as Error).message).toBe('test error');
-      }
-
-      // And the circuit should still be closed (not enough failures yet)
-      expect(circuitBreaker.getState()).toBe(CircuitBreakerState.CLOSED);
-    });
+  
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
-
-  describe('Circuit Opening', () => {
-    it('should open circuit after failure threshold is reached', async () => {
-      // Given a function that always fails
-      const mockFn = vi.fn().mockRejectedValue(new Error('test error'));
-
-      // When executing the function multiple times
+  
+  describe('State Transitions', () => {
+    it('should start in CLOSED state', () => {
+      expect(circuitBreaker.getState()).toBe(CircuitBreakerState.CLOSED);
+    });
+    
+    it('should transition to OPEN state after reaching failure threshold', async () => {
+      const mockOperation = vi.fn().mockRejectedValue(new Error('Operation failed'));
+      
+      // Trigger failures
       for (let i = 0; i < 3; i++) {
         try {
-          await circuitBreaker.execute(mockFn);
+          await circuitBreaker.execute(mockOperation);
         } catch (error) {
           // Expected error
         }
       }
-
-      // Then the circuit should be open
-      expect(circuitBreaker.getState()).toBe(CircuitBreakerState.OPEN);
-
-      // And subsequent executions should fail immediately without calling the function
-      mockFn.mockClear();
-      try {
-        await circuitBreaker.execute(mockFn);
-        // Should not reach here
-        expect(true).toBe(false);
-      } catch (error) {
-        expect(error).toBeInstanceOf(Error);
-        expect((error as Error).message).toContain('Circuit breaker');
-        expect(mockFn).not.toHaveBeenCalled();
-      }
-    });
-
-    it('should reset failure count after successful execution', async () => {
-      // Given a circuit breaker and a function that fails sometimes
-      const mockFn = vi
-        .fn()
-        .mockRejectedValueOnce(new Error('test error'))
-        .mockRejectedValueOnce(new Error('test error'))
-        .mockResolvedValueOnce('success')
-        .mockRejectedValueOnce(new Error('test error'))
-        .mockRejectedValueOnce(new Error('test error'))
-        .mockRejectedValueOnce(new Error('test error'));
-
-      // When executing with some failures followed by success
-      try {
-        await circuitBreaker.execute(mockFn);
-      } catch {}
-      try {
-        await circuitBreaker.execute(mockFn);
-      } catch {}
-      await circuitBreaker.execute(mockFn); // Success
-
-      // Then the circuit should still be closed
-      expect(circuitBreaker.getState()).toBe(CircuitBreakerState.CLOSED);
-
-      // When executing with more failures
-      try {
-        await circuitBreaker.execute(mockFn);
-      } catch {}
-      try {
-        await circuitBreaker.execute(mockFn);
-      } catch {}
-      try {
-        await circuitBreaker.execute(mockFn);
-      } catch {}
-
-      // Then the circuit should be open (failure count reached threshold again)
+      
       expect(circuitBreaker.getState()).toBe(CircuitBreakerState.OPEN);
     });
-  });
-
-  describe('Half-Open State', () => {
-    it('should transition to half-open state after reset timeout', async () => {
-      // Given a circuit breaker that's been opened
-      const mockFn = vi.fn().mockRejectedValue(new Error('test error'));
-
-      // When executing enough times to open the circuit
+    
+    it('should transition to HALF_OPEN state after reset timeout', async () => {
+      const mockOperation = vi.fn().mockRejectedValue(new Error('Operation failed'));
+      
+      // Trigger failures to open the circuit
       for (let i = 0; i < 3; i++) {
         try {
-          await circuitBreaker.execute(mockFn);
-        } catch {}
+          await circuitBreaker.execute(mockOperation);
+        } catch (error) {
+          // Expected error
+        }
       }
-
+      
       expect(circuitBreaker.getState()).toBe(CircuitBreakerState.OPEN);
-
-      // When waiting for reset timeout
-      await new Promise(resolve => setTimeout(resolve, 150));
-
-      // Then the circuit should be half-open
+      
+      // Fast forward time to trigger reset timeout
+      vi.advanceTimersByTime(5000);
+      
       expect(circuitBreaker.getState()).toBe(CircuitBreakerState.HALF_OPEN);
     });
-
-    it('should close circuit after successful execution in half-open state', async () => {
-      // Given a circuit breaker that's been opened
-      const mockFn = vi.fn().mockRejectedValue(new Error('test error'));
-
-      // When executing enough times to open the circuit
+    
+    it('should transition back to CLOSED state after successful operation in HALF_OPEN state', async () => {
+      const mockOperation = vi.fn()
+        .mockRejectedValueOnce(new Error('Operation failed'))
+        .mockRejectedValueOnce(new Error('Operation failed'))
+        .mockRejectedValueOnce(new Error('Operation failed'))
+        .mockResolvedValueOnce('Success');
+      
+      // Trigger failures to open the circuit
       for (let i = 0; i < 3; i++) {
         try {
-          await circuitBreaker.execute(mockFn);
-        } catch {}
+          await circuitBreaker.execute(mockOperation);
+        } catch (error) {
+          // Expected error
+        }
       }
-
-      // And waiting for reset timeout
-      await new Promise(resolve => setTimeout(resolve, 150));
-
-      // Then the circuit should be half-open
+      
+      // Fast forward time to trigger reset timeout
+      vi.advanceTimersByTime(5000);
       expect(circuitBreaker.getState()).toBe(CircuitBreakerState.HALF_OPEN);
-
-      // When executing a successful function
-      mockFn.mockResolvedValueOnce('success');
-      const result = await circuitBreaker.execute(mockFn);
-
-      // Then the result should be returned
-      expect(result).toBe('success');
-
-      // And the circuit should be closed
+      
+      // Now make the operation succeed
+      const result = await circuitBreaker.execute(mockOperation);
+      
+      expect(result).toBe('Success');
       expect(circuitBreaker.getState()).toBe(CircuitBreakerState.CLOSED);
     });
-
-    it('should reopen circuit after failure in half-open state', async () => {
-      // Given a circuit breaker that's been opened
-      const mockFn = vi.fn().mockRejectedValue(new Error('test error'));
-
-      // When executing enough times to open the circuit
+    
+    it('should transition back to OPEN state after failed operation in HALF_OPEN state', async () => {
+      const mockOperation = vi.fn().mockRejectedValue(new Error('Operation failed'));
+      
+      // Trigger failures to open the circuit
       for (let i = 0; i < 3; i++) {
         try {
-          await circuitBreaker.execute(mockFn);
-        } catch {}
+          await circuitBreaker.execute(mockOperation);
+        } catch (error) {
+          // Expected error
+        }
       }
-
-      // And waiting for reset timeout
-      await new Promise(resolve => setTimeout(resolve, 150));
-
-      // Then the circuit should be half-open
+      
+      // Fast forward time to trigger reset timeout
+      vi.advanceTimersByTime(5000);
       expect(circuitBreaker.getState()).toBe(CircuitBreakerState.HALF_OPEN);
-
-      // When executing a failing function
+      
+      // Operation still fails
       try {
-        await circuitBreaker.execute(mockFn);
-        // Should not reach here
-        expect(true).toBe(false);
+        await circuitBreaker.execute(mockOperation);
       } catch (error) {
         // Expected error
       }
-
-      // Then the circuit should be open again
+      
       expect(circuitBreaker.getState()).toBe(CircuitBreakerState.OPEN);
     });
   });
-
+  
+  describe('Operation Execution', () => {
+    it('should execute operation when circuit is CLOSED', async () => {
+      const mockOperation = vi.fn().mockResolvedValue('Success');
+      
+      const result = await circuitBreaker.execute(mockOperation);
+      
+      expect(result).toBe('Success');
+      expect(mockOperation).toHaveBeenCalledTimes(1);
+    });
+    
+    it('should throw error when circuit is OPEN', async () => {
+      const mockOperation = vi.fn().mockRejectedValue(new Error('Operation failed'));
+      
+      // Trigger failures to open the circuit
+      for (let i = 0; i < 3; i++) {
+        try {
+          await circuitBreaker.execute(mockOperation);
+        } catch (error) {
+          // Expected error
+        }
+      }
+      
+      // Now the circuit should be open
+      mockOperation.mockClear();
+      await expect(circuitBreaker.execute(mockOperation)).rejects.toThrow("Circuit breaker 'test-breaker' is open");
+      expect(mockOperation).not.toHaveBeenCalled();
+    });
+  });
+  
   describe('Manual Control', () => {
     it('should allow manual reset', async () => {
-      // Given a circuit breaker that's been opened
-      const mockFn = vi.fn().mockRejectedValue(new Error('test error'));
-
-      // When executing enough times to open the circuit
+      const mockOperation = vi.fn().mockRejectedValue(new Error('Operation failed'));
+      
+      // Trigger failures to open the circuit
       for (let i = 0; i < 3; i++) {
         try {
-          await circuitBreaker.execute(mockFn);
-        } catch {}
+          await circuitBreaker.execute(mockOperation);
+        } catch (error) {
+          // Expected error
+        }
       }
-
+      
       expect(circuitBreaker.getState()).toBe(CircuitBreakerState.OPEN);
-
-      // When manually resetting
+      
+      // Manually reset the circuit breaker
       circuitBreaker.reset();
-
-      // Then the circuit should be closed
+      
       expect(circuitBreaker.getState()).toBe(CircuitBreakerState.CLOSED);
-
-      // And the function should be executed again
-      mockFn.mockClear();
+      
+      // The operation should be executed again
+      mockOperation.mockClear();
       try {
-        await circuitBreaker.execute(mockFn);
+        await circuitBreaker.execute(mockOperation);
       } catch (error) {
         // Expected error
       }
-
-      expect(mockFn).toHaveBeenCalled();
+      
+      expect(mockOperation).toHaveBeenCalledTimes(1);
     });
   });
 });

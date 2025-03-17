@@ -129,5 +129,9 @@ export interface RetryOptions {
 }
 
 export interface RetryPolicy {
-  execute: <T>(fn: () => Promise<T>) => Promise<T>;
+  execute: <T>(fn: () => Promise<T>, shouldRetry?: (error: Error) => boolean) => Promise<T>;
 }
+
+// Enhanced retry policy types have been moved to the extension system
+
+export * from '../implementations/dead-letter-queue.js';
