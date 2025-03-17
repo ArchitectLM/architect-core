@@ -52,11 +52,13 @@ export class SessionManager {
   async processCommand(
     command: string,
     componentType: ComponentType,
+    similarComponents: Component[] = []
   ): Promise<CommandResult> {
     // Process the command
     const result = await this.commandHandler.processCommand(
       command,
       componentType,
+      similarComponents
     );
 
     // Update session state

@@ -1,5 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { ComponentType, ValidationResult } from "../../src/models.js";
+import {
+  ComponentType,
+  ValidationResult,
+  VectorDBConnector,
+  Component,
+  SearchOptions,
+  SearchResult,
+  FeedbackRecord,
+  RetrievalRecord,
+  RetrievalOutcome,
+  ComponentVersion,
+  VersionDiff,
+  LearningTask,
+  ExemplarSolution,
+  TaskDifficulty
+} from "../../src/models.js";
 import { LLMService } from "../../src/llm/llm-service.js";
 import { CodeValidator } from "../../src/validation/code-validator.js";
 import { CliCommandHandler } from "../../src/cli/cli-command-handler.js";
@@ -7,6 +22,7 @@ import { SessionManager } from "../../src/cli/session-manager.js";
 import { VectorConfigStore } from "../../src/cli/vector-config-store.js";
 import { ErrorFormatter } from "../../src/cli/error-formatter.js";
 import { CliTool } from "../../src/cli/cli-tool.js";
+import { ComponentSearch } from "../../src/search/component-search.js";
 
 // Mock dependencies
 vi.mock("../../src/llm/llm-service.js");
@@ -16,6 +32,97 @@ vi.mock("../../src/cli/session-manager.js");
 vi.mock("../../src/cli/vector-config-store.js");
 vi.mock("../../src/cli/error-formatter.js");
 
+class MockLLMService {
+  generateComponent = vi.fn();
+  generateFeedback = vi.fn();
+}
+
+class MockCodeValidator {
+  validateCode = vi.fn();
+}
+
+class MockCliCommandHandler {
+  processCommand = vi.fn();
+  commitCode = vi.fn();
+  provideFeedback = vi.fn();
+}
+
+class MockSessionManager {
+  processCommand = vi.fn();
+  commitCurrentComponent = vi.fn();
+  provideFeedback = vi.fn();
+}
+
+class MockVectorConfigStore {
+  saveConfiguration = vi.fn();
+  getConfiguration = vi.fn();
+}
+
+class MockVectorDBConnector implements VectorDBConnector {
+  initialize = vi.fn().mockResolvedValue(undefined);
+  addDocument = vi.fn().mockResolvedValue("mock-id");
+  addDocuments = vi.fn().mockResolvedValue(["mock-id"]);
+  search = vi.fn().mockResolvedValue([]);
+  getDocument = vi.fn().mockResolvedValue(null);
+  updateDocument = vi.fn().mockResolvedValue(undefined);
+  deleteDocument = vi.fn().mockResolvedValue(undefined);
+  deleteAllDocuments = vi.fn().mockResolvedValue(undefined);
+  addFeedback = vi.fn().mockResolvedValue("mock-feedback-id");
+  getFeedbackForComponent = vi.fn().mockResolvedValue([]);
+  searchFeedback = vi.fn().mockResolvedValue([]);
+  recordRetrieval = vi.fn().mockResolvedValue("mock-retrieval-id");
+  updateRetrievalOutcome = vi.fn().mockResolvedValue(undefined);
+  getRetrievalsByQuery = vi.fn().mockResolvedValue([]);
+  getSuccessfulRetrievals = vi.fn().mockResolvedValue([]);
+  createComponentVersion = vi.fn().mockResolvedValue("mock-version-id");
+  getComponentVersions = vi.fn().mockResolvedValue([]);
+  getComponentVersionDiff = vi.fn().mockResolvedValue({ changes: [] });
+  addLearningTask = vi.fn().mockResolvedValue("mock-task-id");
+  getLearningTasks = vi.fn().mockResolvedValue([]);
+  addExemplarSolution = vi.fn().mockResolvedValue("mock-solution-id");
+  getExemplarSolutions = vi.fn().mockResolvedValue([]);
+  getTasksByDifficulty = vi.fn().mockResolvedValue([]);
+  getNextRecommendedTask = vi.fn().mockResolvedValue(null);
+}
+
+class MockComponentSearch extends ComponentSearch {
+  constructor() {
+    super(new MockVectorDBConnector());
+  }
+
+  async searchComponents(query: string, options?: SearchOptions): Promise<SearchResult[]> {
+    return [];
+  }
+
+  async searchComponentsByType(query: string, type: ComponentType, options?: Omit<SearchOptions, "types">): Promise<SearchResult[]> {
+    return [];
+  }
+
+  async getComponentById(id: string): Promise<Component | null> {
+    return null;
+  }
+
+  async findSimilarComponents(component: Component, options?: Omit<SearchOptions, "types">): Promise<SearchResult[]> {
+    return [];
+  }
+
+  async searchComponentsByName(name: string, options?: SearchOptions): Promise<SearchResult[]> {
+    return [];
+  }
+
+  async searchComponentsByPath(path: string, options?: SearchOptions): Promise<SearchResult[]> {
+    return [];
+  }
+
+  async searchComponentsByTags(tags: string[], options?: SearchOptions): Promise<SearchResult[]> {
+    return [];
+  }
+
+  async getAllComponentsByType(type: ComponentType): Promise<Component[]> {
+    return [];
+  }
+}
+
 describe("CLI Integration", () => {
   let cliTool: CliTool;
   let mockLlmService: any;
@@ -24,21 +131,20 @@ describe("CLI Integration", () => {
   let mockSessionManager: any;
   let mockVectorConfigStore: any;
   let mockErrorFormatter: any;
+  let componentSearch: MockComponentSearch;
 
   beforeEach(() => {
     // Reset mocks
     vi.resetAllMocks();
 
     // Create mock instances
-    mockLlmService = new LLMService() as any;
-    mockCodeValidator = new CodeValidator() as any;
-    mockCliCommandHandler = new CliCommandHandler(
-      mockLlmService,
-      mockCodeValidator,
-    ) as any;
-    mockSessionManager = new SessionManager(mockCliCommandHandler) as any;
-    mockVectorConfigStore = new VectorConfigStore({} as any) as any;
+    mockLlmService = new MockLLMService() as any;
+    mockCodeValidator = new MockCodeValidator() as any;
+    mockCliCommandHandler = new MockCliCommandHandler() as any;
+    mockSessionManager = new MockSessionManager() as any;
+    mockVectorConfigStore = new MockVectorConfigStore() as any;
     mockErrorFormatter = new ErrorFormatter() as any;
+    componentSearch = new MockComponentSearch() as any;
 
     // Setup mock implementations
     (mockLlmService.generateComponent as any).mockResolvedValue({
@@ -112,10 +218,10 @@ describe("CLI Integration", () => {
     cliTool = new CliTool(
       mockLlmService,
       mockCodeValidator,
-      mockCliCommandHandler,
       mockSessionManager,
       mockVectorConfigStore,
       mockErrorFormatter,
+      componentSearch
     );
   });
 
@@ -131,6 +237,7 @@ describe("CLI Integration", () => {
         expect(mockSessionManager.processCommand).toHaveBeenCalledWith(
           "Add a user journey: for US users only, after the first success order, give 5% discount for a next buy.",
           expect.any(String), // ComponentType
+          expect.any(Array) // similarComponents
         );
 
         // Verify commit was called

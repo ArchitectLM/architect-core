@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { ComponentType } from '../../src/models.js';
+import { ComponentType, SearchOptions, SearchResult, Component, VectorDBConnector } from '../../src/models.js';
+import { ComponentSearch } from '../../src/search/component-search.js';
 
 // Import the classes first
 import { CliTool } from '../../src/cli/cli-tool.js';
@@ -52,6 +53,34 @@ class MockChromaDBConnector extends ChromaDBConnector {
   search = vi.fn();
 }
 
+// Mock VectorDBConnector
+const mockVectorDBConnector: VectorDBConnector = {
+  initialize: vi.fn().mockResolvedValue(undefined),
+  addDocument: vi.fn().mockResolvedValue("doc1"),
+  addDocuments: vi.fn().mockResolvedValue(["doc1", "doc2"]),
+  search: vi.fn().mockResolvedValue([]),
+  getDocument: vi.fn().mockResolvedValue(null),
+  updateDocument: vi.fn().mockResolvedValue(undefined),
+  deleteDocument: vi.fn().mockResolvedValue(undefined),
+  deleteAllDocuments: vi.fn().mockResolvedValue(undefined),
+  addFeedback: vi.fn().mockResolvedValue("feedback1"),
+  getFeedbackForComponent: vi.fn().mockResolvedValue([]),
+  searchFeedback: vi.fn().mockResolvedValue([]),
+  recordRetrieval: vi.fn().mockResolvedValue("retrieval1"),
+  updateRetrievalOutcome: vi.fn().mockResolvedValue(undefined),
+  getRetrievalsByQuery: vi.fn().mockResolvedValue([]),
+  getSuccessfulRetrievals: vi.fn().mockResolvedValue([]),
+  createComponentVersion: vi.fn().mockResolvedValue("version1"),
+  getComponentVersions: vi.fn().mockResolvedValue([]),
+  getComponentVersionDiff: vi.fn().mockResolvedValue({ changes: [] }),
+  addLearningTask: vi.fn().mockResolvedValue("task1"),
+  getLearningTasks: vi.fn().mockResolvedValue([]),
+  addExemplarSolution: vi.fn().mockResolvedValue("solution1"),
+  getExemplarSolutions: vi.fn().mockResolvedValue([]),
+  getTasksByDifficulty: vi.fn().mockResolvedValue([]),
+  getNextRecommendedTask: vi.fn().mockResolvedValue(null)
+};
+
 describe('DSL Editing with CLI Tool', () => {
   let cliTool: CliTool;
   let llmService: MockLLMService;
@@ -61,6 +90,7 @@ describe('DSL Editing with CLI Tool', () => {
   let vectorConfigStore: MockVectorConfigStore;
   let errorFormatter: ErrorFormatter;
   let chromaConnector: MockChromaDBConnector;
+  let componentSearch: ComponentSearch;
 
   beforeEach(() => {
     // Reset mocks
@@ -197,14 +227,16 @@ describe('DSL Editing with CLI Tool', () => {
     vectorConfigStore = new MockVectorConfigStore(chromaConnector);
     errorFormatter = new ErrorFormatter();
 
+    componentSearch = new ComponentSearch(chromaConnector);
+
     // Initialize CLI tool
     cliTool = new CliTool(
       llmService,
       codeValidator,
-      commandHandler,
       sessionManager,
       vectorConfigStore,
-      errorFormatter
+      errorFormatter,
+      componentSearch
     );
   });
 
@@ -225,7 +257,7 @@ describe('DSL Editing with CLI Tool', () => {
       expect(result.component).toBeDefined();
       expect(result.component.name).toBe('UserAuthentication');
       expect(result.component.type).toBe(ComponentType.Function);
-      expect(sessionManager.processCommand).toHaveBeenCalledWith(command, ComponentType.Function);
+      expect(sessionManager.processCommand).toHaveBeenCalledWith(command, "function", []);
       expect(sessionManager.commitCurrentComponent).toHaveBeenCalled();
     });
 
@@ -308,7 +340,7 @@ describe('DSL Editing with CLI Tool', () => {
       expect(result.component).toBeDefined();
       expect(result.component.name).toBe('UserAuthentication');
       expect(result.component.content).toContain('resetPassword');
-      expect(sessionManager.processCommand).toHaveBeenCalledWith(command, ComponentType.Function);
+      expect(sessionManager.processCommand).toHaveBeenCalledWith(command, "function", []);
       expect(sessionManager.commitCurrentComponent).toHaveBeenCalled();
     });
   });

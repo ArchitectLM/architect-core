@@ -14,6 +14,7 @@ import {
 import { SessionManager } from "./session-manager.js";
 import { VectorConfigStore } from "./vector-config-store.js";
 import { ErrorFormatter } from "./error-formatter.js";
+import { ComponentSearch } from "../search/component-search.js";
 
 /**
  * Result of executing a workflow
@@ -30,11 +31,11 @@ export interface WorkflowResult {
 export class CliTool {
   private llmService: LLMService;
   private codeValidator: CodeValidator;
-  private commandHandler: CliCommandHandler;
   private sessionManager: SessionManager;
   private vectorConfigStore: VectorConfigStore;
   private errorFormatter: ErrorFormatter;
-  private maxRetries: number = 3;
+  private componentSearch: ComponentSearch;
+  private maxRetries: number;
 
   /**
    * Create a new CLI Tool
@@ -42,17 +43,19 @@ export class CliTool {
   constructor(
     llmService: LLMService,
     codeValidator: CodeValidator,
-    commandHandler: CliCommandHandler,
     sessionManager: SessionManager,
     vectorConfigStore: VectorConfigStore,
     errorFormatter: ErrorFormatter,
+    componentSearch: ComponentSearch,
+    maxRetries = 3,
   ) {
     this.llmService = llmService;
     this.codeValidator = codeValidator;
-    this.commandHandler = commandHandler;
     this.sessionManager = sessionManager;
     this.vectorConfigStore = vectorConfigStore;
     this.errorFormatter = errorFormatter;
+    this.componentSearch = componentSearch;
+    this.maxRetries = maxRetries;
   }
 
   /**
@@ -62,10 +65,18 @@ export class CliTool {
     // Determine the component type based on the command
     const componentType = this.determineComponentType(command);
 
-    // Process the command
+    // Search for similar components first
+    const similarResults = await this.componentSearch.searchComponents(command, {
+      types: [componentType],
+      limit: 3,
+      threshold: 0.7
+    });
+
+    // Process the command with similar components as context
     let result = await this.sessionManager.processCommand(
       command,
       componentType,
+      similarResults.map(r => r.component)
     );
 
     // If validation fails, retry with error feedback
@@ -86,6 +97,7 @@ export class CliTool {
       result = await this.sessionManager.processCommand(
         feedbackCommand,
         componentType,
+        similarResults.map(r => r.component)
       );
 
       retryCount++;

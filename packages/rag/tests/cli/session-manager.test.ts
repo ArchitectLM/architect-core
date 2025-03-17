@@ -70,12 +70,14 @@ describe("SessionManager", () => {
         const result = await sessionManager.processCommand(
           "Add a user journey: for US users only, after the first success order, give 5% discount for a next buy.",
           ComponentType.Function,
+          []
         );
 
         // Verify command handler was called
         expect(mockCliCommandHandler.processCommand).toHaveBeenCalledWith(
           "Add a user journey: for US users only, after the first success order, give 5% discount for a next buy.",
           ComponentType.Function,
+          []
         );
 
         // Verify result

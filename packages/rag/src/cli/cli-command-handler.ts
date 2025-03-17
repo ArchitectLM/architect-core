@@ -50,6 +50,7 @@ export class CliCommandHandler {
   async processCommand(
     command: string,
     componentType: ComponentType,
+    similarComponents: Component[] = []
   ): Promise<CommandResult> {
     // Generate component using LLM
     let component = await this.llmService.generateComponent(
@@ -60,13 +61,18 @@ export class CliCommandHandler {
     // Create a simple edit context for validation
     const context: EditContext = {
       query: command,
-      relevantComponents: [component],
+      relevantComponents: [component, ...similarComponents],
       suggestedChanges: [
         {
           componentId: component.id || "new-component",
           originalContent: component.content,
           reason: "Generated from user command",
         },
+        ...similarComponents.map(c => ({
+          componentId: c.id || "similar-component",
+          originalContent: c.content,
+          reason: "Similar existing component"
+        }))
       ],
     };
 
