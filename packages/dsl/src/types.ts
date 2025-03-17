@@ -18,11 +18,11 @@ export enum ComponentType {
 /**
  * Base component interface with common metadata
  */
-export interface BaseComponent {
+export interface BaseComponent<T extends ComponentType = ComponentType, D = any> {
   /**
    * Type of the component
    */
-  type: ComponentType;
+  type: T;
 
   /**
    * Name of the component (must be unique)
@@ -63,6 +63,11 @@ export interface BaseComponent {
    * Examples of the component usage
    */
   examples?: any[];
+
+  /**
+   * Component-specific definition
+   */
+  definition: D;
 
   /**
    * Additional metadata

@@ -83,7 +83,8 @@ describe('ErrorRecoveryExtension', () => {
       expect(result).toEqual({
         success: true,
         result: 'recovered data',
-        strategy: 'retry'
+        strategy: 'retry',
+        attempted: ['retry']
       });
     });
     
@@ -127,7 +128,8 @@ describe('ErrorRecoveryExtension', () => {
       expect(result).toEqual({
         success: true,
         result: 'fallback data',
-        strategy: 'fallback'
+        strategy: 'fallback',
+        attempted: ['cache', 'fallback']
       });
     });
   });
@@ -230,7 +232,8 @@ describe('ErrorRecoveryExtension', () => {
       expect(result).toEqual({
         success: true,
         result: { status: 'payment_pending', id: '12345' },
-        strategy: 'domainSpecific'
+        strategy: 'domainSpecific',
+        attempted: ['domainSpecific']
       });
     });
   });

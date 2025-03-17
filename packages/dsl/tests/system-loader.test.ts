@@ -9,7 +9,7 @@ describe('SystemLoader', () => {
 
   beforeEach(() => {
     registry = new ComponentRegistry();
-    loader = new SystemLoader(registry);
+    loader = new SystemLoader(registry, { useLazyLoading: false });
   });
 
   describe('loadSystem', () => {

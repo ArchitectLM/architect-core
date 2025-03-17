@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { DefaultExtensionSystem } from '../src/extension-system.js';
 import { Event } from '../src/models.js';
 
@@ -15,6 +15,9 @@ describe('MetricsCollectionExtension', () => {
   let mockCollector: MetricsCollector;
 
   beforeEach(() => {
+    // Setup fake timers
+    vi.useFakeTimers();
+    
     // Create mock metrics collector
     mockCollector = {
       recordCounter: vi.fn(),
@@ -62,6 +65,12 @@ describe('MetricsCollectionExtension', () => {
     
     // Register the extension
     extensionSystem.registerExtension(metricsExtension);
+  });
+  
+  afterEach(() => {
+    // Restore real timers
+    vi.useRealTimers();
+    vi.clearAllMocks();
   });
 
   describe('GIVEN a request to record a counter metric', () => {

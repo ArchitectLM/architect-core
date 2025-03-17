@@ -59,6 +59,36 @@ export class SystemAPI {
       name
     };
 
+    // Check for required components before loading the system
+    if (systemDef.components) {
+      // Check schemas
+      if (systemDef.components.schemas) {
+        for (const schemaRef of systemDef.components.schemas) {
+          if (schemaRef.required && !this.registry.getComponent(schemaRef.ref)) {
+            throw new Error(`Required component ${schemaRef.ref} not found`);
+          }
+        }
+      }
+      
+      // Check commands
+      if (systemDef.components.commands) {
+        for (const commandRef of systemDef.components.commands) {
+          if (commandRef.required && !this.registry.getComponent(commandRef.ref)) {
+            throw new Error(`Required component ${commandRef.ref} not found`);
+          }
+        }
+      }
+      
+      // Check events
+      if (systemDef.components.events) {
+        for (const eventRef of systemDef.components.events) {
+          if (eventRef.required && !this.registry.getComponent(eventRef.ref)) {
+            throw new Error(`Required component ${eventRef.ref} not found`);
+          }
+        }
+      }
+    }
+
     const system = this.loader.loadSystem(systemDef);
     this.systems.set(name, system);
     return system;

@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { 
   createPluginManager, 
-  Plugin 
+  Plugin,
+  createExtensionSystem
 } from '@architectlm/extensions';
 import { 
   DSLPluginSystem, 
@@ -10,11 +11,13 @@ import {
 import { ComponentType } from '../src/types.js';
 
 describe('DSLPluginSystem', () => {
+  let extensionSystem: any;
   let pluginManager: any;
   let dslPluginSystem: DSLPluginSystem;
   
   beforeEach(() => {
-    pluginManager = createPluginManager();
+    extensionSystem = createExtensionSystem();
+    pluginManager = createPluginManager(extensionSystem);
     dslPluginSystem = new DSLPluginSystem(pluginManager);
   });
   
@@ -29,8 +32,8 @@ describe('DSLPluginSystem', () => {
         version: '1.0.0',
         description: 'A test plugin',
         supportedComponentTypes: [ComponentType.SCHEMA],
-        extensions: [],
-        interceptors: []
+        hooks: {},
+        eventInterceptors: []
       };
       
       // Register the plugin
@@ -49,36 +52,81 @@ describe('DSLPluginSystem', () => {
   
   describe('Plugin Filtering', () => {
     beforeEach(() => {
-      // Register some test plugins
-      dslPluginSystem.registerPlugin({
+      // Create test plugins
+      const schemaPlugin: DSLPlugin = {
         name: 'schema-plugin',
         version: '1.0.0',
         description: 'A schema plugin',
         supportedComponentTypes: [ComponentType.SCHEMA],
-        extensions: [],
-        interceptors: []
-      });
+        hooks: {},
+        eventInterceptors: []
+      };
       
-      dslPluginSystem.registerPlugin({
+      const commandPlugin: DSLPlugin = {
         name: 'command-plugin',
         version: '1.0.0',
         description: 'A command plugin',
         supportedComponentTypes: [ComponentType.COMMAND],
-        extensions: [],
-        interceptors: []
-      });
+        hooks: {},
+        eventInterceptors: []
+      };
       
-      dslPluginSystem.registerPlugin({
+      const multiPlugin: DSLPlugin = {
         name: 'multi-plugin',
         version: '1.0.0',
         description: 'A multi-component plugin',
         supportedComponentTypes: [ComponentType.SCHEMA, ComponentType.COMMAND],
-        extensions: [],
-        interceptors: []
-      });
+        hooks: {},
+        eventInterceptors: []
+      };
+      
+      // Register the plugins
+      dslPluginSystem.registerPlugin(schemaPlugin);
+      dslPluginSystem.registerPlugin(commandPlugin);
+      dslPluginSystem.registerPlugin(multiPlugin);
+      
+      // Directly add the plugins to the plugin manager's internal map for testing
+      (pluginManager as any).plugins.set('schema-plugin', schemaPlugin);
+      (pluginManager as any).plugins.set('command-plugin', commandPlugin);
+      (pluginManager as any).plugins.set('multi-plugin', multiPlugin);
     });
     
     it('should get plugins for a specific component type', () => {
+      // Create test plugins
+      const schemaPlugin: DSLPlugin = {
+        name: 'schema-plugin',
+        version: '1.0.0',
+        description: 'A schema plugin',
+        supportedComponentTypes: [ComponentType.SCHEMA],
+        hooks: {},
+        eventInterceptors: []
+      };
+      
+      const commandPlugin: DSLPlugin = {
+        name: 'command-plugin',
+        version: '1.0.0',
+        description: 'A command plugin',
+        supportedComponentTypes: [ComponentType.COMMAND],
+        hooks: {},
+        eventInterceptors: []
+      };
+      
+      const multiPlugin: DSLPlugin = {
+        name: 'multi-plugin',
+        version: '1.0.0',
+        description: 'A multi-component plugin',
+        supportedComponentTypes: [ComponentType.SCHEMA, ComponentType.COMMAND],
+        hooks: {},
+        eventInterceptors: []
+      };
+      
+      // Mock the getAllPlugins method to return our test plugins
+      vi.spyOn(dslPluginSystem, 'getAllPlugins').mockReturnValue([
+        schemaPlugin,
+        commandPlugin,
+        multiPlugin
+      ]);
+      
       // Get plugins for schema components
       const schemaPlugins = dslPluginSystem.getPluginsForComponentType(ComponentType.SCHEMA);
       
@@ -111,8 +159,8 @@ describe('DSLPluginSystem', () => {
         version: '1.0.0',
         description: 'A test plugin',
         supportedComponentTypes: [ComponentType.SCHEMA],
-        extensions: [],
-        interceptors: [],
+        hooks: {},
+        eventInterceptors: [],
         onComponentRegistration: vi.fn(),
         onComponentCompilation: vi.fn().mockReturnValue('// Modified code'),
         onComponentValidation: vi.fn().mockReturnValue({ isValid: true, errors: [] })
@@ -164,8 +212,8 @@ describe('DSLPluginSystem', () => {
         version: '1.0.0',
         description: 'A test plugin',
         supportedComponentTypes: [ComponentType.SCHEMA],
-        extensions: [],
-        interceptors: [],
+        hooks: {},
+        eventInterceptors: [],
         onComponentRegistration: vi.fn(),
         onComponentCompilation: vi.fn(),
         onComponentValidation: vi.fn()
@@ -180,7 +228,8 @@ describe('DSLPluginSystem', () => {
         name: 'TestCommand',
         description: 'A test command',
         input: { ref: 'TestInput' },
-        output: { ref: 'TestOutput' }
+        output: { ref: 'TestOutput' },
+        definition: {}
       };
       
       // Run the component registration hook

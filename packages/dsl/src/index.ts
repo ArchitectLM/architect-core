@@ -106,3 +106,9 @@ export {
 
 // Export DSL plugins
 export * from './plugins/index.js';
+
+// Export enhanced types
+export * from './enhanced-types.js';
+
+// Export Zod validation
+export * from './zod-validation.js';

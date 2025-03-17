@@ -10,6 +10,7 @@ import { BaseComponent } from './types.js';
 import { DSLExtensionSystem, ValidationContext, CompilationContext, TransformationContext } from './dsl-extension-system.js';
 import { DSLPluginSystem } from './dsl-plugin-system.js';
 import { EventDrivenComponentRegistry } from './event-driven-component-registry.js';
+import { ComponentCache } from './component-cache.js';
 
 /**
  * DSL event types
@@ -42,6 +43,31 @@ export interface EventDrivenDSLCompilerOptions {
    * The DSL plugin system to use
    */
   dslPluginSystem: DSLPluginSystem;
+  
+  /**
+   * Cache options
+   */
+  cacheOptions?: {
+    /**
+     * Whether to enable caching
+     */
+    enabled?: boolean;
+    
+    /**
+     * Maximum time to live for cache entries in milliseconds
+     */
+    ttl?: number;
+    
+    /**
+     * Maximum number of entries in the cache
+     */
+    maxEntries?: number;
+    
+    /**
+     * Whether to use sliding expiration (reset TTL on access)
+     */
+    slidingExpiration?: boolean;
+  };
 }
 
 /**
@@ -54,6 +80,8 @@ export class EventDrivenDSLCompiler {
   private dslExtensionSystem: DSLExtensionSystem;
   private dslPluginSystem: DSLPluginSystem;
   private componentRegistry: EventDrivenComponentRegistry;
+  private componentCache: ComponentCache<string>;
+  private cacheEnabled: boolean;
   
   /**
    * Creates a new event-driven DSL compiler
@@ -67,6 +95,14 @@ export class EventDrivenDSLCompiler {
     
     // Initialize the extension system
     this.dslExtensionSystem.initialize();
+    
+    // Initialize the cache
+    this.cacheEnabled = options.cacheOptions?.enabled !== false;
+    this.componentCache = new ComponentCache<string>({
+      ttl: options.cacheOptions?.ttl,
+      maxEntries: options.cacheOptions?.maxEntries,
+      slidingExpiration: options.cacheOptions?.slidingExpiration
+    });
   }
   
   /**
@@ -82,13 +118,12 @@ export class EventDrivenDSLCompiler {
       this.componentRegistry.registerComponent(component);
       
       // Publish an event
-      this.eventBus.publish({
-        type: DSLEventType.COMPONENT_REGISTERED,
-        payload: {
+      this.eventBus.publish(
+        DSLEventType.COMPONENT_REGISTERED,
+        {
           component
-        },
-        timestamp: Date.now()
-      });
+        }
+      );
     } catch (error) {
       this.handleError('Failed to register component', error, component);
     }
@@ -107,13 +142,12 @@ export class EventDrivenDSLCompiler {
       this.componentRegistry.updateComponent(component);
       
       // Publish an event
-      this.eventBus.publish({
-        type: DSLEventType.COMPONENT_UPDATED,
-        payload: {
+      this.eventBus.publish(
+        DSLEventType.COMPONENT_UPDATED,
+        {
           component
-        },
-        timestamp: Date.now()
-      });
+        }
+      );
     } catch (error) {
       this.handleError('Failed to update component', error, component);
     }
@@ -136,13 +170,12 @@ export class EventDrivenDSLCompiler {
       this.componentRegistry.removeComponent(name);
       
       // Publish an event
-      this.eventBus.publish({
-        type: DSLEventType.COMPONENT_REMOVED,
-        payload: {
+      this.eventBus.publish(
+        DSLEventType.COMPONENT_REMOVED,
+        {
           name
-        },
-        timestamp: Date.now()
-      });
+        }
+      );
     } catch (error) {
       this.handleError(`Failed to remove component '${name}'`, error);
     }
@@ -168,37 +201,55 @@ export class EventDrivenDSLCompiler {
   /**
    * Compiles a component
    * @param name The name of the component to compile
-   * @returns The compiled code
+   * @returns The compiled component code
    */
   async compileComponent(name: string): Promise<string> {
     try {
-      // Get the component
-      const component = this.componentRegistry.getComponent(name);
-      
+      const component = this.getComponent(name);
       if (!component) {
-        throw new Error(`Component '${name}' not found`);
+        throw new Error(`Component not found: ${name}`);
+      }
+      
+      // Check if the component is in the cache
+      if (this.cacheEnabled) {
+        const cachedCode = this.componentCache.get(component, 'compiled');
+        if (cachedCode) {
+          // Publish an event for the cached compilation
+          this.eventBus.publish(
+            DSLEventType.COMPONENT_COMPILED,
+            {
+              component,
+              code: cachedCode,
+              fromCache: true
+            }
+          );
+          
+          return cachedCode;
+        }
       }
       
       // Compile the component
       const code = await this.internalCompileComponent(component);
       
-      // Run plugin hooks
-      const modifiedCode = await this.dslPluginSystem.runComponentCompilationHooks(component, code);
+      // Cache the compiled code
+      if (this.cacheEnabled) {
+        this.componentCache.set(component, code, 'compiled');
+      }
       
       // Publish an event
-      this.eventBus.publish({
-        type: DSLEventType.COMPONENT_COMPILED,
-        payload: {
-          name,
-          result: modifiedCode
-        },
-        timestamp: Date.now()
-      });
+      this.eventBus.publish(
+        DSLEventType.COMPONENT_COMPILED,
+        {
+          component,
+          code,
+          fromCache: false
+        }
+      );
       
-      return modifiedCode;
+      return code;
     } catch (error) {
-      this.handleError(`Failed to compile component '${name}'`, error);
-      return '';
+      this.handleError('Failed to compile component', error, this.getComponent(name));
+      throw error;
     }
   }
   
@@ -226,14 +277,13 @@ export class EventDrivenDSLCompiler {
       );
       
       // Publish an event
-      this.eventBus.publish({
-        type: DSLEventType.COMPONENT_VALIDATED,
-        payload: {
-          name,
-          result: modifiedResult
-        },
-        timestamp: Date.now()
-      });
+      this.eventBus.publish(
+        DSLEventType.COMPONENT_VALIDATED,
+        {
+          component,
+          validationResult
+        }
+      );
       
       return modifiedResult;
     } catch (error) {
@@ -271,14 +321,13 @@ export class EventDrivenDSLCompiler {
       const transformationResult = await this.dslExtensionSystem.transformComponent(component, context);
       
       // Publish an event
-      this.eventBus.publish({
-        type: DSLEventType.COMPONENT_TRANSFORMED,
-        payload: {
-          name,
-          result: transformationResult
-        },
-        timestamp: Date.now()
-      });
+      this.eventBus.publish(
+        DSLEventType.COMPONENT_TRANSFORMED,
+        {
+          component,
+          transformedComponent: context.transformedComponent
+        }
+      );
       
       return transformationResult;
     } catch (error) {
@@ -335,17 +384,46 @@ export class EventDrivenDSLCompiler {
     console.error(message, error);
     
     // Publish an error event
-    this.eventBus.publish({
-      type: DSLEventType.ERROR,
-      payload: {
+    this.eventBus.publish(
+      DSLEventType.ERROR,
+      {
         message,
         error: error instanceof Error ? error.message : String(error),
         component
-      },
-      timestamp: Date.now()
-    });
+      }
+    );
     
     // Rethrow the error
     throw error;
+  }
+  
+  /**
+   * Invalidates the cache for a component
+   * @param name The name of the component
+   */
+  invalidateCache(name: string): void {
+    const component = this.getComponent(name);
+    if (component) {
+      this.componentCache.remove(component, 'compiled');
+      this.componentCache.remove(component, 'validated');
+      this.componentCache.remove(component, 'transformed');
+    }
+  }
+  
+  /**
+   * Clears the entire cache
+   */
+  clearCache(): void {
+    this.componentCache.clear();
+  }
+  
+  /**
+   * Gets cache statistics
+   * @returns Cache statistics
+   */
+  getCacheStats(): { size: number } {
+    return {
+      size: this.componentCache.size()
+    };
   }
 } 

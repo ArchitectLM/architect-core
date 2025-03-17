@@ -121,7 +121,7 @@ describe('EventPersistenceExtension', () => {
       const result = await extensionSystem.triggerExtensionPoint('event.store', context);
       
       // THEN the event should be stored
-      expect(mockStorage.storeEvent).toHaveBeenCalledWith(event);
+      expect(mockStorage.storeEvent).toHaveBeenCalledWith(event, undefined);
       expect(result).toEqual({ id: 'event-123' });
     });
     
