@@ -19,7 +19,7 @@ export {
   EventInterceptor,
   ExtensionHookHandler,
   ExtensionEvent
-} from './extension-system.js';
+} from './extension-system.ts';
 
 // Export plugin management
 export {
@@ -27,7 +27,17 @@ export {
   createPluginManager,
   PluginMetadata,
   PluginRegistry
-} from './plugin-management.js';
+} from './plugin-management.ts';
+
+// Export external system adapter
+export {
+  ExternalSystemAdapter,
+  ExternalSystemAdapterConfig,
+  ExternalSystemAdapterFactory,
+  MemoryExternalSystemAdapter,
+  MemoryExternalSystemAdapterOptions,
+  externalSystemAdapterFactory
+} from './external-system-adapter.ts';
 
 // Export event bus integration
 export {
@@ -35,7 +45,7 @@ export {
   createExtendedEventBus,
   EventBus,
   EventBusIntegrationOptions
-} from './extensions/event-bus-integration.js';
+} from './extensions/event-bus-integration.ts';
 
 // Export error recovery extension
 export {
@@ -44,14 +54,14 @@ export {
   RecoveryResult,
   RecoveryContext,
   FallbackHandler
-} from './extensions/error-recovery.js';
+} from './extensions/error-recovery.ts';
 
 // Export error classification extension
 export {
   ErrorClassificationExtension,
   ErrorClassification,
   ErrorClassifier
-} from './extensions/error-classification.js';
+} from './extensions/error-classification.ts';
 
 // Export bulkhead extension
 export {
@@ -59,7 +69,7 @@ export {
   BulkheadOptions,
   BulkheadRejectionContext,
   BulkheadConfigContext
-} from './extensions/bulkhead.js';
+} from './extensions/bulkhead.ts';
 
 // Export rate limiter extension
 export {
@@ -68,7 +78,7 @@ export {
   RateLimiterOptions,
   RateLimitThrottlingContext,
   RateLimiterConfigContext
-} from './extensions/rate-limiter.js';
+} from './extensions/rate-limiter.ts';
 
 // Export enhanced circuit breaker extension
 export {
@@ -77,6 +87,21 @@ export {
   EnhancedCircuitBreakerOptions,
   CircuitBreakerStateChangeContext,
   CircuitBreakerConfigContext
-} from './extensions/enhanced-circuit-breaker.js';
+} from './extensions/enhanced-circuit-breaker.ts';
+
+// Export external system integration extension
+export {
+  ExternalSystemIntegrationExtension,
+  ExternalSystemIntegrationOptions,
+  ExternalSystemOperationContext,
+  createExternalSystemIntegration
+} from './extensions/external-system-integration.ts';
+
+// Export REST API adapter
+export {
+  RestApiAdapter,
+  RestApiAdapterOptions,
+  registerRestApiAdapter
+} from './extensions/rest-api-adapter.ts';
 
 // Other extensions will be implemented in future updates

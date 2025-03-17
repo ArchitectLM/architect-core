@@ -9,11 +9,28 @@ import { ReactiveEventBus } from './event-bus.js';
 /**
  * Middleware interface for command processing pipeline
  */
-export interface Middleware {
+export type Middleware = {
   execute: <T, R>(
     context: { command: T; result?: R },
     next: (context: { command: T; result?: R }) => Promise<{ command: T; result: R }>
   ) => Promise<{ command: T; result: R }>;
+};
+
+// Also export a class to ensure it's preserved in JavaScript
+export class MiddlewareImpl implements Middleware {
+  constructor(
+    private executeFn: <T, R>(
+      context: { command: T; result?: R },
+      next: (context: { command: T; result?: R }) => Promise<{ command: T; result: R }>
+    ) => Promise<{ command: T; result: R }>
+  ) {}
+
+  execute<T, R>(
+    context: { command: T; result?: R },
+    next: (context: { command: T; result?: R }) => Promise<{ command: T; result: R }>
+  ): Promise<{ command: T; result: R }> {
+    return this.executeFn(context, next);
+  }
 }
 
 /**

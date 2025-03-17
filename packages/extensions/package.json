@@ -8,7 +8,8 @@
   "exports": {
     ".": {
       "import": "./src/index.ts",
-      "types": "./src/index.ts"
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
     }
   },
   "scripts": {
@@ -28,7 +29,7 @@
   "author": "ArchitectLM Team",
   "license": "MIT",
   "dependencies": {
-    "@architectlm/core": "^0.1.0"
+    "@architectlm/core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

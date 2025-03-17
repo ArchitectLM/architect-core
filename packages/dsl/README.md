@@ -4,156 +4,157 @@ Domain-Specific Language for the ArchitectLM reactive system.
 
 ## Overview
 
-The DSL package provides a declarative way to define reactive system configurations, including:
+The DSL package provides a domain-specific language for defining components in the ArchitectLM reactive system. It includes:
 
-- Schemas for data validation
-- Pure functions for business logic
-- Commands with resilience patterns
-- Reactive pipelines for processing flows
-- Extension points for cross-cutting concerns
+- Component models for schemas, commands, events, and more
+- Component validation and compilation
+- Integration with vector databases and external systems
+- Event-driven architecture for component management
+- Extension system for customizing component processing
+- Plugin system for adding new functionality
+
+## Key Features
+
+### Event-Driven Component Registry
+
+The event-driven component registry provides a reactive way to manage components, emitting events when components are registered, updated, or removed.
+
+```typescript
+import { EventDrivenComponentRegistry, ReactiveEventBus } from '@architectlm/dsl';
+
+const eventBus = new ReactiveEventBus();
+const registry = new EventDrivenComponentRegistry(eventBus);
+
+// Subscribe to component events
+eventBus.subscribe('DSL_COMPONENT_REGISTERED', (event) => {
+  console.log(`Component registered: ${event.payload.component.name}`);
+});
+
+// Register a component
+registry.registerComponent({
+  type: 'SCHEMA',
+  name: 'User',
+  description: 'User schema',
+  definition: {
+    type: 'object',
+    properties: {
+      id: { type: 'string' },
+      name: { type: 'string' }
+    }
+  }
+});
+```
+
+### DSL Extension System
+
+The DSL extension system allows for extending the component processing pipeline with custom functionality.
+
+```typescript
+import { 
+  DSLExtensionSystem, 
+  createExtensionSystem, 
+  DSL_EXTENSION_POINTS 
+} from '@architectlm/dsl';
+
+const extensionSystem = createExtensionSystem();
+const dslExtensionSystem = new DSLExtensionSystem(extensionSystem);
+
+// Initialize the extension system
+dslExtensionSystem.initialize();
+
+// Register an extension for component validation
+extensionSystem.registerExtension({
+  name: 'schema-validator',
+  extensionPoint: DSL_EXTENSION_POINTS.VALIDATE_COMPONENT,
+  execute: (context) => {
+    // Custom validation logic
+    if (context.component.type === 'SCHEMA') {
+      // Validate schema component
+      if (!context.component.definition.properties) {
+        context.validationResult.isValid = false;
+        context.validationResult.errors.push('Schema must have properties');
+      }
+    }
+    return context;
+  }
+});
+```
+
+### DSL Plugin System
+
+The DSL plugin system provides a way to add new functionality to the DSL through plugins.
+
+```typescript
+import { 
+  DSLPluginSystem, 
+  createDSLPluginSystem, 
+  ComponentType 
+} from '@architectlm/dsl';
+
+const pluginSystem = createDSLPluginSystem();
+
+// Register a plugin
+pluginSystem.registerPlugin({
+  name: 'schema-validation-plugin',
+  version: '1.0.0',
+  description: 'Provides enhanced validation for schema components',
+  supportedComponentTypes: [ComponentType.SCHEMA],
+  extensions: [],
+  interceptors: [],
+  onComponentValidation: (component, validationResult) => {
+    // Custom validation logic
+    return validationResult;
+  }
+});
+```
+
+### Event-Driven DSL Compiler
+
+The event-driven DSL compiler provides a reactive way to compile components, emitting events during the compilation process.
+
+```typescript
+import { 
+  EventDrivenDSLCompiler, 
+  DSLExtensionSystem, 
+  DSLPluginSystem, 
+  ReactiveEventBus 
+} from '@architectlm/dsl';
+
+const eventBus = new ReactiveEventBus();
+const extensionSystem = createExtensionSystem();
+const dslExtensionSystem = new DSLExtensionSystem(extensionSystem);
+const dslPluginSystem = createDSLPluginSystem();
+
+const compiler = new EventDrivenDSLCompiler({
+  eventBus,
+  dslExtensionSystem,
+  dslPluginSystem
+});
+
+// Register a component
+await compiler.registerComponent({
+  type: 'SCHEMA',
+  name: 'User',
+  description: 'User schema',
+  definition: {
+    type: 'object',
+    properties: {
+      id: { type: 'string' },
+      name: { type: 'string' }
+    }
+  }
+});
+
+// Compile a component
+const code = await compiler.compileComponent('User');
+console.log(code);
+```
 
 ## Installation
 
 ```bash
-pnpm add @architectlm/dsl
+npm install @architectlm/dsl
 ```
-
-## Usage
-
-### Creating a Configuration
-
-You can create a configuration using the builder pattern:
-
-```typescript
-import { createDSLConfig } from "@architectlm/dsl";
-
-const config = createDSLConfig()
-  .withMeta({
-    name: "Payment Processing System",
-    version: "1.0.0",
-    description: "Handles payment transactions with multiple providers",
-  })
-  .withSchema("PaymentRequest", {
-    type: "object",
-    required: ["amount", "currency"],
-    properties: {
-      amount: { type: "number", minimum: 0.01 },
-      currency: { type: "string", minLength: 3, maxLength: 3 },
-    },
-  })
-  .withFunction("validatePayment", {
-    meta: {
-      purpose: "Validate payment request data",
-      domain: "payment",
-      tags: ["validation", "payment"],
-    },
-    implementation: (payment) => {
-      // Validation logic
-      return true;
-    },
-  })
-  .withCommand("processPayment", {
-    meta: {
-      purpose: "Process a payment transaction",
-      domain: "payment",
-      tags: ["payment", "transaction"],
-    },
-    input: "PaymentRequest",
-    output: "PaymentResult",
-    implementation: async (payment) => {
-      // Payment processing logic
-      return { success: true, transactionId: "123" };
-    },
-    resilience: {
-      retry: {
-        maxAttempts: 3,
-        backoff: "exponential",
-      },
-    },
-  })
-  .withPipeline("paymentProcessing", {
-    description: "Payment processing pipeline",
-    input: "PaymentRequest",
-    output: "PaymentResult",
-    steps: [
-      { name: "validate", function: "validatePayment" },
-      { name: "process", function: "processPayment" },
-    ],
-    errorHandling: {
-      retryable: ["process"],
-    },
-  })
-  .withExtensionPoint("beforePaymentProcessing", {
-    description: "Called before processing a payment",
-    parameters: ["request", "context"],
-  })
-  .build();
-```
-
-### Parsing a Configuration
-
-You can also parse an existing configuration object:
-
-```typescript
-import { parseDSLConfig } from "@architectlm/dsl";
-
-const rawConfig = {
-  meta: {
-    /* ... */
-  },
-  schemas: {
-    /* ... */
-  },
-  functions: {
-    /* ... */
-  },
-  commands: {
-    /* ... */
-  },
-  pipelines: {
-    /* ... */
-  },
-  extensionPoints: {
-    /* ... */
-  },
-};
-
-const parsedConfig = parseDSLConfig(rawConfig);
-```
-
-### Integration with Runtime
-
-The DSL configuration can be used with the ArchitectLM runtime:
-
-```typescript
-import { ReactiveRuntime } from "@architectlm/core";
-import { parseDSLConfig } from "@architectlm/dsl";
-
-// Create a runtime instance
-const runtime = new ReactiveRuntime();
-
-// Parse the configuration
-const config = parseDSLConfig(rawConfig);
-
-// Register commands
-for (const [name, command] of Object.entries(config.commands)) {
-  runtime.registerCommand(name, command.implementation);
-}
-
-// Execute a command
-const result = await runtime.executeCommand("processPayment", {
-  amount: 100,
-  currency: "USD",
-});
-```
-
-## Features
-
-- **Schema Validation**: JSON Schema-based validation for inputs and outputs
-- **Pure Functions**: Business logic implemented as pure functions
-- **Resilience Patterns**: Built-in support for circuit breakers, retry policies, etc.
-- **Reactive Pipelines**: Define processing flows as sequences of steps
-- **Extension Points**: Allow cross-cutting concerns to be added without modifying core functionality
 
 ## License
 

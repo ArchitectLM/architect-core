@@ -8,6 +8,8 @@
     "test": "pnpm -r test",
     "test:watch": "pnpm -r test:watch",
     "test:coverage": "pnpm -r test:coverage",
+    "test:workspace": "vitest run -c vitest.workspace.ts",
+    "test:e2e": "vitest run -c vitest.workspace.ts --project dsl --testNamePattern='E-Commerce DSL E2E Test'",
     "lint": "pnpm -r lint",
     "lint:fix": "pnpm -r lint:fix",
     "format": "prettier --write \"**/*.{ts,js,json,md}\"",

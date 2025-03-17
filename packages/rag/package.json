@@ -31,8 +31,9 @@
   "author": "ArchitectLM Team",
   "license": "MIT",
   "dependencies": {
-    "@architectlm/core": "^0.1.0",
-    "@architectlm/extensions": "^0.1.0",
+    "@architectlm/core": "workspace:*",
+    "@architectlm/dsl": "workspace:*",
+    "@architectlm/extensions": "workspace:*",
     "chromadb": "^1.7.3",
     "langchain": "^0.1.17",
     "openai": "^4.28.0",
