@@ -31,7 +31,7 @@ export class CodeValidator {
     const program = ts.createProgram({
       rootNames: [fileName],
       options: compilerOptions,
-      host: this.createCompilerHost(sourceFile),
+      host: this.createCompilerHost(sourceFile, code),
     });
 
     // Get diagnostics
@@ -80,13 +80,20 @@ export class CodeValidator {
     return {
       target: ts.ScriptTarget.Latest,
       module: ts.ModuleKind.ESNext,
-      moduleResolution: ts.ModuleResolutionKind.NodeJs,
+      moduleResolution: ts.ModuleResolutionKind.NodeNext,
+      allowJs: true,
+      checkJs: true,
       esModuleInterop: true,
       strict: true,
       skipLibCheck: true,
       forceConsistentCasingInFileNames: true,
       noImplicitAny: true,
       strictNullChecks: true,
+      baseUrl: ".",
+      paths: {
+        "@architectlm/dsl": ["./node_modules/@architectlm/dsl"],
+        "@architectlm/rag": ["./node_modules/@architectlm/rag"],
+      },
     };
   }
 
@@ -94,10 +101,39 @@ export class CodeValidator {
    * Create a compiler host for TypeScript
    * @private
    */
-  private createCompilerHost(sourceFile: ts.SourceFile): ts.CompilerHost {
+  private createCompilerHost(sourceFile: ts.SourceFile, sourceCode: string): ts.CompilerHost {
+    const virtualFiles = new Map<string, string>([
+      [sourceFile.fileName, sourceCode],
+      ["system-api.d.ts", `
+        export namespace System {
+          export function component(name: string, config: any): any;
+          export function define(name: string, config: any): any;
+        }
+      `],
+      ["types.d.ts", `
+        export enum ComponentType {
+          SCHEMA = "schema",
+          COMMAND = "command",
+          EVENT = "event",
+          QUERY = "query",
+          WORKFLOW = "workflow",
+          EXTENSION = "extension",
+          PLUGIN = "plugin"
+        }
+      `],
+    ]);
+
     return {
       getSourceFile: (name: string) => {
-        return name === sourceFile.fileName ? sourceFile : undefined;
+        if (virtualFiles.has(name)) {
+          return ts.createSourceFile(
+            name,
+            virtualFiles.get(name)!,
+            ts.ScriptTarget.Latest,
+            true
+          );
+        }
+        return undefined;
       },
       getDefaultLibFileName: () => "lib.d.ts",
       writeFile: () => {},
@@ -105,10 +141,29 @@ export class CodeValidator {
       getCanonicalFileName: (fileName: string) => fileName,
       useCaseSensitiveFileNames: () => true,
       getNewLine: () => "\n",
-      fileExists: (fileName: string) => fileName === sourceFile.fileName,
-      readFile: () => "",
+      fileExists: (fileName: string) => virtualFiles.has(fileName),
+      readFile: (fileName: string) => virtualFiles.get(fileName) || "",
       directoryExists: () => true,
       getDirectories: () => [],
+      resolveModuleNames: (moduleNames: string[], containingFile: string) => {
+        return moduleNames.map(moduleName => {
+          if (moduleName.includes("system-api.js")) {
+            return {
+              resolvedFileName: "system-api.d.ts",
+              isExternalLibraryImport: false,
+              extension: ts.Extension.Dts,
+            };
+          }
+          if (moduleName.includes("types.js")) {
+            return {
+              resolvedFileName: "types.d.ts",
+              isExternalLibraryImport: false,
+              extension: ts.Extension.Dts,
+            };
+          }
+          return undefined;
+        });
+      },
     };
   }
 

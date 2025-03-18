@@ -4,19 +4,7 @@
  */
 
 import { z } from "zod";
-
-/**
- * Component types that can be indexed in the vector database
- */
-export enum ComponentType {
-  Function = "function",
-  Command = "command",
-  Event = "event",
-  Query = "query",
-  Schema = "schema",
-  Pipeline = "pipeline",
-  Extension = "extension",
-}
+import { ComponentType } from '@architectlm/dsl';
 
 /**
  * Schema for component metadata
@@ -30,6 +18,14 @@ export const ComponentMetadataSchema = z.object({
   version: z.string().optional(),
   author: z.string().optional(),
   dependencies: z.array(z.string()).optional(),
+  relationships: z
+    .object({
+      dependsOn: z.array(z.string()),
+      usedBy: z.array(z.string()),
+      extends: z.array(z.string()),
+      implements: z.array(z.string()),
+    })
+    .optional(),
 });
 
 /**
@@ -42,9 +38,10 @@ export type ComponentMetadata = z.infer<typeof ComponentMetadataSchema>;
  */
 export const ComponentSchema = z.object({
   id: z.string().optional(),
-  type: z.nativeEnum(ComponentType),
+  type: z.enum(['schema', 'command', 'query', 'event', 'workflow', 'extension', 'plugin'] as const),
   name: z.string(),
   content: z.string(),
+  ast: z.any().optional(),
   metadata: ComponentMetadataSchema,
 });
 
@@ -58,9 +55,13 @@ export type Component = z.infer<typeof ComponentSchema>;
  */
 export const SearchOptionsSchema = z.object({
   limit: z.number().default(10),
-  types: z.array(z.nativeEnum(ComponentType)).optional(),
+  types: z.array(z.enum(['schema', 'command', 'query', 'event', 'workflow', 'extension', 'plugin'])).optional(),
   tags: z.array(z.string()).optional(),
   threshold: z.number().min(0).max(1).default(0.7),
+  includeMetadata: z.boolean().default(true),
+  includeEmbeddings: z.boolean().default(false),
+  orderBy: z.enum(['relevance', 'createdAt', 'updatedAt']).default('relevance'),
+  orderDirection: z.enum(['asc', 'desc']).default('desc'),
 });
 
 /**
@@ -153,6 +154,7 @@ export const VectorDBConfigSchema = z.object({
   persistDirectory: z.string().optional(),
   embeddingDimension: z.number().default(1536),
   distance: z.enum(["cosine", "euclidean", "dot"]).default("cosine"),
+  embeddingFunction: z.any().optional()
 });
 
 /**
@@ -485,22 +487,82 @@ export const LearningTaskSchema = z.object({
 export type LearningTask = z.infer<typeof LearningTaskSchema>;
 
 /**
+ * Type for exemplar solution
+ */
+export type ExemplarSolution = {
+  id?: string;
+  type: 'plugin';
+  name: string;
+  content: string;
+  ast?: any;
+  metadata: {
+    path: string;
+    description?: string;
+    tags?: string[];
+    createdAt: number;
+    updatedAt?: number;
+    version?: string;
+    author: string;
+    dependencies?: string[];
+    relationships?: {
+      dependsOn: string[];
+      usedBy: string[];
+      extends: string[];
+      implements: string[];
+    };
+    taskId: string;
+    explanation: string;
+    quality: number;
+  };
+};
+
+/**
  * Schema for exemplar solution
  */
 export const ExemplarSolutionSchema = z.object({
   id: z.string().optional(),
-  taskId: z.string(),
+  type: z.literal('plugin'),
+  name: z.string(),
   content: z.string(),
-  explanation: z.string(),
-  author: z.string(),
-  quality: z.number().min(1).max(5),
-  createdAt: z.number(),
+  ast: z.any().optional(),
+  metadata: z.object({
+    path: z.string(),
+    description: z.string().optional(),
+    tags: z.array(z.string()).optional(),
+    createdAt: z.number(),
+    updatedAt: z.number().optional(),
+    version: z.string().optional(),
+    author: z.string(),
+    dependencies: z.array(z.string()).optional(),
+    relationships: z.object({
+      dependsOn: z.array(z.string()),
+      usedBy: z.array(z.string()),
+      extends: z.array(z.string()),
+      implements: z.array(z.string()),
+    }).optional(),
+    taskId: z.string(),
+    explanation: z.string(),
+    quality: z.number(),
+  }),
 });
 
 /**
- * Type for exemplar solution
+ * Type guard for ExemplarSolution
  */
-export type ExemplarSolution = z.infer<typeof ExemplarSolutionSchema>;
+export function isExemplarSolution(value: any): value is ExemplarSolution {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    value.type === 'plugin' &&
+    typeof value.name === 'string' &&
+    typeof value.content === 'string' &&
+    typeof value.metadata === 'object' &&
+    typeof value.metadata.path === 'string' &&
+    typeof value.metadata.taskId === 'string' &&
+    typeof value.metadata.explanation === 'string' &&
+    typeof value.metadata.quality === 'number'
+  );
+}
 
 /**
  * Schema for learning path

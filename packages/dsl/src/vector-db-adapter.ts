@@ -1,13 +1,6 @@
 import { Component, ComponentImplementation, ComponentSearchCriteria, VectorDBAdapter } from './types.js';
 import { vectorDBAdapterFactory } from './vector-db-factory.js';
-// Mock UUID implementation since we can't install the actual package
-const uuidv4 = () => {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    const r = Math.random() * 16 | 0;
-    const v = c === 'x' ? r : (r & 0x3 | 0x8);
-    return v.toString(16);
-  });
-};
+import { v4 as uuidv4 } from 'uuid';
 
 // Import ChromaDB types without requiring the actual dependency
 type ChromaClient = any;
@@ -75,8 +68,13 @@ export class ChromaVectorDBAdapter implements VectorDBAdapter {
    */
   private async getCollection(): Promise<ChromaCollection> {
     if (!this.collection) {
+      const collectionId = uuidv4();
       this.collection = await this.client.getOrCreateCollection({
-        name: this.config.collectionName
+        name: collectionId,
+        metadata: {
+          originalName: this.config.collectionName,
+          type: 'component'
+        }
       });
     }
     return this.collection;

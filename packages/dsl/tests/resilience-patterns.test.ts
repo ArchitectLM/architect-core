@@ -23,10 +23,10 @@ let createEnhancedCircuitBreakerConfig;
 
 // Load modules before tests
 beforeEach(async () => {
-  const coreModule = await import('../../packages/core/src/implementations/event-bus.js');
-  const extensionSystemModule = await import('../../packages/extensions/src/extension-system.js');
-  const circuitBreakerModule = await import('../../packages/extensions/src/extensions/enhanced-circuit-breaker.js');
-  const dslModule = await import('../../packages/dsl/src/builder.js');
+  const coreModule = await import('../../core/src/implementations/event-bus.js');
+  const extensionSystemModule = await import('../../extensions/src/extension-system.js');
+  const circuitBreakerModule = await import('../../extensions/src/extensions/enhanced-circuit-breaker.js');
+  const dslModule = await import('../src/builder.js');
   
   ReactiveEventBus = coreModule.ReactiveEventBus;
   createExtensionSystem = extensionSystemModule.createExtensionSystem;
@@ -79,10 +79,10 @@ describe('Resilience Patterns Integration', () => {
   
   beforeEach(async () => {
     // Load modules dynamically
-    const coreModule = await import('../../packages/core/src/implementations/event-bus.js');
-    const extensionSystemModule = await import('../../packages/extensions/src/extension-system.js');
-    const circuitBreakerModule = await import('../../packages/extensions/src/extensions/enhanced-circuit-breaker.js');
-    const dslModule = await import('../../packages/dsl/src/builder.js');
+    const coreModule = await import('../../core/src/implementations/event-bus.js');
+    const extensionSystemModule = await import('../../extensions/src/extension-system.js');
+    const circuitBreakerModule = await import('../../extensions/src/extensions/enhanced-circuit-breaker.js');
+    const dslModule = await import('../src/builder.js');
     
     ReactiveEventBus = coreModule.ReactiveEventBus;
     createExtensionSystem = extensionSystemModule.createExtensionSystem;

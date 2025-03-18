@@ -11,6 +11,9 @@ importers:
       '@types/dotenv':
         specifier: ^8.2.3
         version: 8.2.3
+      chromadb-default-embed:
+        specifier: ^2.14.0
+        version: 2.14.0
       dotenv:
         specifier: ^16.4.7
         version: 16.4.7
@@ -146,7 +149,7 @@ importers:
         version: 5.8.2
       vitest:
         specifier: ^0.34.0
-        version: 0.34.6
+        version: 0.34.6(@vitest/ui@1.6.1)
 
   packages/rag:
     dependencies:
@@ -160,11 +163,17 @@ importers:
         specifier: workspace:*
         version: link:../extensions
       chromadb:
-        specifier: ^1.10.5
-        version: 1.10.5(@google/generative-ai@0.1.3)(cohere-ai@7.16.0)(ollama@0.5.14)(openai@4.87.3(zod@3.24.2))(voyageai@0.0.3)
+        specifier: ^2.0.1
+        version: 2.0.1(zod@3.24.2)
+      chromadb-default-embed:
+        specifier: ^2.14.0
+        version: 2.14.0
+      dotenv:
+        specifier: ^16.4.5
+        version: 16.4.7
       langchain:
         specifier: ^0.1.17
-        version: 0.1.37(@aws-crypto/sha256-js@5.2.0)(@aws-sdk/credential-provider-node@3.758.0)(@smithy/util-utf8@2.3.0)(@xenova/transformers@2.17.2)(axios@1.8.3)(chromadb@1.10.5(@google/generative-ai@0.1.3)(cohere-ai@7.16.0)(ollama@0.5.14)(openai@4.87.3(zod@3.24.2))(voyageai@0.0.3))(cohere-ai@7.16.0)(fast-xml-parser@4.4.1)(ignore@5.3.2)(openai@4.87.3(zod@3.24.2))
+        version: 0.1.37(@aws-crypto/sha256-js@5.2.0)(@aws-sdk/credential-provider-node@3.758.0)(@smithy/util-utf8@2.3.0)(@xenova/transformers@2.17.2)(axios@1.8.3)(chromadb@2.0.1(zod@3.24.2))(cohere-ai@7.16.0)(fast-xml-parser@4.4.1)(ignore@5.3.2)(openai@4.87.3(zod@3.24.2))
       openai:
         specifier: ^4.28.0
         version: 4.87.3(zod@3.24.2)
@@ -189,7 +198,10 @@ importers:
         version: 9.0.8
       '@vitest/coverage-v8':
         specifier: ^1.3.1
-        version: 1.6.1(vitest@1.6.1(@types/node@20.17.24))
+        version: 1.6.1(vitest@1.6.1)
+      '@vitest/ui':
+        specifier: ^1.3.1
+        version: 1.6.1(vitest@1.6.1)
       chai:
         specifier: ^4.4.1
         version: 4.5.0
@@ -201,7 +213,7 @@ importers:
         version: 5.8.2
       vitest:
         specifier: ^1.3.1
-        version: 1.6.1(@types/node@20.17.24)
+        version: 1.6.1(@types/node@20.17.24)(@vitest/ui@1.6.1)
 
 packages:
 
@@ -732,6 +744,10 @@ packages:
     resolution: {integrity: sha512-Cm4uJX1sKarpm1mje/MiOIinM7zdUUrQp/5/qGPAgznbdd/B9zup5ehT6c1qGqycFcSopTA1J1HpqHS5kJR8hQ==}
     engines: {node: '>=18.0.0'}
 
+  '@huggingface/jinja@0.1.3':
+    resolution: {integrity: sha512-9KsiorsdIK8+7VmlamAT7Uh90zxAhC/SeKaKc80v58JhtPYuwaJpmR/ST7XAUxrHAFqHTCoTH5aJnJDwSL6xIQ==}
+    engines: {node: '>=18'}
+
   '@huggingface/jinja@0.2.2':
     resolution: {integrity: sha512-/KPde26khDUIPkTGU82jdtTW9UAuvUTumCAbFs/7giR0SxsvZC4hru51PBvpijH6BVkHcROcvZM/lpy5h1jRRA==}
     engines: {node: '>=18'}
@@ -1099,6 +1115,9 @@ packages:
   '@pkgr/core@0.1.1':
     resolution: {integrity: sha512-cq8o4cWH0ibXh9VGi5P20Tu9XF/0fFXl9EUinr9QfTM7a7p0oTA4iJRCQWppXR1Pg8dSM0UCItCkPwsk9qWWYA==}
     engines: {node: ^12.20.0 || ^14.18.0 || >=16.0.0}
+
+  '@polka/url@1.0.0-next.28':
+    resolution: {integrity: sha512-8LduaNlMZGwdZ6qWrKlfa+2M4gahzFkprZiAt2TF8uS0qQgBizKXpXURqvTJ4WtmupWxaLqjRb2UCTe72mu+Aw==}
 
   '@protobufjs/aspromise@1.1.2':
     resolution: {integrity: sha512-j+gKExEuLmKwvz3OgROXtrJ2UG2x8Ch2YZUxahh+s1F2HZ+wAceUNLkvy6zKCPVRkU++ZWQrdxsUeQXmcg4uoQ==}
@@ -1674,6 +1693,11 @@ packages:
   '@vitest/spy@3.0.8':
     resolution: {integrity: sha512-MR+PzJa+22vFKYb934CejhR4BeRpMSoxkvNoDit68GQxRLSf11aT6CTj3XaqUU9rxgWJFnqicN/wxw6yBRkI1Q==}
 
+  '@vitest/ui@1.6.1':
+    resolution: {integrity: sha512-xa57bCPGuzEFqGjPs3vVLyqareG8DX0uMkr5U/v5vLv5/ZUrBrPL7gzxzTJedEyZxFMfsozwTIbbYfEQVo3kgg==}
+    peerDependencies:
+      vitest: 1.6.1
+
   '@vitest/utils@0.34.6':
     resolution: {integrity: sha512-IG5aDD8S6zlvloDsnzHw0Ut5xczlF+kv2BOTo+iXfPr54Yhi5qbVOgGB1hZaVq4iJ4C/MZ2J0y15IlsV/ZcI0A==}
 
@@ -1932,26 +1956,12 @@ packages:
   chownr@1.1.4:
     resolution: {integrity: sha512-jJ0bqzaylmJtVnNgzTeSOs8DPavpbYgEr/b0YL8/2GO3xJEhInFmhKMUnEJQjZumK7KXGFhUy89PrsJWlakBVg==}
 
-  chromadb@1.10.5:
-    resolution: {integrity: sha512-+IeTjjf44pKUY3vp1BacwO2tFAPcWCd64zxPZZm98dVj/kbSBeaHKB2D6eX7iRLHS1PTVASuqoR6mAJ+nrsTBg==}
+  chromadb-default-embed@2.14.0:
+    resolution: {integrity: sha512-odCiCzZ5jqNI0sS6RcRxObx8gM7aCPULQkdWw/OgqIGdIUOKUj9b8jDElLbZ6feMKNB0MSQhtXi0P8QEeVO75w==}
+
+  chromadb@2.0.1:
+    resolution: {integrity: sha512-pq70OaBmLg9W5zv427N0KxcZa62s42kozS+1oG5KaLxtYEW1GtlTorH48OHObbEcELfNC1zPk5WRUqdTRdGxEA==}
     engines: {node: '>=14.17.0'}
-    peerDependencies:
-      '@google/generative-ai': ^0.1.1
-      cohere-ai: ^5.0.0 || ^6.0.0 || ^7.0.0
-      ollama: ^0.5.0
-      openai: ^3.0.0 || ^4.0.0
-      voyageai: ^0.0.3-1
-    peerDependenciesMeta:
-      '@google/generative-ai':
-        optional: true
-      cohere-ai:
-        optional: true
-      ollama:
-        optional: true
-      openai:
-        optional: true
-      voyageai:
-        optional: true
 
   class-transformer@0.5.1:
     resolution: {integrity: sha512-SQa1Ws6hUbfC98vKGxZH3KFY0Y1lm5Zm0SY8XX9zbK7FJCyVEac3ATW0RIpwzW+oOfmHE5PMPufDG9hCfoEOMw==}
@@ -2387,6 +2397,9 @@ packages:
 
   fastq@1.19.1:
     resolution: {integrity: sha512-GwLTyxkCXjXbxqIhTsMI2Nui8huMPtnxg7krajPJAjnEG/iiOS7i+zCtWGZR9G0NBKbXKh6X9m9UIsYX/N6vvQ==}
+
+  fflate@0.8.2:
+    resolution: {integrity: sha512-cPJU47OaAoCbg0pBvzsgpTPhmhqI5eJjh/JIu8tPj5q+T7iLvW/JAYUqmE7KOB4R1ZyEhzBaIQpQpardBF5z8A==}
 
   figures@3.2.0:
     resolution: {integrity: sha512-yaduQFRKLXYOGgEn6AZau90j3ggSOyiqXU0F9JZfeXYhNa+Jk4X+s45A2zg5jns87GAFa34BBm2kXw4XpNcbdg==}
@@ -3201,6 +3214,10 @@ packages:
   mlly@1.7.4:
     resolution: {integrity: sha512-qmdSIPC4bDJXgZTCR7XosJiNKySV7O215tsPtDN9iEO/7q/76b/ijtgRu/+epFXSJhijtTCCGp3DWS549P3xKw==}
 
+  mrmime@2.0.1:
+    resolution: {integrity: sha512-Y3wQdFg2Va6etvQ5I82yUhGdsKrcYox6p7FfL1LbK2J4V01F9TGlepTIhnK24t7koZibmg82KGglhA1XK5IsLQ==}
+    engines: {node: '>=10'}
+
   ms@2.0.0:
     resolution: {integrity: sha512-Tpp60P6IUJDTuOq/5Z8cdskzJujfwqfOTkrwIwj7IRISpnkJnT6SyJ4PCPnGMoFjC9ddhal5KVIYtAt97ix05A==}
 
@@ -3734,6 +3751,10 @@ packages:
   simple-swizzle@0.2.2:
     resolution: {integrity: sha512-JA//kQgZtbuY83m+xT+tXJkmJncGMTFT+C+g2h2R9uxkYIrE2yy9sgmcLhCnw57/WSD+Eh3J97FPEDFnbXnDUg==}
 
+  sirv@2.0.4:
+    resolution: {integrity: sha512-94Bdh3cC2PKrbgSOUqTiGPWVZeSiXfKOVZNJniWoqrWrRkB1CJzBU3NEbiTsPcYy1lDsANA/THzS+9WBiy5nfQ==}
+    engines: {node: '>= 10'}
+
   slash@3.0.0:
     resolution: {integrity: sha512-g9Q1haeby36OSStwb4ntCGGGaKsaVSjQ68fBxoQcutl5fS1vuY18H3wSt3jFyFtrkx+Kz0V1G85A4MyAdDMi2Q==}
     engines: {node: '>=8'}
@@ -3943,6 +3964,10 @@ packages:
 
   toposort@2.0.2:
     resolution: {integrity: sha512-0a5EOkAUp8D4moMi2W8ZF8jcga7BgZd91O/yabJCFY8az+XSzeGyTKs0Aoo897iV1Nj6guFq8orWDS96z91oGg==}
+
+  totalist@3.0.1:
+    resolution: {integrity: sha512-sf4i37nQ2LBx4m3wB74y+ubopq6W/dIzXg0FDGjsYnZHVa1Da8FH853wlL2gtUhg+xJXjfk3kUZS3BRoQeoQBQ==}
+    engines: {node: '>=6'}
 
   tr46@0.0.3:
     resolution: {integrity: sha512-N3WMsuqV66lT30CrXNbEjx4GEwlow3v6rr4mCcv6prnfwhS01rkgyFdjPNBYd9br7LpXV1+Emh01fHnq2Gdgrw==}
@@ -4370,7 +4395,6 @@ snapshots:
       '@aws-crypto/util': 3.0.0
       '@aws-sdk/types': 3.734.0
       tslib: 1.14.1
-    optional: true
 
   '@aws-crypto/sha256-browser@5.2.0':
     dependencies:
@@ -4381,33 +4405,28 @@ snapshots:
       '@aws-sdk/util-locate-window': 3.723.0
       '@smithy/util-utf8': 2.3.0
       tslib: 2.8.1
-    optional: true
 
   '@aws-crypto/sha256-js@5.2.0':
     dependencies:
       '@aws-crypto/util': 5.2.0
       '@aws-sdk/types': 3.734.0
       tslib: 2.8.1
-    optional: true
 
   '@aws-crypto/supports-web-crypto@5.2.0':
     dependencies:
       tslib: 2.8.1
-    optional: true
 
   '@aws-crypto/util@3.0.0':
     dependencies:
       '@aws-sdk/types': 3.734.0
       '@aws-sdk/util-utf8-browser': 3.259.0
       tslib: 1.14.1
-    optional: true
 
   '@aws-crypto/util@5.2.0':
     dependencies:
       '@aws-sdk/types': 3.734.0
       '@smithy/util-utf8': 2.3.0
       tslib: 2.8.1
-    optional: true
 
   '@aws-sdk/client-cognito-identity@3.758.0':
     dependencies:
@@ -4452,7 +4471,6 @@ snapshots:
       tslib: 2.8.1
     transitivePeerDependencies:
       - aws-crt
-    optional: true
 
   '@aws-sdk/client-sagemaker@3.760.0':
     dependencies:
@@ -4500,7 +4518,6 @@ snapshots:
       uuid: 9.0.1
     transitivePeerDependencies:
       - aws-crt
-    optional: true
 
   '@aws-sdk/client-sso@3.758.0':
     dependencies:
@@ -4544,7 +4561,6 @@ snapshots:
       tslib: 2.8.1
     transitivePeerDependencies:
       - aws-crt
-    optional: true
 
   '@aws-sdk/core@3.758.0':
     dependencies:
@@ -4559,7 +4575,6 @@ snapshots:
       '@smithy/util-middleware': 4.0.1
       fast-xml-parser: 4.4.1
       tslib: 2.8.1
-    optional: true
 
   '@aws-sdk/credential-provider-cognito-identity@3.758.0':
     dependencies:
@@ -4570,7 +4585,6 @@ snapshots:
       tslib: 2.8.1
     transitivePeerDependencies:
       - aws-crt
-    optional: true
 
   '@aws-sdk/credential-provider-env@3.758.0':
     dependencies:
@@ -4579,7 +4593,6 @@ snapshots:
       '@smithy/property-provider': 4.0.1
       '@smithy/types': 4.1.0
       tslib: 2.8.1
-    optional: true
 
   '@aws-sdk/credential-provider-http@3.758.0':
     dependencies:
@@ -4593,7 +4606,6 @@ snapshots:
       '@smithy/types': 4.1.0
       '@smithy/util-stream': 4.1.2
       tslib: 2.8.1
-    optional: true
 
   '@aws-sdk/credential-provider-ini@3.758.0':
     dependencies:
@@ -4612,7 +4624,6 @@ snapshots:
       tslib: 2.8.1
     transitivePeerDependencies:
       - aws-crt
-    optional: true
 
   '@aws-sdk/credential-provider-node@3.758.0':
     dependencies:
@@ -4630,7 +4641,6 @@ snapshots:
       tslib: 2.8.1
     transitivePeerDependencies:
       - aws-crt
-    optional: true
 
   '@aws-sdk/credential-provider-process@3.758.0':
     dependencies:
@@ -4640,7 +4650,6 @@ snapshots:
       '@smithy/shared-ini-file-loader': 4.0.1
       '@smithy/types': 4.1.0
       tslib: 2.8.1
-    optional: true
 
   '@aws-sdk/credential-provider-sso@3.758.0':
     dependencies:
@@ -4654,7 +4663,6 @@ snapshots:
       tslib: 2.8.1
     transitivePeerDependencies:
       - aws-crt
-    optional: true
 
   '@aws-sdk/credential-provider-web-identity@3.758.0':
     dependencies:
@@ -4666,7 +4674,6 @@ snapshots:
       tslib: 2.8.1
     transitivePeerDependencies:
       - aws-crt
-    optional: true
 
   '@aws-sdk/credential-providers@3.758.0':
     dependencies:
@@ -4689,7 +4696,6 @@ snapshots:
       tslib: 2.8.1
     transitivePeerDependencies:
       - aws-crt
-    optional: true
 
   '@aws-sdk/middleware-host-header@3.734.0':
     dependencies:
@@ -4697,14 +4703,12 @@ snapshots:
       '@smithy/protocol-http': 5.0.1
       '@smithy/types': 4.1.0
       tslib: 2.8.1
-    optional: true
 
   '@aws-sdk/middleware-logger@3.734.0':
     dependencies:
       '@aws-sdk/types': 3.734.0
       '@smithy/types': 4.1.0
       tslib: 2.8.1
-    optional: true
 
   '@aws-sdk/middleware-recursion-detection@3.734.0':
     dependencies:
@@ -4712,7 +4716,6 @@ snapshots:
       '@smithy/protocol-http': 5.0.1
       '@smithy/types': 4.1.0
       tslib: 2.8.1
-    optional: true
 
   '@aws-sdk/middleware-user-agent@3.758.0':
     dependencies:
@@ -4723,7 +4726,6 @@ snapshots:
       '@smithy/protocol-http': 5.0.1
       '@smithy/types': 4.1.0
       tslib: 2.8.1
-    optional: true
 
   '@aws-sdk/nested-clients@3.758.0':
     dependencies:
@@ -4767,13 +4769,11 @@ snapshots:
       tslib: 2.8.1
     transitivePeerDependencies:
       - aws-crt
-    optional: true
 
   '@aws-sdk/protocol-http@3.374.0':
     dependencies:
       '@smithy/protocol-http': 1.2.0
       tslib: 2.8.1
-    optional: true
 
   '@aws-sdk/region-config-resolver@3.734.0':
     dependencies:
@@ -4783,13 +4783,11 @@ snapshots:
       '@smithy/util-config-provider': 4.0.0
       '@smithy/util-middleware': 4.0.1
       tslib: 2.8.1
-    optional: true
 
   '@aws-sdk/signature-v4@3.374.0':
     dependencies:
       '@smithy/signature-v4': 1.1.0
       tslib: 2.8.1
-    optional: true
 
   '@aws-sdk/token-providers@3.758.0':
     dependencies:
@@ -4801,13 +4799,11 @@ snapshots:
       tslib: 2.8.1
     transitivePeerDependencies:
       - aws-crt
-    optional: true
 
   '@aws-sdk/types@3.734.0':
     dependencies:
       '@smithy/types': 4.1.0
       tslib: 2.8.1
-    optional: true
 
   '@aws-sdk/util-endpoints@3.743.0':
     dependencies:
@@ -4815,12 +4811,10 @@ snapshots:
       '@smithy/types': 4.1.0
       '@smithy/util-endpoints': 3.0.1
       tslib: 2.8.1
-    optional: true
 
   '@aws-sdk/util-locate-window@3.723.0':
     dependencies:
       tslib: 2.8.1
-    optional: true
 
   '@aws-sdk/util-user-agent-browser@3.734.0':
     dependencies:
@@ -4828,7 +4822,6 @@ snapshots:
       '@smithy/types': 4.1.0
       bowser: 2.11.0
       tslib: 2.8.1
-    optional: true
 
   '@aws-sdk/util-user-agent-node@3.758.0':
     dependencies:
@@ -4837,12 +4830,10 @@ snapshots:
       '@smithy/node-config-provider': 4.0.1
       '@smithy/types': 4.1.0
       tslib: 2.8.1
-    optional: true
 
   '@aws-sdk/util-utf8-browser@3.259.0':
     dependencies:
       tslib: 2.8.1
-    optional: true
 
   '@babel/code-frame@7.26.2':
     dependencies:
@@ -5125,11 +5116,11 @@ snapshots:
 
   '@eslint/js@8.57.1': {}
 
-  '@google/generative-ai@0.1.3':
-    optional: true
+  '@google/generative-ai@0.1.3': {}
 
-  '@huggingface/jinja@0.2.2':
-    optional: true
+  '@huggingface/jinja@0.1.3': {}
+
+  '@huggingface/jinja@0.2.2': {}
 
   '@humanwhocodes/config-array@0.13.0':
     dependencies:
@@ -5175,7 +5166,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.0
 
-  '@langchain/community@0.0.57(@aws-crypto/sha256-js@5.2.0)(@aws-sdk/credential-provider-node@3.758.0)(@smithy/util-utf8@2.3.0)(@xenova/transformers@2.17.2)(chromadb@1.10.5(@google/generative-ai@0.1.3)(cohere-ai@7.16.0)(ollama@0.5.14)(openai@4.87.3(zod@3.24.2))(voyageai@0.0.3))(cohere-ai@7.16.0)(openai@4.87.3(zod@3.24.2))':
+  '@langchain/community@0.0.57(@aws-crypto/sha256-js@5.2.0)(@aws-sdk/credential-provider-node@3.758.0)(@smithy/util-utf8@2.3.0)(@xenova/transformers@2.17.2)(chromadb@2.0.1(zod@3.24.2))(cohere-ai@7.16.0)(openai@4.87.3(zod@3.24.2))':
     dependencies:
       '@langchain/core': 0.1.63(openai@4.87.3(zod@3.24.2))
       '@langchain/openai': 0.0.34
@@ -5190,7 +5181,7 @@ snapshots:
       '@aws-sdk/credential-provider-node': 3.758.0
       '@smithy/util-utf8': 2.3.0
       '@xenova/transformers': 2.17.2
-      chromadb: 1.10.5(@google/generative-ai@0.1.3)(cohere-ai@7.16.0)(ollama@0.5.14)(openai@4.87.3(zod@3.24.2))(voyageai@0.0.3)
+      chromadb: 2.0.1(zod@3.24.2)
       cohere-ai: 7.16.0
     transitivePeerDependencies:
       - encoding
@@ -5264,38 +5255,30 @@ snapshots:
 
   '@pkgr/core@0.1.1': {}
 
-  '@protobufjs/aspromise@1.1.2':
-    optional: true
+  '@polka/url@1.0.0-next.28': {}
 
-  '@protobufjs/base64@1.1.2':
-    optional: true
+  '@protobufjs/aspromise@1.1.2': {}
 
-  '@protobufjs/codegen@2.0.4':
-    optional: true
+  '@protobufjs/base64@1.1.2': {}
 
-  '@protobufjs/eventemitter@1.1.0':
-    optional: true
+  '@protobufjs/codegen@2.0.4': {}
+
+  '@protobufjs/eventemitter@1.1.0': {}
 
   '@protobufjs/fetch@1.1.0':
     dependencies:
       '@protobufjs/aspromise': 1.1.2
       '@protobufjs/inquire': 1.1.0
-    optional: true
 
-  '@protobufjs/float@1.0.2':
-    optional: true
+  '@protobufjs/float@1.0.2': {}
 
-  '@protobufjs/inquire@1.1.0':
-    optional: true
+  '@protobufjs/inquire@1.1.0': {}
 
-  '@protobufjs/path@1.1.2':
-    optional: true
+  '@protobufjs/path@1.1.2': {}
 
-  '@protobufjs/pool@1.1.0':
-    optional: true
+  '@protobufjs/pool@1.1.0': {}
 
-  '@protobufjs/utf8@1.1.0':
-    optional: true
+  '@protobufjs/utf8@1.1.0': {}
 
   '@rollup/rollup-android-arm-eabi@4.35.0':
     optional: true
@@ -5362,7 +5345,6 @@ snapshots:
     dependencies:
       '@smithy/types': 4.1.0
       tslib: 2.8.1
-    optional: true
 
   '@smithy/config-resolver@4.0.1':
     dependencies:
@@ -5371,7 +5353,6 @@ snapshots:
       '@smithy/util-config-provider': 4.0.0
       '@smithy/util-middleware': 4.0.1
       tslib: 2.8.1
-    optional: true
 
   '@smithy/core@3.1.5':
     dependencies:
@@ -5383,7 +5364,6 @@ snapshots:
       '@smithy/util-stream': 4.1.2
       '@smithy/util-utf8': 4.0.0
       tslib: 2.8.1
-    optional: true
 
   '@smithy/credential-provider-imds@4.0.1':
     dependencies:
@@ -5392,7 +5372,6 @@ snapshots:
       '@smithy/types': 4.1.0
       '@smithy/url-parser': 4.0.1
       tslib: 2.8.1
-    optional: true
 
   '@smithy/eventstream-codec@1.1.0':
     dependencies:
@@ -5400,7 +5379,6 @@ snapshots:
       '@smithy/types': 1.2.0
       '@smithy/util-hex-encoding': 1.1.0
       tslib: 2.8.1
-    optional: true
 
   '@smithy/fetch-http-handler@5.0.1':
     dependencies:
@@ -5409,7 +5387,6 @@ snapshots:
       '@smithy/types': 4.1.0
       '@smithy/util-base64': 4.0.0
       tslib: 2.8.1
-    optional: true
 
   '@smithy/hash-node@4.0.1':
     dependencies:
@@ -5417,35 +5394,29 @@ snapshots:
       '@smithy/util-buffer-from': 4.0.0
       '@smithy/util-utf8': 4.0.0
       tslib: 2.8.1
-    optional: true
 
   '@smithy/invalid-dependency@4.0.1':
     dependencies:
       '@smithy/types': 4.1.0
       tslib: 2.8.1
-    optional: true
 
   '@smithy/is-array-buffer@1.1.0':
     dependencies:
       tslib: 2.8.1
-    optional: true
 
   '@smithy/is-array-buffer@2.2.0':
     dependencies:
       tslib: 2.8.1
-    optional: true
 
   '@smithy/is-array-buffer@4.0.0':
     dependencies:
       tslib: 2.8.1
-    optional: true
 
   '@smithy/middleware-content-length@4.0.1':
     dependencies:
       '@smithy/protocol-http': 5.0.1
       '@smithy/types': 4.1.0
       tslib: 2.8.1
-    optional: true
 
   '@smithy/middleware-endpoint@4.0.6':
     dependencies:
@@ -5457,7 +5428,6 @@ snapshots:
       '@smithy/url-parser': 4.0.1
       '@smithy/util-middleware': 4.0.1
       tslib: 2.8.1
-    optional: true
 
   '@smithy/middleware-retry@4.0.7':
     dependencies:
@@ -5470,19 +5440,16 @@ snapshots:
       '@smithy/util-retry': 4.0.1
       tslib: 2.8.1
       uuid: 9.0.1
-    optional: true
 
   '@smithy/middleware-serde@4.0.2':
     dependencies:
       '@smithy/types': 4.1.0
       tslib: 2.8.1
-    optional: true
 
   '@smithy/middleware-stack@4.0.1':
     dependencies:
       '@smithy/types': 4.1.0
       tslib: 2.8.1
-    optional: true
 
   '@smithy/node-config-provider@4.0.1':
     dependencies:
@@ -5490,7 +5457,6 @@ snapshots:
       '@smithy/shared-ini-file-loader': 4.0.1
       '@smithy/types': 4.1.0
       tslib: 2.8.1
-    optional: true
 
   '@smithy/node-http-handler@4.0.3':
     dependencies:
@@ -5499,49 +5465,41 @@ snapshots:
       '@smithy/querystring-builder': 4.0.1
       '@smithy/types': 4.1.0
       tslib: 2.8.1
-    optional: true
 
   '@smithy/property-provider@4.0.1':
     dependencies:
       '@smithy/types': 4.1.0
       tslib: 2.8.1
-    optional: true
 
   '@smithy/protocol-http@1.2.0':
     dependencies:
       '@smithy/types': 1.2.0
       tslib: 2.8.1
-    optional: true
 
   '@smithy/protocol-http@5.0.1':
     dependencies:
       '@smithy/types': 4.1.0
       tslib: 2.8.1
-    optional: true
 
   '@smithy/querystring-builder@4.0.1':
     dependencies:
       '@smithy/types': 4.1.0
       '@smithy/util-uri-escape': 4.0.0
       tslib: 2.8.1
-    optional: true
 
   '@smithy/querystring-parser@4.0.1':
     dependencies:
       '@smithy/types': 4.1.0
       tslib: 2.8.1
-    optional: true
 
   '@smithy/service-error-classification@4.0.1':
     dependencies:
       '@smithy/types': 4.1.0
-    optional: true
 
   '@smithy/shared-ini-file-loader@4.0.1':
     dependencies:
       '@smithy/types': 4.1.0
       tslib: 2.8.1
-    optional: true
 
   '@smithy/signature-v4@1.1.0':
     dependencies:
@@ -5553,7 +5511,6 @@ snapshots:
       '@smithy/util-uri-escape': 1.1.0
       '@smithy/util-utf8': 1.1.0
       tslib: 2.8.1
-    optional: true
 
   '@smithy/signature-v4@5.0.1':
     dependencies:
@@ -5565,7 +5522,6 @@ snapshots:
       '@smithy/util-uri-escape': 4.0.0
       '@smithy/util-utf8': 4.0.0
       tslib: 2.8.1
-    optional: true
 
   '@smithy/smithy-client@4.1.6':
     dependencies:
@@ -5576,64 +5532,53 @@ snapshots:
       '@smithy/types': 4.1.0
       '@smithy/util-stream': 4.1.2
       tslib: 2.8.1
-    optional: true
 
   '@smithy/types@1.2.0':
     dependencies:
       tslib: 2.8.1
-    optional: true
 
   '@smithy/types@4.1.0':
     dependencies:
       tslib: 2.8.1
-    optional: true
 
   '@smithy/url-parser@4.0.1':
     dependencies:
       '@smithy/querystring-parser': 4.0.1
       '@smithy/types': 4.1.0
       tslib: 2.8.1
-    optional: true
 
   '@smithy/util-base64@4.0.0':
     dependencies:
       '@smithy/util-buffer-from': 4.0.0
       '@smithy/util-utf8': 4.0.0
       tslib: 2.8.1
-    optional: true
 
   '@smithy/util-body-length-browser@4.0.0':
     dependencies:
       tslib: 2.8.1
-    optional: true
 
   '@smithy/util-body-length-node@4.0.0':
     dependencies:
       tslib: 2.8.1
-    optional: true
 
   '@smithy/util-buffer-from@1.1.0':
     dependencies:
       '@smithy/is-array-buffer': 1.1.0
       tslib: 2.8.1
-    optional: true
 
   '@smithy/util-buffer-from@2.2.0':
     dependencies:
       '@smithy/is-array-buffer': 2.2.0
       tslib: 2.8.1
-    optional: true
 
   '@smithy/util-buffer-from@4.0.0':
     dependencies:
       '@smithy/is-array-buffer': 4.0.0
       tslib: 2.8.1
-    optional: true
 
   '@smithy/util-config-provider@4.0.0':
     dependencies:
       tslib: 2.8.1
-    optional: true
 
   '@smithy/util-defaults-mode-browser@4.0.7':
     dependencies:
@@ -5642,7 +5587,6 @@ snapshots:
       '@smithy/types': 4.1.0
       bowser: 2.11.0
       tslib: 2.8.1
-    optional: true
 
   '@smithy/util-defaults-mode-node@4.0.7':
     dependencies:
@@ -5653,42 +5597,35 @@ snapshots:
       '@smithy/smithy-client': 4.1.6
       '@smithy/types': 4.1.0
       tslib: 2.8.1
-    optional: true
 
   '@smithy/util-endpoints@3.0.1':
     dependencies:
       '@smithy/node-config-provider': 4.0.1
       '@smithy/types': 4.1.0
       tslib: 2.8.1
-    optional: true
 
   '@smithy/util-hex-encoding@1.1.0':
     dependencies:
       tslib: 2.8.1
-    optional: true
 
   '@smithy/util-hex-encoding@4.0.0':
     dependencies:
       tslib: 2.8.1
-    optional: true
 
   '@smithy/util-middleware@1.1.0':
     dependencies:
       tslib: 2.8.1
-    optional: true
 
   '@smithy/util-middleware@4.0.1':
     dependencies:
       '@smithy/types': 4.1.0
       tslib: 2.8.1
-    optional: true
 
   '@smithy/util-retry@4.0.1':
     dependencies:
       '@smithy/service-error-classification': 4.0.1
       '@smithy/types': 4.1.0
       tslib: 2.8.1
-    optional: true
 
   '@smithy/util-stream@4.1.2':
     dependencies:
@@ -5700,42 +5637,35 @@ snapshots:
       '@smithy/util-hex-encoding': 4.0.0
       '@smithy/util-utf8': 4.0.0
       tslib: 2.8.1
-    optional: true
 
   '@smithy/util-uri-escape@1.1.0':
     dependencies:
       tslib: 2.8.1
-    optional: true
 
   '@smithy/util-uri-escape@4.0.0':
     dependencies:
       tslib: 2.8.1
-    optional: true
 
   '@smithy/util-utf8@1.1.0':
     dependencies:
       '@smithy/util-buffer-from': 1.1.0
       tslib: 2.8.1
-    optional: true
 
   '@smithy/util-utf8@2.3.0':
     dependencies:
       '@smithy/util-buffer-from': 2.2.0
       tslib: 2.8.1
-    optional: true
 
   '@smithy/util-utf8@4.0.0':
     dependencies:
       '@smithy/util-buffer-from': 4.0.0
       tslib: 2.8.1
-    optional: true
 
   '@smithy/util-waiter@4.0.2':
     dependencies:
       '@smithy/abort-controller': 4.0.1
       '@smithy/types': 4.1.0
       tslib: 2.8.1
-    optional: true
 
   '@teppeis/multimaps@3.0.0': {}
 
@@ -5795,8 +5725,7 @@ snapshots:
 
   '@types/json5@0.0.29': {}
 
-  '@types/long@4.0.2':
-    optional: true
+  '@types/long@4.0.2': {}
 
   '@types/methods@1.1.4': {}
 
@@ -5944,7 +5873,7 @@ snapshots:
 
   '@ungap/structured-clone@1.3.0': {}
 
-  '@vitest/coverage-v8@1.6.1(vitest@1.6.1(@types/node@20.17.24))':
+  '@vitest/coverage-v8@1.6.1(vitest@1.6.1)':
     dependencies:
       '@ampproject/remapping': 2.3.0
       '@bcoe/v8-coverage': 0.2.3
@@ -5959,7 +5888,7 @@ snapshots:
       std-env: 3.8.1
       strip-literal: 2.1.1
       test-exclude: 6.0.0
-      vitest: 1.6.1(@types/node@20.17.24)
+      vitest: 1.6.1(@types/node@20.17.24)(@vitest/ui@1.6.1)
     transitivePeerDependencies:
       - supports-color
 
@@ -6059,6 +5988,29 @@ snapshots:
     dependencies:
       tinyspy: 3.0.2
 
+  '@vitest/ui@1.6.1(vitest@0.34.6)':
+    dependencies:
+      '@vitest/utils': 1.6.1
+      fast-glob: 3.3.3
+      fflate: 0.8.2
+      flatted: 3.3.3
+      pathe: 1.1.2
+      picocolors: 1.1.1
+      sirv: 2.0.4
+      vitest: 0.34.6(@vitest/ui@1.6.1)
+    optional: true
+
+  '@vitest/ui@1.6.1(vitest@1.6.1)':
+    dependencies:
+      '@vitest/utils': 1.6.1
+      fast-glob: 3.3.3
+      fflate: 0.8.2
+      flatted: 3.3.3
+      pathe: 1.1.2
+      picocolors: 1.1.1
+      sirv: 2.0.4
+      vitest: 1.6.1(@types/node@20.17.24)(@vitest/ui@1.6.1)
+
   '@vitest/utils@0.34.6':
     dependencies:
       diff-sequences: 29.6.3
@@ -6087,7 +6039,6 @@ snapshots:
       onnxruntime-node: 1.14.0
     transitivePeerDependencies:
       - bare-buffer
-    optional: true
 
   abort-controller@3.0.0:
     dependencies:
@@ -6217,8 +6168,7 @@ snapshots:
     transitivePeerDependencies:
       - debug
 
-  b4a@1.6.7:
-    optional: true
+  b4a@1.6.7: {}
 
   balanced-match@1.0.2: {}
 
@@ -6262,7 +6212,6 @@ snapshots:
       buffer: 5.7.1
       inherits: 2.0.4
       readable-stream: 3.6.2
-    optional: true
 
   body-parser@1.20.3:
     dependencies:
@@ -6281,8 +6230,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  bowser@2.11.0:
-    optional: true
+  bowser@2.11.0: {}
 
   brace-expansion@1.1.11:
     dependencies:
@@ -6303,13 +6251,11 @@ snapshots:
     dependencies:
       base64-js: 1.5.1
       ieee754: 1.2.1
-    optional: true
 
   buffer@6.0.3:
     dependencies:
       base64-js: 1.5.1
       ieee754: 1.2.1
-    optional: true
 
   bytes@3.1.2: {}
 
@@ -6373,21 +6319,35 @@ snapshots:
 
   check-error@2.1.1: {}
 
-  chownr@1.1.4:
-    optional: true
+  chownr@1.1.4: {}
 
-  chromadb@1.10.5(@google/generative-ai@0.1.3)(cohere-ai@7.16.0)(ollama@0.5.14)(openai@4.87.3(zod@3.24.2))(voyageai@0.0.3):
+  chromadb-default-embed@2.14.0:
     dependencies:
-      cliui: 8.0.1
-      isomorphic-fetch: 3.0.0
+      '@huggingface/jinja': 0.1.3
+      onnxruntime-web: 1.14.0
+      sharp: 0.32.6
     optionalDependencies:
+      onnxruntime-node: 1.14.0
+    transitivePeerDependencies:
+      - bare-buffer
+
+  chromadb@2.0.1(zod@3.24.2):
+    dependencies:
       '@google/generative-ai': 0.1.3
+      '@xenova/transformers': 2.17.2
+      chromadb-default-embed: 2.14.0
+      cliui: 8.0.1
       cohere-ai: 7.16.0
+      isomorphic-fetch: 3.0.0
       ollama: 0.5.14
       openai: 4.87.3(zod@3.24.2)
       voyageai: 0.0.3
     transitivePeerDependencies:
+      - aws-crt
+      - bare-buffer
       - encoding
+      - ws
+      - zod
 
   class-transformer@0.5.1: {}
 
@@ -6421,7 +6381,6 @@ snapshots:
     transitivePeerDependencies:
       - aws-crt
       - encoding
-    optional: true
 
   color-convert@2.0.1:
     dependencies:
@@ -6433,13 +6392,11 @@ snapshots:
     dependencies:
       color-name: 1.1.4
       simple-swizzle: 0.2.2
-    optional: true
 
   color@4.2.3:
     dependencies:
       color-convert: 2.0.1
       color-string: 1.9.1
-    optional: true
 
   combined-stream@1.0.8:
     dependencies:
@@ -6467,7 +6424,6 @@ snapshots:
     dependencies:
       lodash.clonedeep: 4.5.0
       yargs-parser: 20.2.9
-    optional: true
 
   cookie-signature@1.0.6: {}
 
@@ -6520,7 +6476,6 @@ snapshots:
   decompress-response@6.0.0:
     dependencies:
       mimic-response: 3.1.0
-    optional: true
 
   deep-eql@4.1.4:
     dependencies:
@@ -6528,8 +6483,7 @@ snapshots:
 
   deep-eql@5.0.2: {}
 
-  deep-extend@0.6.0:
-    optional: true
+  deep-extend@0.6.0: {}
 
   deep-is@0.1.4: {}
 
@@ -6551,8 +6505,7 @@ snapshots:
 
   destroy@1.2.0: {}
 
-  detect-libc@2.0.3:
-    optional: true
+  detect-libc@2.0.3: {}
 
   dezalgo@1.0.4:
     dependencies:
@@ -6603,7 +6556,6 @@ snapshots:
   end-of-stream@1.4.4:
     dependencies:
       once: 1.4.0
-    optional: true
 
   error-ex@1.3.2:
     dependencies:
@@ -6892,8 +6844,7 @@ snapshots:
 
   eventemitter3@4.0.7: {}
 
-  events@3.3.0:
-    optional: true
+  events@3.3.0: {}
 
   execa@8.0.1:
     dependencies:
@@ -6907,8 +6858,7 @@ snapshots:
       signal-exit: 4.1.0
       strip-final-newline: 3.0.0
 
-  expand-template@2.0.3:
-    optional: true
+  expand-template@2.0.3: {}
 
   expect-type@1.2.0: {}
 
@@ -6954,8 +6904,7 @@ snapshots:
 
   fast-diff@1.3.0: {}
 
-  fast-fifo@1.3.2:
-    optional: true
+  fast-fifo@1.3.2: {}
 
   fast-glob@3.3.3:
     dependencies:
@@ -6974,11 +6923,12 @@ snapshots:
   fast-xml-parser@4.4.1:
     dependencies:
       strnum: 1.1.2
-    optional: true
 
   fastq@1.19.1:
     dependencies:
       reusify: 1.1.0
+
+  fflate@0.8.2: {}
 
   figures@3.2.0:
     dependencies:
@@ -7022,8 +6972,7 @@ snapshots:
 
   flat@5.0.2: {}
 
-  flatbuffers@1.12.0:
-    optional: true
+  flatbuffers@1.12.0: {}
 
   flatted@3.3.3: {}
 
@@ -7040,8 +6989,7 @@ snapshots:
 
   form-data-encoder@1.7.2: {}
 
-  form-data-encoder@4.0.2:
-    optional: true
+  form-data-encoder@4.0.2: {}
 
   form-data@4.0.2:
     dependencies:
@@ -7055,8 +7003,7 @@ snapshots:
       node-domexception: 1.0.0
       web-streams-polyfill: 4.0.0-beta.3
 
-  formdata-node@6.0.3:
-    optional: true
+  formdata-node@6.0.3: {}
 
   formidable@2.1.2:
     dependencies:
@@ -7069,8 +7016,7 @@ snapshots:
 
   fresh@0.5.2: {}
 
-  fs-constants@1.0.0:
-    optional: true
+  fs-constants@1.0.0: {}
 
   fs.realpath@1.0.0: {}
 
@@ -7122,8 +7068,7 @@ snapshots:
     dependencies:
       resolve-pkg-maps: 1.0.0
 
-  github-from-package@0.0.0:
-    optional: true
+  github-from-package@0.0.0: {}
 
   glob-parent@5.1.2:
     dependencies:
@@ -7177,8 +7122,7 @@ snapshots:
 
   graphemer@1.4.0: {}
 
-  guid-typescript@1.0.9:
-    optional: true
+  guid-typescript@1.0.9: {}
 
   has-ansi@4.0.1:
     dependencies:
@@ -7230,8 +7174,7 @@ snapshots:
     dependencies:
       safer-buffer: 2.1.2
 
-  ieee754@1.2.1:
-    optional: true
+  ieee754@1.2.1: {}
 
   ignore@5.3.2: {}
 
@@ -7251,8 +7194,7 @@ snapshots:
 
   inherits@2.0.4: {}
 
-  ini@1.3.8:
-    optional: true
+  ini@1.3.8: {}
 
   ini@2.0.0: {}
 
@@ -7274,8 +7216,7 @@ snapshots:
 
   is-arrayish@0.2.1: {}
 
-  is-arrayish@0.3.2:
-    optional: true
+  is-arrayish@0.3.2: {}
 
   is-async-function@2.1.1:
     dependencies:
@@ -7429,8 +7370,7 @@ snapshots:
     optionalDependencies:
       '@pkgjs/parseargs': 0.11.0
 
-  js-base64@3.7.2:
-    optional: true
+  js-base64@3.7.2: {}
 
   js-tiktoken@1.0.19:
     dependencies:
@@ -7466,10 +7406,10 @@ snapshots:
     dependencies:
       seed-random: 2.2.0
 
-  langchain@0.1.37(@aws-crypto/sha256-js@5.2.0)(@aws-sdk/credential-provider-node@3.758.0)(@smithy/util-utf8@2.3.0)(@xenova/transformers@2.17.2)(axios@1.8.3)(chromadb@1.10.5(@google/generative-ai@0.1.3)(cohere-ai@7.16.0)(ollama@0.5.14)(openai@4.87.3(zod@3.24.2))(voyageai@0.0.3))(cohere-ai@7.16.0)(fast-xml-parser@4.4.1)(ignore@5.3.2)(openai@4.87.3(zod@3.24.2)):
+  langchain@0.1.37(@aws-crypto/sha256-js@5.2.0)(@aws-sdk/credential-provider-node@3.758.0)(@smithy/util-utf8@2.3.0)(@xenova/transformers@2.17.2)(axios@1.8.3)(chromadb@2.0.1(zod@3.24.2))(cohere-ai@7.16.0)(fast-xml-parser@4.4.1)(ignore@5.3.2)(openai@4.87.3(zod@3.24.2)):
     dependencies:
       '@anthropic-ai/sdk': 0.9.1
-      '@langchain/community': 0.0.57(@aws-crypto/sha256-js@5.2.0)(@aws-sdk/credential-provider-node@3.758.0)(@smithy/util-utf8@2.3.0)(@xenova/transformers@2.17.2)(chromadb@1.10.5(@google/generative-ai@0.1.3)(cohere-ai@7.16.0)(ollama@0.5.14)(openai@4.87.3(zod@3.24.2))(voyageai@0.0.3))(cohere-ai@7.16.0)(openai@4.87.3(zod@3.24.2))
+      '@langchain/community': 0.0.57(@aws-crypto/sha256-js@5.2.0)(@aws-sdk/credential-provider-node@3.758.0)(@smithy/util-utf8@2.3.0)(@xenova/transformers@2.17.2)(chromadb@2.0.1(zod@3.24.2))(cohere-ai@7.16.0)(openai@4.87.3(zod@3.24.2))
       '@langchain/core': 0.1.63(openai@4.87.3(zod@3.24.2))
       '@langchain/openai': 0.0.34
       '@langchain/textsplitters': 0.0.3(openai@4.87.3(zod@3.24.2))
@@ -7489,7 +7429,7 @@ snapshots:
     optionalDependencies:
       '@aws-sdk/credential-provider-node': 3.758.0
       axios: 1.8.3
-      chromadb: 1.10.5(@google/generative-ai@0.1.3)(cohere-ai@7.16.0)(ollama@0.5.14)(openai@4.87.3(zod@3.24.2))(voyageai@0.0.3)
+      chromadb: 2.0.1(zod@3.24.2)
       fast-xml-parser: 4.4.1
       ignore: 5.3.2
     transitivePeerDependencies:
@@ -7599,15 +7539,13 @@ snapshots:
     dependencies:
       p-locate: 5.0.0
 
-  lodash.clonedeep@4.5.0:
-    optional: true
+  lodash.clonedeep@4.5.0: {}
 
   lodash.merge@4.6.2: {}
 
   lodash.mergewith@4.6.2: {}
 
-  long@4.0.0:
-    optional: true
+  long@4.0.0: {}
 
   loupe@2.3.7:
     dependencies:
@@ -7678,8 +7616,7 @@ snapshots:
 
   mimic-fn@4.0.0: {}
 
-  mimic-response@3.1.0:
-    optional: true
+  mimic-response@3.1.0: {}
 
   minimatch@3.1.2:
     dependencies:
@@ -7697,8 +7634,7 @@ snapshots:
 
   minipass@7.1.2: {}
 
-  mkdirp-classic@0.5.3:
-    optional: true
+  mkdirp-classic@0.5.3: {}
 
   mkdirp@2.1.6: {}
 
@@ -7730,6 +7666,8 @@ snapshots:
       pkg-types: 1.3.1
       ufo: 1.5.4
 
+  mrmime@2.0.1: {}
+
   ms@2.0.0: {}
 
   ms@2.1.3: {}
@@ -7744,8 +7682,7 @@ snapshots:
 
   nanoid@3.3.9: {}
 
-  napi-build-utils@2.0.0:
-    optional: true
+  napi-build-utils@2.0.0: {}
 
   natural-compare@1.4.0: {}
 
@@ -7759,10 +7696,8 @@ snapshots:
   node-abi@3.74.0:
     dependencies:
       semver: 7.7.1
-    optional: true
 
-  node-addon-api@6.1.0:
-    optional: true
+  node-addon-api@6.1.0: {}
 
   node-domexception@1.0.0: {}
 
@@ -7821,7 +7756,6 @@ snapshots:
   ollama@0.5.14:
     dependencies:
       whatwg-fetch: 3.6.20
-    optional: true
 
   on-finished@2.4.1:
     dependencies:
@@ -7838,10 +7772,8 @@ snapshots:
   onnx-proto@4.0.4:
     dependencies:
       protobufjs: 6.11.4
-    optional: true
 
-  onnxruntime-common@1.14.0:
-    optional: true
+  onnxruntime-common@1.14.0: {}
 
   onnxruntime-node@1.14.0:
     dependencies:
@@ -7856,7 +7788,6 @@ snapshots:
       onnx-proto: 4.0.4
       onnxruntime-common: 1.14.0
       platform: 1.3.6
-    optional: true
 
   openai@4.87.3(zod@3.24.2):
     dependencies:
@@ -7987,8 +7918,7 @@ snapshots:
       mlly: 1.7.4
       pathe: 2.0.3
 
-  platform@1.3.6:
-    optional: true
+  platform@1.3.6: {}
 
   possible-typed-array-names@1.1.0: {}
 
@@ -8012,7 +7942,6 @@ snapshots:
       simple-get: 4.0.1
       tar-fs: 2.1.2
       tunnel-agent: 0.6.0
-    optional: true
 
   prelude-ls@1.2.1: {}
 
@@ -8028,8 +7957,7 @@ snapshots:
       ansi-styles: 5.2.0
       react-is: 18.3.1
 
-  process@0.11.10:
-    optional: true
+  process@0.11.10: {}
 
   progress@2.0.3: {}
 
@@ -8050,7 +7978,6 @@ snapshots:
       '@types/long': 4.0.2
       '@types/node': 20.17.24
       long: 4.0.0
-    optional: true
 
   proxy-addr@2.0.7:
     dependencies:
@@ -8063,7 +7990,6 @@ snapshots:
     dependencies:
       end-of-stream: 1.4.4
       once: 1.4.0
-    optional: true
 
   punycode@2.3.1: {}
 
@@ -8092,7 +8018,6 @@ snapshots:
       ini: 1.3.8
       minimist: 1.2.8
       strip-json-comments: 2.0.1
-    optional: true
 
   react-is@18.3.1: {}
 
@@ -8114,7 +8039,6 @@ snapshots:
       inherits: 2.0.4
       string_decoder: 1.3.0
       util-deprecate: 1.0.2
-    optional: true
 
   readable-stream@4.7.0:
     dependencies:
@@ -8123,7 +8047,6 @@ snapshots:
       events: 3.3.0
       process: 0.11.10
       string_decoder: 1.3.0
-    optional: true
 
   reflect-metadata@0.2.1: {}
 
@@ -8310,7 +8233,6 @@ snapshots:
       tunnel-agent: 0.6.0
     transitivePeerDependencies:
       - bare-buffer
-    optional: true
 
   shebang-command@2.0.0:
     dependencies:
@@ -8350,20 +8272,23 @@ snapshots:
 
   signal-exit@4.1.0: {}
 
-  simple-concat@1.0.1:
-    optional: true
+  simple-concat@1.0.1: {}
 
   simple-get@4.0.1:
     dependencies:
       decompress-response: 6.0.0
       once: 1.4.0
       simple-concat: 1.0.1
-    optional: true
 
   simple-swizzle@0.2.2:
     dependencies:
       is-arrayish: 0.3.2
-    optional: true
+
+  sirv@2.0.4:
+    dependencies:
+      '@polka/url': 1.0.0-next.28
+      mrmime: 2.0.1
+      totalist: 3.0.1
 
   slash@3.0.0: {}
 
@@ -8404,7 +8329,6 @@ snapshots:
       text-decoder: 1.2.3
     optionalDependencies:
       bare-events: 2.5.4
-    optional: true
 
   string-argv@0.3.1: {}
 
@@ -8446,7 +8370,6 @@ snapshots:
   string_decoder@1.3.0:
     dependencies:
       safe-buffer: 5.2.1
-    optional: true
 
   strip-ansi@6.0.1:
     dependencies:
@@ -8460,8 +8383,7 @@ snapshots:
 
   strip-final-newline@3.0.0: {}
 
-  strip-json-comments@2.0.1:
-    optional: true
+  strip-json-comments@2.0.1: {}
 
   strip-json-comments@3.1.1: {}
 
@@ -8473,8 +8395,7 @@ snapshots:
     dependencies:
       js-tokens: 9.0.1
 
-  strnum@1.1.2:
-    optional: true
+  strnum@1.1.2: {}
 
   superagent@8.1.2:
     dependencies:
@@ -8519,7 +8440,6 @@ snapshots:
       mkdirp-classic: 0.5.3
       pump: 3.0.2
       tar-stream: 2.2.0
-    optional: true
 
   tar-fs@3.0.8:
     dependencies:
@@ -8530,7 +8450,6 @@ snapshots:
       bare-path: 3.0.0
     transitivePeerDependencies:
       - bare-buffer
-    optional: true
 
   tar-stream@2.2.0:
     dependencies:
@@ -8539,14 +8458,12 @@ snapshots:
       fs-constants: 1.0.0
       inherits: 2.0.4
       readable-stream: 3.6.2
-    optional: true
 
   tar-stream@3.1.7:
     dependencies:
       b4a: 1.6.7
       fast-fifo: 1.3.2
       streamx: 2.22.0
-    optional: true
 
   test-exclude@6.0.0:
     dependencies:
@@ -8563,7 +8480,6 @@ snapshots:
   text-decoder@1.2.3:
     dependencies:
       b4a: 1.6.7
-    optional: true
 
   text-table@0.2.0: {}
 
@@ -8603,6 +8519,8 @@ snapshots:
 
   toposort@2.0.2: {}
 
+  totalist@3.0.1: {}
+
   tr46@0.0.3: {}
 
   ts-api-utils@1.4.3(typescript@5.8.2):
@@ -8616,8 +8534,7 @@ snapshots:
       minimist: 1.2.8
       strip-bom: 3.0.0
 
-  tslib@1.14.1:
-    optional: true
+  tslib@1.14.1: {}
 
   tslib@2.8.1: {}
 
@@ -8631,7 +8548,6 @@ snapshots:
   tunnel-agent@0.6.0:
     dependencies:
       safe-buffer: 5.2.1
-    optional: true
 
   type-check@0.4.0:
     dependencies:
@@ -8712,13 +8628,11 @@ snapshots:
     dependencies:
       punycode: 2.3.1
 
-  url-join@4.0.1:
-    optional: true
+  url-join@4.0.1: {}
 
   util-arity@1.1.0: {}
 
-  util-deprecate@1.0.2:
-    optional: true
+  util-deprecate@1.0.2: {}
 
   utils-merge@1.0.1: {}
 
@@ -8813,7 +8727,7 @@ snapshots:
       tsx: 4.19.3
       yaml: 2.7.0
 
-  vitest@0.34.6:
+  vitest@0.34.6(@vitest/ui@1.6.1):
     dependencies:
       '@types/chai': 4.3.20
       '@types/chai-subset': 1.3.6(@types/chai@4.3.20)
@@ -8839,6 +8753,8 @@ snapshots:
       vite: 5.4.14(@types/node@20.17.24)
       vite-node: 0.34.6(@types/node@20.17.24)
       why-is-node-running: 2.3.0
+    optionalDependencies:
+      '@vitest/ui': 1.6.1(vitest@0.34.6)
     transitivePeerDependencies:
       - less
       - lightningcss
@@ -8849,7 +8765,7 @@ snapshots:
       - supports-color
       - terser
 
-  vitest@1.6.1(@types/node@20.17.24):
+  vitest@1.6.1(@types/node@20.17.24)(@vitest/ui@1.6.1):
     dependencies:
       '@vitest/expect': 1.6.1
       '@vitest/runner': 1.6.1
@@ -8873,6 +8789,7 @@ snapshots:
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@types/node': 20.17.24
+      '@vitest/ui': 1.6.1(vitest@1.6.1)
     transitivePeerDependencies:
       - less
       - lightningcss
@@ -8932,7 +8849,6 @@ snapshots:
       url-join: 4.0.1
     transitivePeerDependencies:
       - encoding
-    optional: true
 
   web-streams-polyfill@3.3.3: {}
 
@@ -9019,8 +8935,7 @@ snapshots:
 
   yaml@2.7.0: {}
 
-  yargs-parser@20.2.9:
-    optional: true
+  yargs-parser@20.2.9: {}
 
   yocto-queue@0.1.0: {}
 

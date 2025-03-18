@@ -62,20 +62,21 @@ export class CliTool {
    * Execute a workflow from start to finish
    */
   async executeWorkflow(command: string): Promise<WorkflowResult> {
-    // Determine the component type based on the command
-    const componentType = this.determineComponentType(command);
-
     // Search for similar components first
     const similarResults = await this.componentSearch.searchComponents(command, {
-      types: [componentType],
+      types: ['schema', 'command', 'query', 'event', 'workflow', 'extension', 'plugin'],
       limit: 3,
-      threshold: 0.7
+      threshold: 0.7,
+      includeMetadata: true,
+      includeEmbeddings: false,
+      orderBy: 'relevance',
+      orderDirection: 'desc'
     });
 
     // Process the command with similar components as context
     let result = await this.sessionManager.processCommand(
       command,
-      componentType,
+      'workflow',
       similarResults.map(r => r.component)
     );
 
@@ -96,7 +97,7 @@ export class CliTool {
       // Retry with error feedback
       result = await this.sessionManager.processCommand(
         feedbackCommand,
-        componentType,
+        'workflow',
         similarResults.map(r => r.component)
       );
 
@@ -142,13 +143,10 @@ export class CliTool {
     command: string,
     feedback: string,
   ): Promise<WorkflowResult> {
-    // Determine the component type based on the command
-    const componentType = this.determineComponentType(command);
-
     // Process the initial command
     let result = await this.sessionManager.processCommand(
       command,
-      componentType,
+      'workflow'
     );
 
     // If validation fails, return error
@@ -207,53 +205,6 @@ export class CliTool {
     version: string,
   ): Promise<string | null> {
     return this.vectorConfigStore.getConfiguration(configName, version);
-  }
-
-  /**
-   * Determine the component type based on the command
-   */
-  private determineComponentType(command: string): ComponentType {
-    // In a real implementation, this would use NLP or heuristics to determine the component type
-    // For now, we'll use simple keyword matching
-
-    const lowerCommand = command.toLowerCase();
-
-    if (lowerCommand.includes("function") || lowerCommand.includes("method")) {
-      return ComponentType.Function;
-    } else if (
-      lowerCommand.includes("command") ||
-      lowerCommand.includes("action")
-    ) {
-      return ComponentType.Command;
-    } else if (
-      lowerCommand.includes("event") ||
-      lowerCommand.includes("trigger")
-    ) {
-      return ComponentType.Event;
-    } else if (
-      lowerCommand.includes("query") ||
-      lowerCommand.includes("fetch")
-    ) {
-      return ComponentType.Query;
-    } else if (
-      lowerCommand.includes("schema") ||
-      lowerCommand.includes("model")
-    ) {
-      return ComponentType.Schema;
-    } else if (
-      lowerCommand.includes("pipeline") ||
-      lowerCommand.includes("workflow")
-    ) {
-      return ComponentType.Pipeline;
-    } else if (
-      lowerCommand.includes("extension") ||
-      lowerCommand.includes("plugin")
-    ) {
-      return ComponentType.Extension;
-    }
-
-    // Default to Function
-    return ComponentType.Function;
   }
 
   /**

@@ -17,7 +17,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/index.ts",
-    "test": "vitest run",
+    "test": "vitest",
     "test:watch": "vitest watch",
     "test:coverage": "vitest run --coverage",
     "test:bdd": "cucumber-js",
@@ -25,7 +25,10 @@
     "lint": "eslint src --ext .ts",
     "lint:fix": "eslint src --ext .ts --fix",
     "rag": "tsx src/cli/run-rag.ts",
-    "rag:dev": "tsx watch src/cli/run-rag.ts"
+    "rag:dev": "tsx watch src/cli/run-rag.ts",
+    "seed": "tsx scripts/run-seed.ts",
+    "seed:dev": "tsx watch scripts/run-seed.ts",
+    "test:ui": "vitest --ui"
   },
   "keywords": [
     "architectlm",
@@ -41,11 +44,13 @@
     "@architectlm/core": "workspace:*",
     "@architectlm/dsl": "workspace:*",
     "@architectlm/extensions": "workspace:*",
-    "chromadb": "^1.10.5",
+    "chromadb": "^2.0.1",
+    "chromadb-default-embed": "^2.14.0",
     "langchain": "^0.1.17",
     "openai": "^4.28.0",
     "uuid": "^9.0.1",
-    "zod": "^3.22.4"
+    "zod": "^3.22.4",
+    "dotenv": "^16.4.5"
   },
   "devDependencies": {
     "@cucumber/cucumber": "^10.3.1",
@@ -53,6 +58,7 @@
     "@types/node": "^20.0.0",
     "@types/uuid": "^9.0.8",
     "@vitest/coverage-v8": "^1.3.1",
+    "@vitest/ui": "^1.3.1",
     "chai": "^4.4.1",
     "tsx": "^4.7.0",
     "typescript": "^5.0.0",

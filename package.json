@@ -49,6 +49,7 @@
   },
   "dependencies": {
     "@types/dotenv": "^8.2.3",
+    "chromadb-default-embed": "^2.14.0",
     "dotenv": "^16.4.7"
   }
 }

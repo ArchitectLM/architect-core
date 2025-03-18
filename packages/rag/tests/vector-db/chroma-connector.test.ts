@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { ChromaDBConnector } from "../../src/vector-db/chroma-connector.js";
-import { Component, ComponentType, SearchOptions } from "../../src/models.js";
+import { Component, SearchOptions } from "../../src/models.js";
 
 // Mock the uuid module
 vi.mock("uuid", () => ({
@@ -18,7 +18,7 @@ vi.mock("chromadb", () => ({
             ids: ["doc1"],
             metadatas: [
               {
-                type: "function",
+                type: "plugin",
                 name: "processPayment",
                 path: "src/functions/payment.ts",
               },
@@ -35,7 +35,7 @@ vi.mock("chromadb", () => ({
         metadatas: [
           [
             {
-              type: "function",
+              type: "plugin",
               name: "processPayment",
               path: "src/functions/payment.ts",
             },
@@ -63,7 +63,7 @@ vi.mock("chromadb", () => ({
 describe("ChromaDBConnector", () => {
   let connector: ChromaDBConnector;
   const testComponent: Component = {
-    type: ComponentType.Function,
+    type: "plugin",
     name: "processPayment",
     content: "function processPayment() { /* ... */ }",
     metadata: {
@@ -100,7 +100,7 @@ describe("ChromaDBConnector", () => {
         const components: Component[] = [
           testComponent,
           {
-            type: ComponentType.Command,
+            type: "command",
             name: "ProcessPaymentCommand",
             content: "class ProcessPaymentCommand { /* ... */ }",
             metadata: {
@@ -123,28 +123,31 @@ describe("ChromaDBConnector", () => {
 
         expect(results).toHaveLength(2);
         expect(results[0].component.name).toBe("processPayment");
-        expect(results[0].component.type).toBe(ComponentType.Function);
+        expect(results[0].component.type).toBe("plugin");
         expect(results[0].score).toBeGreaterThan(0);
       });
 
       it("THEN should filter results by type when specified in options", async () => {
         const query = "payment processing";
         const options: SearchOptions = {
-          types: [ComponentType.Function],
+          types: ["plugin"],
           limit: 5,
           threshold: 0.7,
+          includeMetadata: true,
+          includeEmbeddings: false,
+          orderBy: "relevance",
+          orderDirection: "desc"
         };
 
-        // Mock the query response to return only function components when types filter is applied
-        const mockCollection =
-          await connector["client"].getOrCreateCollection();
+        // Mock the query response to return only plugin components when types filter is applied
+        const mockCollection = await connector["client"].getOrCreateCollection();
         mockCollection.query.mockResolvedValueOnce({
           ids: [["doc1"]],
           distances: [[0.1]],
           metadatas: [
             [
               {
-                type: "function",
+                type: "plugin",
                 name: "processPayment",
                 path: "src/functions/payment.ts",
               },
@@ -158,7 +161,7 @@ describe("ChromaDBConnector", () => {
         expect(results.length).toBeGreaterThan(0);
         expect(
           results.every(
-            (result) => result.component.type === ComponentType.Function,
+            (result) => result.component.type === "plugin",
           ),
         ).toBe(true);
       });
@@ -169,7 +172,7 @@ describe("ChromaDBConnector", () => {
         const document = await connector.getDocument("doc1");
         expect(document).not.toBeNull();
         expect(document?.name).toBe("processPayment");
-        expect(document?.type).toBe(ComponentType.Function);
+        expect(document?.type).toBe("plugin");
       });
 
       it("THEN should return null if the document does not exist", async () => {
@@ -197,7 +200,6 @@ describe("ChromaDBConnector", () => {
     describe("WHEN deleting a document", () => {
       it("THEN should delete the document from the database", async () => {
         await connector.deleteDocument("doc1");
-
         // This is just testing that the function doesn't throw
         // The actual delete logic is tested through the mock
         expect(true).toBe(true);
@@ -215,3 +217,46 @@ describe("ChromaDBConnector", () => {
     });
   });
 });
+
+const mockComponent: Component = {
+  id: 'test-id',
+  type: 'plugin',
+  name: 'Test Component',
+  content: 'Test content',
+  metadata: {
+    path: 'test/path',
+    description: 'Test description',
+    tags: ['test'],
+    createdAt: Date.now(),
+    author: 'test-author'
+  }
+};
+
+const mockComponents: Component[] = [
+  {
+    id: 'test-id-1',
+    type: 'plugin',
+    name: 'Test Component 1',
+    content: 'Test content 1',
+    metadata: {
+      path: 'test/path/1',
+      description: 'Test description 1',
+      tags: ['test'],
+      createdAt: Date.now(),
+      author: 'test-author'
+    }
+  },
+  {
+    id: 'test-id-2',
+    type: 'plugin',
+    name: 'Test Component 2',
+    content: 'Test content 2',
+    metadata: {
+      path: 'test/path/2',
+      description: 'Test description 2',
+      tags: ['test'],
+      createdAt: Date.now(),
+      author: 'test-author'
+    }
+  }
+];
