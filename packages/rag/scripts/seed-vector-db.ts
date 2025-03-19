@@ -1,8 +1,7 @@
 import { ChromaDBConnector } from '../src/vector-db/chroma-connector.js';
-import { Component, ComponentType, VectorDBConfig, SearchOptions } from '../src/models.js';
+import { Component, VectorDBConfig, SearchOptions } from '../src/models.js';
 import path from 'path';
 import dotenv from 'dotenv';
-import { ChromaClient } from 'chromadb';
 
 // Load environment variables from the root .env file
 const rootEnvPath = path.resolve(process.cwd(), '../../.env');
@@ -15,7 +14,7 @@ console.log('API Key available:', !!process.env.OPENROUTER_API_KEY);
 // Example DSL components from the actual codebase
 export const ecommerceComponents: Component[] = [
   {
-    type: 'workflow' as ComponentType,
+    type: 'workflow',
     name: 'OrderProcessingSystem',
     content: `/**
  * Order Processing System
@@ -132,7 +131,7 @@ export default System.define('OrderProcessingSystem', {
     }
   },
   {
-    type: 'schema' as ComponentType,
+    type: 'schema',
     name: 'Order',
     content: `/**
  * Order schema component
@@ -241,7 +240,7 @@ export default System.component('Order', {
     }
   },
   {
-    type: 'command' as ComponentType,
+    type: 'command',
     name: 'CreateOrder',
     content: `/**
  * CreateOrder command component
@@ -318,7 +317,7 @@ export default System.component('CreateOrder', {
     }
   },
   {
-    type: 'command' as ComponentType,
+    type: 'command',
     name: 'CreateOrderImplementation',
     content: `/**
  * Implementation for the CreateOrder command
@@ -466,7 +465,7 @@ export default System.implement<CreateOrderRequest, Order>('CreateOrder',
     }
   },
   {
-    type: 'extension' as ComponentType,
+    type: 'extension',
     name: 'PaymentProcessingExtension',
     content: `/**
  * Payment Processing Extension
@@ -548,7 +547,7 @@ export default System.extension('PaymentProcessingExtension', {
     }
   },
   {
-    type: 'extension' as ComponentType,
+    type: 'extension',
     name: 'AuthenticationExtension',
     content: `/**
  * Authentication Extension
@@ -635,7 +634,7 @@ export default System.extension('AuthenticationExtension', {
     }
   },
   {
-    type: 'extension' as ComponentType,
+    type: 'extension',
     name: 'StripePaymentPlugin',
     content: `/**
  * Stripe Payment Plugin
@@ -700,7 +699,7 @@ export default System.plugin('StripePaymentPlugin', {
     }
   },
   {
-    type: 'schema' as ComponentType,
+    type: 'schema',
     name: 'SystemArchitecture',
     content: `/**
  * System Architecture Documentation
@@ -786,7 +785,7 @@ export default System.component('SystemArchitecture', {
     }
   },
   {
-    type: 'schema' as ComponentType,
+    type: 'schema',
     name: 'AISystemArchitecture',
     content: `/**
  * AI System Architecture Documentation

@@ -13,6 +13,8 @@ export enum ComponentType {
   WORKFLOW = 'workflow',
   EXTENSION = 'extension',
   PLUGIN = 'plugin',
+  SYSTEM = 'system',
+  IMPLEMENTATION = 'implementation'
 }
 
 /**
@@ -284,6 +286,80 @@ export interface PluginComponent extends BaseComponent {
 }
 
 /**
+ * System component
+ */
+export interface SystemComponent extends BaseComponent {
+  type: ComponentType.SYSTEM;
+
+  /**
+   * Components used by this system
+   */
+  components: {
+    schemas?: ComponentRef[];
+    commands?: ComponentRef[];
+    queries?: ComponentRef[];
+    events?: ComponentRef[];
+  };
+
+  /**
+   * Extensions applied to this system
+   */
+  extensions?: Array<{
+    ref: string;
+    config?: Record<string, any>;
+  }>;
+
+  /**
+   * Plugins used by this system
+   */
+  plugins?: Record<string, {
+    ref: string;
+    config?: Record<string, any>;
+  }>;
+
+  /**
+   * Workflows defined in this system
+   */
+  workflows?: Array<{
+    name: string;
+    description?: string;
+    steps: Array<{
+      command: string;
+      next?: string;
+      onFailure?: string;
+      end?: boolean;
+    }>;
+  }>;
+}
+
+/**
+ * Implementation component
+ */
+export interface ImplementationComponent extends BaseComponent {
+  type: ComponentType.IMPLEMENTATION;
+
+  /**
+   * Implementation function
+   */
+  implementation: (input: any, context: any) => Promise<any>;
+
+  /**
+   * Implementation metadata
+   */
+  metadata?: {
+    complexity?: string;
+    estimatedLatency?: string;
+    sideEffects?: string[];
+    testCases?: Array<{
+      description: string;
+      input: any;
+      expectedOutput: any;
+      mockResponses?: Record<string, any>;
+    }>;
+  };
+}
+
+/**
  * Union type for all component types
  */
 export type Component =
@@ -293,7 +369,9 @@ export type Component =
   | EventComponent
   | WorkflowComponent
   | ExtensionComponent
-  | PluginComponent;
+  | PluginComponent
+  | SystemComponent
+  | ImplementationComponent;
 
 /**
  * System definition

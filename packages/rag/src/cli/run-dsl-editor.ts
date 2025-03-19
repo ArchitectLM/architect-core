@@ -3,15 +3,9 @@
  * @module @architectlm/rag
  */
 
-// import { CliTool } from './cli-tool.js';
 import { LLMService, LLMServiceConfig } from '../llm/llm-service.js';
 import { CodeValidator } from '../validation/code-validator.js';
-import { CliCommandHandler } from './cli-command-handler.js';
-// import { SessionManager } from './session-manager.js';
-// import { VectorConfigStore } from './vector-config-store.js';
-// import { ErrorFormatter } from './error-formatter.js';
 import { ChromaDBConnector } from '../vector-db/chroma-connector.js';
-// import { ComponentSearch } from '../search/component-search.js';
 import { 
   ComponentType,
   Component as DslComponent,
@@ -23,42 +17,7 @@ import {
   ExtensionComponent,
   PluginComponent
 } from '@architectlm/dsl';
-import { VectorDBConfig, Component as RagComponent, VectorDBConnector, SearchResult } from '../models.js';
-
-// Debug interface
-// interface DebugInfo {
-//   dbStats: {
-//     totalComponents: number;
-//     componentTypes: Record<string, number>;
-//     lastUpdated: Date;
-//   };
-//   queryInfo: {
-//     userQuery: string;
-//     receivedData: any;
-//     promptSent: string;
-//     llmResponse: string;
-//     validationStatus: {
-//       isValid: boolean;
-//     };
-//     dbStoreStatus: {
-//       success: boolean;
-//     };
-//     finalStats: {
-//       processingTime: number;
-//       componentsCreated: number;
-//     };
-//   };
-//   generatedComponent?: DslComponent;
-//   savedComponent?: DslComponent;
-//   context?: any;
-// }
-
-// Default configuration for ChromaDB
-// const defaultConfig = {
-//   collectionName: 'main-component',
-//   embeddingDimension: 384,
-//   distance: 'cosine' as const
-// };
+import { VectorDBConfig, Component as RagComponent } from '../models.js';
 
 /**
  * Map RAG component to DSL component
@@ -255,28 +214,9 @@ export async function runDslEditor(
   };
 
   const llmService = new LLMService(llmConfig);
-  // const configStore = new VectorConfigStore(vectorDB);
-  // const componentSearch = new ComponentSearch(vectorDB);
 
   try {
     console.log('Initializing RAG DSL Editor...');
-    
-    // Initialize services
-    const codeValidator = new CodeValidator();
-    const commandHandler = new CliCommandHandler(llmService, codeValidator);
-    // const sessionManager = new SessionManager(commandHandler);
-    // const errorFormatter = new ErrorFormatter();
-    
-    // Initialize CLI tool
-    // const cliTool = new CliTool(
-    //   llmService,
-    //   codeValidator,
-    //   sessionManager,
-    //   configStore,
-    //   errorFormatter,
-    //   componentSearch
-    // );
-    
     // Get initial database statistics with more detailed logging
     console.log('\n=== Querying All Documents ===');
     const allComponents = await vectorDB.search('', { 
@@ -299,207 +239,25 @@ export async function runDslEditor(
       distance: c.distance
     })), null, 2));
 
-    // Get filtered components for specific types
-    const components = await vectorDB.search('', { 
-      limit: 100, 
-      threshold: 0.0,
-      includeMetadata: true,
-      includeEmbeddings: false,
-      orderBy: 'relevance',
-      orderDirection: 'desc',
-      types: ['schema', 'command', 'plugin', 'event', 'query', 'workflow', 'extension']
-    });
+    // Format context for LLM using all components
+    const formattedContext = allComponents
+      .map((r: { component: { name: string; content: string } }) => `// ${r.component.name}\n${r.component.content}`)
+      .join('\n\n');
 
-    console.log('\n=== Database Query Parameters ===');
-    console.log('Query:', query);
-    console.log('Types:', ['schema', 'command', 'plugin', 'event', 'query', 'workflow', 'extension']);
-
-    // Update schema detection patterns
-    const schemaPatterns = [
-      /create (?:an?|the) schema component/i,
-      /define (?:an?|the) schema component/i,
-      /new schema component/i,
-      /add (?:an?|the) schema component/i,
-      /generate (?:an?|the) schema component/i,
-      /schema component (?:for|of|with)/i,
-      /create (?:an?|the) schema/i,
-      /define (?:an?|the) schema/i,
-      /new schema/i,
-      /add (?:an?|the) schema/i,
-      /generate (?:an?|the) schema/i,
-      /schema (?:for|of|with)/i,
-      /data model/i,
-      /data structure/i,
-      /entity/i,
-      /with fields/i,
-      /with attributes/i,
-      /with (?:name|email|age|id|date|time|number|string|boolean|array|object)(?:\s|,)/i
-    ];
-
-    // Update schema keywords
-    const schemaKeywords = [
-      'schema component',
-      'schema',
-      'data structure',
-      'data model',
-      'entity',
-      'definition',
-      'structure',
-      'fields',
-      'attributes',
-      'field',
-      'attribute',
-      'name',
-      'email',
-      'age',
-      'id',
-      'date',
-      'time',
-      'number',
-      'string',
-      'boolean',
-      'array',
-      'object',
-      'profile'
-    ];
-
-    // Update component type detection
+    // Simple component type detection
     const determineComponentType = (query: string): ComponentType => {
       const lowercaseQuery = query.toLowerCase();
-
-      // Check for schema component first
-      if (lowercaseQuery.includes('schema component')) {
-        return ComponentType.SCHEMA;
-      }
-
-      // Check for schema patterns
-      for (const pattern of schemaPatterns) {
-        if (pattern.test(query)) {
-          return ComponentType.SCHEMA;
-        }
-      }
-
-      // Check for schema keywords
-      const matchedKeywords = schemaKeywords.filter(keyword => 
-        lowercaseQuery.includes(keyword.toLowerCase())
-      );
-
-      // If we have multiple schema keywords or if it contains "schema component", it's a schema
-      if (matchedKeywords.length >= 2 || lowercaseQuery.includes('schema component')) {
-        return ComponentType.SCHEMA;
-      }
-
-      // Check for field-like patterns that indicate a schema
-      const fieldPattern = /(?:name|email|age|id|date|time|number|string|boolean|array|object)(?:\s|,)/i;
-      if (fieldPattern.test(query) && lowercaseQuery.includes('schema')) {
-        return ComponentType.SCHEMA;
-      }
-
-      // Check for explicit component type pattern
-      const componentTypePattern = /create (?:an?|the) (\w+) component/i;
-      const match = query.match(componentTypePattern);
-      if (match) {
-        const componentType = match[1].toLowerCase();
-        // If it's a schema component, return SCHEMA
-        if (componentType === 'schema') {
-          return ComponentType.SCHEMA;
-        }
-        // Otherwise check other component types
-        switch (componentType) {
-          case 'command':
-            return ComponentType.COMMAND;
-          case 'workflow':
-            return ComponentType.WORKFLOW;
-          case 'plugin':
-            return ComponentType.PLUGIN;
-          case 'event':
-            return ComponentType.EVENT;
-          case 'query':
-            return ComponentType.QUERY;
-          case 'extension':
-            return ComponentType.EXTENSION;
-          default:
-            break;
-        }
-      }
-
-      // Default to command if no specific type is detected
-      return ComponentType.COMMAND;
+      if (lowercaseQuery.includes('schema')) return ComponentType.SCHEMA;
+      if (lowercaseQuery.includes('command')) return ComponentType.COMMAND;
+      if (lowercaseQuery.includes('workflow')) return ComponentType.WORKFLOW;
+      if (lowercaseQuery.includes('plugin')) return ComponentType.PLUGIN;
+      if (lowercaseQuery.includes('event')) return ComponentType.EVENT;
+      if (lowercaseQuery.includes('query')) return ComponentType.QUERY;
+      if (lowercaseQuery.includes('extension')) return ComponentType.EXTENSION;
+      return ComponentType.COMMAND; // Default to command
     };
 
-    // Update search functionality
-    const searchComponents = async (vectorDB: VectorDBConnector, query: string, componentType: ComponentType): Promise<SearchResult[]> => {
-      const searchOptions = {
-        limit: 50,  // Increased limit
-        threshold: -0.5,  // Much more permissive threshold
-        includeMetadata: true,
-        includeEmbeddings: false,
-        orderBy: 'relevance' as const,
-        orderDirection: 'desc' as const
-      };
-
-      // Add logging to diagnose the issue
-      console.log(`\n=== Searching for components with type: ${componentType} ===`);
-      
-      // First try type-specific search
-      const typeResults = await vectorDB.search(query, {
-        ...searchOptions,
-        types: [componentType]
-      });
-      
-      // If no results, fallback to a broader search
-      if (typeResults.length === 0) {
-        console.log('No type-specific results, trying broader search...');
-        const allComponents = await vectorDB.search('', {  // Empty query to get all documents
-          ...searchOptions,
-          types: [componentType]  // Still filter by component type
-        });
-        
-        // Filter components by type manually
-        const filteredResults = allComponents.filter(
-          result => result.component.type === componentType
-        );
-        
-        console.log(`Found ${filteredResults.length} components after manual filtering`);
-        return filteredResults;
-      }
-      
-      return typeResults;
-    };
-
-    // Get relevant context from the vector DB
-    const context = await searchComponents(vectorDB, query, determineComponentType(query))
-      .then(results => results.map(result => result.component.content).join('\n\n'));
-    console.log('\nContext being passed to LLM:');
-    console.log('------------------');
-    console.log(context);
-    console.log('------------------\n');
-
-    // Continue with component generation even if no context is found
-    // Gather additional context
-    const searchOptionsAdditional = {
-      limit: 100, // Increased from 10 to 100 for better coverage
-      threshold: 0.0, // Reduced from 0.3 to 0.0 for more inclusive results
-      includeMetadata: true,
-      includeEmbeddings: false,
-      orderBy: 'relevance' as const,
-      orderDirection: 'desc' as const,
-      types: [
-        determineComponentType(query), // Primary type based on query
-        'plugin', // For documentation
-        'extension', // For system extensions
-      ]
-    };
-
-    // Search for relevant documentation and examples
-    const searchResultsAdditional = await vectorDB.search(query, searchOptionsAdditional);
-    
-    // Format context for LLM using search results directly
-    const formattedContext = await searchComponents(vectorDB, query, determineComponentType(query))
-      .then(results => results.map((r: { component: { name: string; content: string } }) => `// ${r.component.name}\n${r.component.content}`)
-      .join('\n\n'));
-
-    // Generate component using LLM with enhanced context
+    // Generate component using LLM with all available context
     let generatedComponent: RagComponent | undefined;
     try {
       generatedComponent = await llmService.generateComponent(query, determineComponentType(query), formattedContext);
@@ -539,7 +297,7 @@ export async function runDslEditor(
         }
 
         // Search for the newly created component to verify it was saved
-        const newComponents = await vectorDB.search(query, {
+        const newComponents = await vectorDB.search(generatedComponent.name, {
           limit: 10,
           threshold: 0.0,
           includeMetadata: true,

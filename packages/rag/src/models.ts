@@ -4,7 +4,7 @@
  */
 
 import { z } from "zod";
-import { ComponentType } from '@architectlm/dsl';
+// import { ComponentType } from '@architectlm/dsl';
 
 /**
  * Schema for component metadata
@@ -34,11 +34,16 @@ export const ComponentMetadataSchema = z.object({
 export type ComponentMetadata = z.infer<typeof ComponentMetadataSchema>;
 
 /**
+ * Type for component types
+ */
+export type ComponentType = 'system' | 'schema' | 'command' | 'query' | 'event' | 'workflow' | 'extension' | 'plugin';
+
+/**
  * Schema for a component to be indexed
  */
 export const ComponentSchema = z.object({
   id: z.string().optional(),
-  type: z.enum(['schema', 'command', 'query', 'event', 'workflow', 'extension', 'plugin'] as const),
+  type: z.enum(['system', 'schema', 'command', 'query', 'event', 'workflow', 'extension', 'plugin'] as const),
   name: z.string(),
   content: z.string(),
   ast: z.any().optional(),
@@ -55,7 +60,7 @@ export type Component = z.infer<typeof ComponentSchema>;
  */
 export const SearchOptionsSchema = z.object({
   limit: z.number().default(10),
-  types: z.array(z.enum(['schema', 'command', 'query', 'event', 'workflow', 'extension', 'plugin'])).optional(),
+  types: z.array(z.enum(['system', 'schema', 'command', 'query', 'event', 'workflow', 'extension', 'plugin'])).optional(),
   tags: z.array(z.string()).optional(),
   threshold: z.number().min(0).max(1).default(0.7),
   includeMetadata: z.boolean().default(true),

@@ -4,13 +4,11 @@
  */
 
 import { VectorDBConnector } from './base-connector.js';
-import { ChromaClient, Collection, Embeddings, IEmbeddingFunction } from 'chromadb';
+import { ChromaClient, Collection, IEmbeddingFunction } from 'chromadb';
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
 import {
   Component,
-  SearchOptions as SearchOptionsType,
-  SearchResult as SearchResultType,
   FeedbackRecord as FeedbackRecordType,
   RetrievalRecord as RetrievalRecordType,
   ComponentVersion as ComponentVersionType,
@@ -21,12 +19,10 @@ import {
   VectorDBConfigSchema,
   ExemplarSolution,
 } from '../models.js';
-import { convertCodeToAst, convertAstToCode, extractAstFeatures } from '../utils/ast-converter.js';
+import { convertCodeToAst, extractAstFeatures } from '../utils/ast-converter.js';
 import { SimpleEmbeddingFunction } from './simple-embedding.js';
-import { tagUtils } from '../utils/tag-utils.js';
 import { logger } from '../utils/logger.js';
 import { ComponentCache } from '../cache/component-cache.js';
-import { ComponentType as DslComponentType } from '@architectlm/dsl';
 
 type Metadata = Record<string, string | number | boolean>;
 
@@ -63,13 +59,6 @@ interface SearchOptions {
   tags?: string[];
   types?: ComponentType[];
 }
-
-interface SearchResult {
-  component: Component;
-  score: number;
-  distance: number;
-}
-
 interface FeedbackRecord extends FeedbackRecordType {
   id?: string;
 }
@@ -113,99 +102,19 @@ interface ChromaCollection {
 
 type ComponentType = 'schema' | 'command' | 'query' | 'event' | 'workflow' | 'extension' | 'plugin';
 
-/**
- * Custom embedding function that implements Chroma's IEmbeddingFunction interface
- */
-class ComponentEmbeddingFunction implements IEmbeddingFunction {
-  private dimension: number;
+type WhereFilter = {
+  $ne?: string;
+  $in?: string[];
+};
 
-  constructor(dimension: number = 1536) {
-    this.dimension = dimension;
-  }
-
-  async generate(texts: string[]): Promise<number[][]> {
-    return Promise.all(texts.map(text => this.generateSingle(text)));
-  }
-
-  private async generateSingle(text: string): Promise<number[]> {
-    try {
-      const embedding = new Array(this.dimension).fill(0);
-      
-      // Convert text to lowercase and split into words
-      const words = text.toLowerCase().split(/\s+/);
-      const uniqueWords = new Set(words);
-      
-      // Create word frequency map
-      const wordFreq = new Map<string, number>();
-      words.forEach(word => {
-        wordFreq.set(word, (wordFreq.get(word) || 0) + 1);
-      });
-      
-      // Calculate TF-IDF like features
-      const maxFreq = Math.max(...Array.from(wordFreq.values()));
-      Array.from(wordFreq.entries()).forEach(([word, freq], i) => {
-        const tf = freq / maxFreq;
-        const position = Math.min(i, this.dimension - 1);
-        embedding[position] = tf;
-      });
-      
-      // Add special weighting for component type and name if present
-      const typeMatch = text.match(/type:\s*['"]?(\w+)['"]?/i);
-      const nameMatch = text.match(/name:\s*['"]?(\w+)['"]?/i);
-      
-      if (typeMatch) {
-        const typePos = Math.abs(this.hashString(typeMatch[1]) % (this.dimension / 4));
-        embedding[typePos] += 1.5; // Boost type signal
-      }
-      
-      if (nameMatch) {
-        const namePos = Math.abs(this.hashString(nameMatch[1]) % (this.dimension / 4)) + (this.dimension / 4);
-        embedding[namePos] += 1.5; // Boost name signal
-      }
-      
-      // Add n-gram features
-      for (let i = 0; i < words.length - 1; i++) {
-        const bigram = words[i] + ' ' + words[i + 1];
-        const pos = Math.abs(this.hashString(bigram) % (this.dimension / 2)) + (this.dimension / 2);
-        embedding[pos] += 0.5; // Lower weight for bigrams
-      }
-      
-      // Normalize the vector to unit length
-      const magnitude = Math.sqrt(embedding.reduce((sum, val) => sum + val * val, 0));
-      if (magnitude > 0) {
-        for (let i = 0; i < this.dimension; i++) {
-          embedding[i] /= magnitude;
-        }
-      }
-      
-      return embedding;
-    } catch (error) {
-      console.error('Failed to generate embedding:', error);
-      // Fallback to random embedding with proper normalization
-      const randomEmbedding = Array(this.dimension).fill(0).map(() => Math.random() * 2 - 1);
-      const magnitude = Math.sqrt(randomEmbedding.reduce((sum, val) => sum + val * val, 0));
-      if (magnitude > 0) {
-        for (let i = 0; i < this.dimension; i++) {
-          randomEmbedding[i] /= magnitude;
-        }
-      }
-      return randomEmbedding;
-    }
-  }
-
-  private hashString(str: string): number {
-    let hash = 5381;
-    for (let i = 0; i < str.length; i++) {
-      hash = ((hash << 5) + hash) + str.charCodeAt(i);
-      hash = hash & hash;
-    }
-    return hash >>> 0;
-  }
-}
+type WhereClause = {
+  type?: WhereFilter;
+  id?: WhereFilter;
+};
 
 type WhereDocument = {
-  $and?: Record<string, any>[];
-  $or?: Record<string, any>[];
+  $and?: WhereClause[];
+  $or?: WhereClause[];
 };
 
 /**
@@ -409,21 +318,6 @@ export class ChromaDBConnector implements VectorDBConnector {
       prerequisites: metadata.prerequisites ? (metadata.prerequisites as unknown as string[]) : undefined,
       relatedComponentIds: metadata.relatedComponentIds ? (metadata.relatedComponentIds as unknown as string[]) : undefined,
       order: metadata.order as number | undefined,
-    };
-  }
-
-  private deserializeSolutionMetadata(metadata: Metadata | null): TaskSolution {
-    if (!metadata) {
-      throw new Error('Metadata cannot be null');
-    }
-    return {
-      content: metadata.content as string,
-      createdAt: metadata.createdAt as number,
-      author: metadata.author as string,
-      taskId: metadata.taskId as string,
-      explanation: metadata.explanation as string,
-      quality: metadata.quality as number,
-      id: metadata.id as string | undefined,
     };
   }
 
@@ -774,21 +668,19 @@ export class ChromaDBConnector implements VectorDBConnector {
 
   private _buildWhereClause(options?: SearchOptions): WhereDocument {
     // Always include two base filters to satisfy ChromaDB's requirement
-    const baseFilters = [
+    const baseFilters: WhereClause[] = [
       { type: { $ne: 'placeholder' } },
       { id: { $ne: 'placeholder' } }
     ];
 
-    if (!options?.types || options.types.length === 0) {
-      return { $and: baseFilters };
+    const filters = [...baseFilters];
+
+    // Add type filter if specified
+    if (options?.types?.length) {
+      filters.push({ type: { $in: options.types } });
     }
 
-    return {
-      $and: [
-        ...baseFilters,
-        { type: { $in: options.types } }
-      ]
-    };
+    return { $and: filters };
   }
 
   private _processSearchResults(results: any, options?: SearchOptions): { component: Component; score: number; distance?: number }[] {
@@ -811,14 +703,13 @@ export class ChromaDBConnector implements VectorDBConnector {
         }
 
         // Filter by tags if specified
-        if (options?.tags?.length) {
-          const componentTags = typeof component.metadata.tags === 'string' 
-            ? component.metadata.tags.split(',').map(t => t.trim())
-            : Array.isArray(component.metadata.tags) 
-              ? component.metadata.tags 
-              : [];
+        if (options?.tags?.length && component.metadata.tags) {
+          const componentTags: string[] = typeof component.metadata.tags === 'string'
+            ? (component.metadata.tags as string).split(',')
+            : component.metadata.tags;
+
           const hasAllTags = options.tags.every(tag => 
-            componentTags.some(t => t.toLowerCase() === tag.toLowerCase())
+            componentTags.some((t: string) => t.toLowerCase() === tag.toLowerCase())
           );
           if (!hasAllTags) {
             return null;

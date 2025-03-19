@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { ChromaDBConnector } from "../../src/vector-db/chroma-connector.js";
-import { Component, SearchOptions } from "../../src/models.js";
+import { Component } from "../../src/models.js";
+import { logger } from "../../src/utils/logger.js";
+
+// Define the ComponentType from the ChromaDB connector
+type ComponentType = 'schema' | 'command' | 'query' | 'event' | 'workflow' | 'extension' | 'plugin';
 
 // Mock the uuid module
 vi.mock("uuid", () => ({
@@ -73,13 +77,15 @@ describe("ChromaDBConnector", () => {
   };
 
   beforeEach(async () => {
+    logger.level = 'error'; // Reduce noise in tests
     connector = new ChromaDBConnector({
-      collectionName: "test-collection",
-      persistDirectory: "./test-vector-db",
+      collectionName: "test-components",
       embeddingDimension: 1536,
       distance: "cosine",
+      url: "http://localhost:8000"
     });
     await connector.initialize();
+    await connector.deleteAllDocuments();
   });
 
   afterEach(() => {
@@ -129,19 +135,22 @@ describe("ChromaDBConnector", () => {
 
       it("THEN should filter results by type when specified in options", async () => {
         const query = "payment processing";
-        const options: SearchOptions = {
-          types: ["plugin"],
+        const options = {
+          types: ["plugin" as ComponentType],
           limit: 5,
           threshold: 0.7,
           includeMetadata: true,
           includeEmbeddings: false,
-          orderBy: "relevance",
-          orderDirection: "desc"
+          orderBy: "relevance" as const,
+          orderDirection: "desc" as const
         };
 
         // Mock the query response to return only plugin components when types filter is applied
-        const mockCollection = await connector["client"].getOrCreateCollection();
-        mockCollection.query.mockResolvedValueOnce({
+        const mockCollection = await connector["client"].getOrCreateCollection({
+          name: "test-components",
+          metadata: { "hnsw:space": "cosine" }
+        });
+        (mockCollection.query as any).mockResolvedValueOnce({
           ids: [["doc1"]],
           distances: [[0.1]],
           metadatas: [
@@ -217,46 +226,3 @@ describe("ChromaDBConnector", () => {
     });
   });
 });
-
-const mockComponent: Component = {
-  id: 'test-id',
-  type: 'plugin',
-  name: 'Test Component',
-  content: 'Test content',
-  metadata: {
-    path: 'test/path',
-    description: 'Test description',
-    tags: ['test'],
-    createdAt: Date.now(),
-    author: 'test-author'
-  }
-};
-
-const mockComponents: Component[] = [
-  {
-    id: 'test-id-1',
-    type: 'plugin',
-    name: 'Test Component 1',
-    content: 'Test content 1',
-    metadata: {
-      path: 'test/path/1',
-      description: 'Test description 1',
-      tags: ['test'],
-      createdAt: Date.now(),
-      author: 'test-author'
-    }
-  },
-  {
-    id: 'test-id-2',
-    type: 'plugin',
-    name: 'Test Component 2',
-    content: 'Test content 2',
-    metadata: {
-      path: 'test/path/2',
-      description: 'Test description 2',
-      tags: ['test'],
-      createdAt: Date.now(),
-      author: 'test-author'
-    }
-  }
-];
