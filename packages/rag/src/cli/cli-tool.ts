@@ -3,11 +3,11 @@
  * @module @architectlm/rag
  */
 
-import { Component, ComponentType } from "../models.js";
+import { Component, ComponentType, ValidationResult } from "../models.js";
 import { LLMService } from "../llm/llm-service.js";
 import { CodeValidator } from "../validation/code-validator.js";
 import {
-  CliCommandHandler,
+  CLICommandHandler,
   CommandResult,
   CommitResult,
 } from "./cli-command-handler.js";
@@ -19,10 +19,11 @@ import { ComponentSearch } from "../search/component-search.js";
 /**
  * Result of executing a workflow
  */
-export interface WorkflowResult {
+interface WorkflowResult {
   success: boolean;
   message: string;
-  component: Component;
+  component: Component | Component[];
+  validationResult?: ValidationResult;
 }
 
 /**
@@ -36,6 +37,7 @@ export class CliTool {
   private errorFormatter: ErrorFormatter;
   private componentSearch: ComponentSearch;
   private maxRetries: number;
+  private systemPrompt: string;
 
   /**
    * Create a new CLI Tool
@@ -48,6 +50,7 @@ export class CliTool {
     errorFormatter: ErrorFormatter,
     componentSearch: ComponentSearch,
     maxRetries = 3,
+    systemPrompt: string,
   ) {
     this.llmService = llmService;
     this.codeValidator = codeValidator;
@@ -56,84 +59,52 @@ export class CliTool {
     this.errorFormatter = errorFormatter;
     this.componentSearch = componentSearch;
     this.maxRetries = maxRetries;
+    this.systemPrompt = systemPrompt;
   }
 
   /**
    * Execute a workflow from start to finish
    */
-  async executeWorkflow(command: string): Promise<WorkflowResult> {
-    // Search for similar components first
-    const similarResults = await this.componentSearch.searchComponents(command, {
-      types: ['schema', 'command', 'query', 'event', 'workflow', 'extension', 'plugin'],
-      limit: 3,
-      threshold: 0.7,
-      includeMetadata: true,
-      includeEmbeddings: false,
-      orderBy: 'relevance',
-      orderDirection: 'desc'
-    });
+  async executeWorkflow(description: string, fullResponse?: string): Promise<WorkflowResult> {
+    try {
+      // Generate components using LLM
+      const components = await this.llmService.generateComponent(description, 'command', this.systemPrompt);
+      
+      // Validate the generated code
+      const validationResult = await this.codeValidator.validateCode(components.map(c => c.content).join('\n\n'), {
+        relevantComponents: components,
+        query: description,
+        suggestedChanges: []
+      });
 
-    // Process the command with similar components as context
-    let result = await this.sessionManager.processCommand(
-      command,
-      'workflow',
-      similarResults.map(r => r.component)
-    );
+      if (!validationResult.isValid) {
+        return {
+          success: false,
+          message: 'Code validation failed',
+          component: components,
+          validationResult
+        };
+      }
 
-    // If validation fails, retry with error feedback
-    let retryCount = 0;
-    while (!result.validationResult.isValid && retryCount < this.maxRetries) {
-      console.log(
-        `Validation failed. Retrying (${retryCount + 1}/${this.maxRetries})...`,
-      );
+      // Save components to vector store
+      for (const component of components) {
+        await this.vectorConfigStore.saveConfiguration(component.name, component.content, "v1");
+      }
 
-      // Format errors for display
-      const errorMessage = this.errorFormatter.format(result.validationResult);
-      console.log(errorMessage);
-
-      // Create a new command with error feedback
-      const feedbackCommand = `${command}\n\nPrevious attempt had errors:\n${errorMessage}\n\nPlease fix and try again.`;
-
-      // Retry with error feedback
-      result = await this.sessionManager.processCommand(
-        feedbackCommand,
-        'workflow',
-        similarResults.map(r => r.component)
-      );
-
-      retryCount++;
-    }
-
-    // If validation still fails after retries, return error
-    if (!result.validationResult.isValid) {
+      return {
+        success: true,
+        message: 'Components generated and saved successfully',
+        component: components,
+        validationResult
+      };
+    } catch (error) {
       return {
         success: false,
-        message: `Failed to generate valid code after ${this.maxRetries} attempts.`,
-        component: result.component,
+        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        component: [],
+        validationResult: undefined
       };
     }
-
-    // Commit the component
-    const commitResult = await this.sessionManager.commitCurrentComponent();
-
-    // Save to vector database
-    if (commitResult.success) {
-      const configName = this.generateConfigName(result.component);
-      const version = "v1"; // In a real implementation, this would be determined dynamically
-
-      await this.vectorConfigStore.saveConfiguration(
-        configName,
-        result.component.content,
-        version,
-      );
-    }
-
-    // Return success
-    return {
-      success: commitResult.success,
-      message: commitResult.message,
-      component: result.component,
-    };
   }
 
   /**
@@ -174,19 +145,21 @@ export class CliTool {
       };
     }
 
-    // Commit the component
+    // Commit the component(s)
     const commitResult = await this.sessionManager.commitCurrentComponent();
 
     // Save to vector database
     if (commitResult.success) {
-      const configName = this.generateConfigName(result.component);
-      const version = "v1"; // In a real implementation, this would be determined dynamically
-
-      await this.vectorConfigStore.saveConfiguration(
-        configName,
-        result.component.content,
-        version,
-      );
+      const components = Array.isArray(result.component) ? result.component : [result.component];
+      
+      // Save each component with its actual name
+      for (const component of components) {
+        await this.vectorConfigStore.saveConfiguration(
+          component.name,
+          component.content,
+          "v1"
+        );
+      }
     }
 
     // Return success

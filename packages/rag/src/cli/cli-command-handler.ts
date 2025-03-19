@@ -16,7 +16,7 @@ import { CodeValidator } from "../validation/code-validator.js";
  * Result of processing a command
  */
 export interface CommandResult {
-  component: Component;
+  component: Component | Component[];
   validationResult: ValidationResult;
 }
 
@@ -31,19 +31,16 @@ export interface CommitResult {
 /**
  * CLI Command Handler for processing user commands
  */
-export class CliCommandHandler {
-  private llmService: LLMService;
-  private codeValidator: CodeValidator;
-  private maxRetries: number = 3;
+export class CLICommandHandler {
+  private maxRetries = 3;
   private systemPrompt: string;
 
-  /**
-   * Create a new CLI Command Handler
-   */
-  constructor(llmService: LLMService, codeValidator: CodeValidator, systemPrompt: string) {
-    this.llmService = llmService;
-    this.codeValidator = codeValidator;
-    this.systemPrompt = systemPrompt;
+  constructor(
+    private llmService: LLMService,
+    private codeValidator: CodeValidator,
+    systemPrompt?: string
+  ) {
+    this.systemPrompt = systemPrompt || '';
   }
 
   /**
@@ -54,8 +51,8 @@ export class CliCommandHandler {
     componentType: ComponentType,
     similarComponents: Component[] = []
   ): Promise<CommandResult> {
-    // Generate component using LLM
-    let component = await this.llmService.generateComponent(
+    // Generate components using LLM
+    let components: Component[] = await this.llmService.generateComponent(
       command,
       componentType,
       this.systemPrompt
@@ -64,14 +61,14 @@ export class CliCommandHandler {
     // Create a simple edit context for validation
     const context: EditContext = {
       query: command,
-      relevantComponents: [component, ...similarComponents],
+      relevantComponents: components,
       suggestedChanges: [
-        {
-          componentId: component.id || "new-component",
-          originalContent: component.content,
+        ...components.map((c: Component) => ({
+          componentId: c.id || "new-component",
+          originalContent: c.content,
           reason: "Generated from user command",
-        },
-        ...similarComponents.map(c => ({
+        })),
+        ...similarComponents.map((c: Component) => ({
           componentId: c.id || "similar-component",
           originalContent: c.content,
           reason: "Similar existing component"
@@ -79,9 +76,9 @@ export class CliCommandHandler {
       ],
     };
 
-    // Validate the generated code
+    // Validate all components
     let validationResult = await this.codeValidator.validateCode(
-      component.content,
+      components.map((c: Component) => c.content).join('\n\n'),
       context,
     );
 
@@ -92,7 +89,7 @@ export class CliCommandHandler {
       const errorFeedback = this.createErrorFeedback(command, validationResult);
 
       // Regenerate with error feedback
-      component = await this.llmService.generateComponent(
+      components = await this.llmService.generateComponent(
         errorFeedback,
         componentType,
         this.systemPrompt
@@ -100,7 +97,7 @@ export class CliCommandHandler {
 
       // Validate again
       validationResult = await this.codeValidator.validateCode(
-        component.content,
+        components.map((c: Component) => c.content).join('\n\n'),
         context,
       );
 
@@ -109,7 +106,7 @@ export class CliCommandHandler {
 
     // Return the result
     return {
-      component,
+      component: components,
       validationResult,
     };
   }
@@ -145,19 +142,24 @@ ${feedback}
 Please improve the component based on the feedback.
 `;
 
-    // Generate improved component
-    const improvedComponent = await this.llmService.generateComponent(
+    // Generate improved components
+    const improvedComponents = await this.llmService.generateComponent(
       prompt,
       component.type,
       this.systemPrompt
     );
 
-    // Preserve the original component's metadata and ID
-    improvedComponent.id = component.id;
-    improvedComponent.metadata = {
-      ...component.metadata,
-      description: `${component.metadata.description} (improved with feedback)`,
-    };
+    // Preserve the original component's metadata and ID for the first component
+    if (improvedComponents.length > 0) {
+      improvedComponents[0] = {
+        ...improvedComponents[0],
+        id: component.id,
+        metadata: {
+          ...component.metadata,
+          description: `${component.metadata.description} (improved with feedback)`,
+        }
+      };
+    }
 
     // Create a simple edit context for validation
     const context: EditContext = {
@@ -174,44 +176,33 @@ Please improve the component based on the feedback.
 
     // Validate the improved code
     const validationResult = await this.codeValidator.validateCode(
-      improvedComponent.content,
+      improvedComponents.map(c => c.content).join('\n\n'),
       context,
     );
 
     // Return the result
     return {
-      component: improvedComponent,
+      component: improvedComponents,
       validationResult,
     };
   }
 
   /**
-   * Create error feedback for LLM
+   * Create error feedback for the LLM
    */
-  private createErrorFeedback(
-    command: string,
-    validationResult: ValidationResult,
-  ): string {
-    // Extract error messages
-    const errorMessages =
-      validationResult.errors
-        ?.map((error) => {
-          const location = error.location
-            ? `Line ${error.location.line}, Column ${error.location.column}: `
-            : "";
-          return `${location}${error.message}`;
-        })
-        .join("\n") || "Unknown errors";
+  private createErrorFeedback(command: string, validationResult: ValidationResult): string {
+    const errors = validationResult.errors?.map(e => e.message).join('\n') || '';
+    const warnings = validationResult.warnings?.map(w => w.message).join('\n') || '';
+    const suggestions = validationResult.suggestions?.join('\n') || '';
 
-    // Create a prompt that includes the original command and the errors
-    return `
-Original request:
-${command}
+    return `The previous response had validation issues. Please fix the following:
 
-The generated code has the following errors:
-${errorMessages}
+${errors ? `Errors:\n${errors}\n` : ''}
+${warnings ? `Warnings:\n${warnings}\n` : ''}
+${suggestions ? `Suggestions:\n${suggestions}\n` : ''}
 
-Please fix these errors and regenerate the code.
-`;
+Original command: ${command}
+
+Please provide a corrected version that addresses these issues.`;
   }
 }

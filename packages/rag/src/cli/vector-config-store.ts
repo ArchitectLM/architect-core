@@ -40,7 +40,7 @@ export class VectorConfigStore {
     // Create a component for the configuration
     const component: Component = {
       type: 'system', // Using system type for configurations
-      name: `${configName}Config`,
+      name: configName,
       content,
       metadata: {
         path: `configs/${configName}.ts`,
@@ -52,6 +52,83 @@ export class VectorConfigStore {
 
     // Add to vector database
     return this.vectorDB.addDocument(component);
+  }
+
+  /**
+   * Update an existing configuration
+   */
+  async updateConfiguration(
+    configName: string,
+    content: string,
+    version: string,
+  ): Promise<boolean> {
+    // Search for the configuration
+    const results = await this.vectorDB.search(
+      `name:${configName} version:${version}`,
+      {
+        limit: 1,
+        threshold: 0.7,
+        includeMetadata: true,
+        includeEmbeddings: false,
+        orderBy: 'relevance',
+        orderDirection: 'desc'
+      },
+    );
+
+    // If not found, return false
+    if (results.length === 0) {
+      return false;
+    }
+
+    // Get the component ID
+    const id = results[0].component.id;
+
+    if (!id) {
+      return false;
+    }
+
+    // Update the component
+    await this.vectorDB.updateDocument(id, {
+      content,
+      metadata: {
+        path: results[0].component.metadata.path,
+        updatedAt: Date.now(),
+      },
+    });
+
+    return true;
+  }
+
+  /**
+   * Simple diff implementation to avoid external dependencies
+   */
+  private simpleDiff(oldText: string, newText: string): string {
+    const oldLines = oldText.split("\n");
+    const newLines = newText.split("\n");
+    let diffOutput = "";
+
+    // Very simple line-by-line diff
+    const maxLines = Math.max(oldLines.length, newLines.length);
+
+    for (let i = 0; i < maxLines; i++) {
+      const oldLine = i < oldLines.length ? oldLines[i] : "";
+      const newLine = i < newLines.length ? newLines[i] : "";
+
+      if (oldLine === newLine) {
+        // Unchanged line
+        diffOutput += ` ${oldLine}\n`;
+      } else {
+        // Changed line
+        if (oldLine) {
+          diffOutput += `- ${oldLine}\n`;
+        }
+        if (newLine) {
+          diffOutput += `+ ${newLine}\n`;
+        }
+      }
+    }
+
+    return diffOutput;
   }
 
   /**
@@ -141,7 +218,7 @@ export class VectorConfigStore {
     version2: string,
   ): Promise<string> {
     // First, search for the specific versions to get their IDs
-    const results = await this.vectorDB.search(`name:${configName}Config`, {
+    const results = await this.vectorDB.search(`name:${configName}`, {
       limit: 100,
       threshold: 0.7,
       includeMetadata: true,
@@ -181,82 +258,5 @@ export class VectorConfigStore {
 
     // Generate simple diff
     return this.simpleDiff(component1.content, component2.content);
-  }
-
-  /**
-   * Update an existing configuration
-   */
-  async updateConfiguration(
-    configName: string,
-    content: string,
-    version: string,
-  ): Promise<boolean> {
-    // Search for the configuration
-    const results = await this.vectorDB.search(
-      `name:${configName}Config version:${version}`,
-      {
-        limit: 1,
-        threshold: 0.7,
-        includeMetadata: true,
-        includeEmbeddings: false,
-        orderBy: 'relevance',
-        orderDirection: 'desc'
-      },
-    );
-
-    // If not found, return false
-    if (results.length === 0) {
-      return false;
-    }
-
-    // Get the component ID
-    const id = results[0].component.id;
-
-    if (!id) {
-      return false;
-    }
-
-    // Update the component
-    await this.vectorDB.updateDocument(id, {
-      content,
-      metadata: {
-        path: results[0].component.metadata.path,
-        updatedAt: Date.now(),
-      },
-    });
-
-    return true;
-  }
-
-  /**
-   * Simple diff implementation to avoid external dependencies
-   */
-  private simpleDiff(oldText: string, newText: string): string {
-    const oldLines = oldText.split("\n");
-    const newLines = newText.split("\n");
-    let diffOutput = "";
-
-    // Very simple line-by-line diff
-    const maxLines = Math.max(oldLines.length, newLines.length);
-
-    for (let i = 0; i < maxLines; i++) {
-      const oldLine = i < oldLines.length ? oldLines[i] : "";
-      const newLine = i < newLines.length ? newLines[i] : "";
-
-      if (oldLine === newLine) {
-        // Unchanged line
-        diffOutput += ` ${oldLine}\n`;
-      } else {
-        // Changed line
-        if (oldLine) {
-          diffOutput += `- ${oldLine}\n`;
-        }
-        if (newLine) {
-          diffOutput += `+ ${newLine}\n`;
-        }
-      }
-    }
-
-    return diffOutput;
   }
 }

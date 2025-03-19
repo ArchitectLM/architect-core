@@ -17,39 +17,66 @@ export class CodeValidator {
     code: string,
     context: EditContext,
   ): Promise<ValidationResult> {
-    // Create a virtual file for the code
-    const fileName = "generated-code.ts";
-    const sourceFile = ts.createSourceFile(
-      fileName,
-      code,
-      ts.ScriptTarget.Latest,
-      true,
-    );
+    // Split the code into individual components
+    const componentBlocks = code.split('// ===').filter(block => block.trim());
+    const errors: { message: string; location?: { line: number; column: number; file: string } }[] = [];
+    const warnings: { message: string; location?: { line: number; column: number; file: string } }[] = [];
 
-    // Create a virtual program
-    const compilerOptions = this.createCompilerOptions();
-    const program = ts.createProgram({
-      rootNames: [fileName],
-      options: compilerOptions,
-      host: this.createCompilerHost(sourceFile, code),
-    });
+    for (const block of componentBlocks) {
+      const cleanBlock = block.trim();
+      if (!cleanBlock) continue;
 
-    // Get diagnostics
-    const syntacticDiagnostics = program.getSyntacticDiagnostics();
-    const semanticDiagnostics = program.getSemanticDiagnostics();
+      // Extract component name from the block
+      const nameMatch = cleanBlock.match(/export default System\.(?:component|define)\('([^']+)'/);
+      if (!nameMatch) {
+        errors.push({ message: `Could not find component name in block: ${cleanBlock.slice(0, 50)}...` });
+        continue;
+      }
 
-    // Process diagnostics
-    const errors = this.processDiagnostics(syntacticDiagnostics, true);
-    const warnings = this.processDiagnostics(semanticDiagnostics, false);
+      const componentName = nameMatch[1];
+      const fileName = `${componentName.toLowerCase().replace(/\s+/g, '-')}.ts`;
 
-    // Create validation result
-    const result: ValidationResult = {
+      // Create a virtual file for the component
+      const sourceFile = ts.createSourceFile(
+        fileName,
+        cleanBlock,
+        ts.ScriptTarget.Latest,
+        true,
+      );
+
+      // Create a virtual program
+      const compilerOptions = this.createCompilerOptions();
+      const program = ts.createProgram({
+        rootNames: [fileName],
+        options: compilerOptions,
+        host: this.createCompilerHost(sourceFile, cleanBlock),
+      });
+
+      // Get diagnostics
+      const syntacticDiagnostics = program.getSyntacticDiagnostics();
+      const semanticDiagnostics = program.getSemanticDiagnostics();
+
+      // Process diagnostics
+      const componentErrors = this.processDiagnostics(syntacticDiagnostics, true);
+      const componentWarnings = this.processDiagnostics(semanticDiagnostics, false);
+
+      // Add component-specific errors and warnings
+      errors.push(...componentErrors.map(e => ({
+        ...e,
+        message: `[${componentName}] ${e.message}`
+      })));
+      warnings.push(...componentWarnings.map(w => ({
+        ...w,
+        message: `[${componentName}] ${w.message}`
+      })));
+    }
+
+    return {
       isValid: errors.length === 0,
-      errors: errors.length > 0 ? errors : undefined,
-      warnings: warnings.length > 0 ? warnings : undefined,
+      errors,
+      warnings,
+      suggestions: [],
     };
-
-    return result;
   }
 
   /**
