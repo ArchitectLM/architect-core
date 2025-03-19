@@ -39,7 +39,7 @@ export class VectorConfigStore {
   ): Promise<string> {
     // Create a component for the configuration
     const component: Component = {
-      type: ComponentType.Function, // Using Function as the type for configurations
+      type: 'system', // Using system type for configurations
       name: `${configName}Config`,
       content,
       metadata: {
@@ -67,6 +67,10 @@ export class VectorConfigStore {
       {
         limit: 1,
         threshold: 0.7,
+        includeMetadata: true,
+        includeEmbeddings: false,
+        orderBy: 'relevance',
+        orderDirection: 'desc'
       },
     );
 
@@ -86,6 +90,10 @@ export class VectorConfigStore {
     const results = await this.vectorDB.search(`name:${configName}Config`, {
       limit: 100, // Assuming there won't be more than 100 versions
       threshold: 0.7,
+      includeMetadata: true,
+      includeEmbeddings: false,
+      orderBy: 'relevance',
+      orderDirection: 'desc'
     });
 
     // Convert to ConfigVersion objects
@@ -136,6 +144,10 @@ export class VectorConfigStore {
     const results = await this.vectorDB.search(`name:${configName}Config`, {
       limit: 100,
       threshold: 0.7,
+      includeMetadata: true,
+      includeEmbeddings: false,
+      orderBy: 'relevance',
+      orderDirection: 'desc'
     });
 
     // Find the IDs for the specific versions
@@ -185,6 +197,10 @@ export class VectorConfigStore {
       {
         limit: 1,
         threshold: 0.7,
+        includeMetadata: true,
+        includeEmbeddings: false,
+        orderBy: 'relevance',
+        orderDirection: 'desc'
       },
     );
 

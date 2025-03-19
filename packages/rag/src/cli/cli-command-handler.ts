@@ -35,13 +35,15 @@ export class CliCommandHandler {
   private llmService: LLMService;
   private codeValidator: CodeValidator;
   private maxRetries: number = 3;
+  private systemPrompt: string;
 
   /**
    * Create a new CLI Command Handler
    */
-  constructor(llmService: LLMService, codeValidator: CodeValidator) {
+  constructor(llmService: LLMService, codeValidator: CodeValidator, systemPrompt: string) {
     this.llmService = llmService;
     this.codeValidator = codeValidator;
+    this.systemPrompt = systemPrompt;
   }
 
   /**
@@ -56,6 +58,7 @@ export class CliCommandHandler {
     let component = await this.llmService.generateComponent(
       command,
       componentType,
+      this.systemPrompt
     );
 
     // Create a simple edit context for validation
@@ -92,6 +95,7 @@ export class CliCommandHandler {
       component = await this.llmService.generateComponent(
         errorFeedback,
         componentType,
+        this.systemPrompt
       );
 
       // Validate again
@@ -145,6 +149,7 @@ Please improve the component based on the feedback.
     const improvedComponent = await this.llmService.generateComponent(
       prompt,
       component.type,
+      this.systemPrompt
     );
 
     // Preserve the original component's metadata and ID

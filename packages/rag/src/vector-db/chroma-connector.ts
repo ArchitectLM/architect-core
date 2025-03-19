@@ -964,19 +964,26 @@ export class ChromaDBConnector implements VectorDBConnector {
    */
   async searchFeedback(
     query: string,
-    options?: SearchOptions,
+    options?: {
+      limit: number;
+      threshold: number;
+      includeMetadata: boolean;
+      includeEmbeddings: boolean;
+      orderBy: 'createdAt' | 'updatedAt' | 'relevance';
+      orderDirection: 'asc' | 'desc';
+      tags?: string[];
+      types?: ComponentType[];
+    }
   ): Promise<FeedbackRecord[]> {
     if (!this.feedbackCollection) {
       throw new Error("Feedback collection not initialized");
     }
 
-    const parsedOptions = options
-      ? SearchOptionsSchema.parse(options)
-      : SearchOptionsSchema.parse({});
-
+    const embedding = await this.generateEmbedding(query);
     const results = await this.feedbackCollection.query({
-      queryTexts: [query],
-      nResults: parsedOptions.limit,
+      queryEmbeddings: [embedding],
+      nResults: options?.limit || 10,
+      where: this._buildWhereClause(options),
     });
 
     if (!results?.metadatas?.[0]) {
@@ -985,7 +992,7 @@ export class ChromaDBConnector implements VectorDBConnector {
 
     return results.metadatas[0]
       .map((metadata) => this.deserializeFeedbackMetadata(metadata as Metadata))
-      .filter((record): record is FeedbackRecord => record !== null);
+      .filter((feedback): feedback is FeedbackRecord => feedback !== null);
   }
 
   /**

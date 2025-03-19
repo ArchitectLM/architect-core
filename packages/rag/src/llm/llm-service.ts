@@ -135,6 +135,13 @@ export class LLMService {
   }
 
   /**
+   * Get raw response from LLM
+   */
+  async getRawResponse(prompt: string, systemPrompt: string): Promise<string> {
+    return this.makeRequest(prompt, systemPrompt);
+  }
+
+  /**
    * Generate a component based on a user request
    */
   async generateComponent(

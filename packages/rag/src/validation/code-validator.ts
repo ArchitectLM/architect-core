@@ -90,6 +90,10 @@ export class CodeValidator {
       noImplicitAny: true,
       strictNullChecks: true,
       baseUrl: ".",
+      allowSyntheticDefaultImports: true,
+      resolveJsonModule: true,
+      isolatedModules: true,
+      noEmit: true,
       paths: {
         "@architectlm/dsl": ["./node_modules/@architectlm/dsl"],
         "@architectlm/rag": ["./node_modules/@architectlm/rag"],
