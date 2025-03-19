@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   CommandHandler,
   Middleware,
+  MiddlewareImpl,
 } from "../src/implementations/command-handler.js";
 import { ReactiveEventBus } from "../src/implementations/event-bus.js";
 
@@ -21,6 +22,8 @@ interface TestCommand {
 interface TestResult {
   success: boolean;
   data: any;
+  middlewareModified?: boolean;
+  skipped?: boolean;
 }
 
 // Create a concrete implementation of CommandHandler for testing
@@ -49,6 +52,37 @@ describe("CommandHandler", () => {
   beforeEach(() => {
     eventBus = new ReactiveEventBus();
     commandHandler = new TestCommandHandler(eventBus);
+  });
+
+  describe("MiddlewareImpl", () => {
+    it("should execute middleware function correctly", async () => {
+      // Given a middleware implementation
+      const executeFn = vi.fn().mockImplementation(async (context, next) => {
+        return next(context);
+      });
+      const middleware = new MiddlewareImpl(executeFn);
+
+      // When executing middleware
+      const context = { command: { type: "TEST" }, result: undefined };
+      const next = vi.fn().mockResolvedValue({ command: context.command, result: { success: true } });
+      await middleware.execute(context, next);
+
+      // Then the execute function should be called with correct arguments
+      expect(executeFn).toHaveBeenCalledWith(context, next);
+    });
+
+    it("should handle errors in middleware implementation", async () => {
+      // Given a middleware that throws
+      const executeFn = vi.fn().mockRejectedValue(new Error("Middleware error"));
+      const middleware = new MiddlewareImpl(executeFn);
+
+      // When executing middleware
+      const context = { command: { type: "TEST" }, result: undefined };
+      const next = vi.fn();
+
+      // Then it should throw the error
+      await expect(middleware.execute(context, next)).rejects.toThrow("Middleware error");
+    });
   });
 
   describe("Basic Functionality", () => {
@@ -384,6 +418,121 @@ describe("CommandHandler", () => {
 
       // Then the result should be modified
       expect(result.success).toBe(false); // Inverted from true
+    });
+
+    it("should handle middleware that modifies context multiple times", async () => {
+      // Given middleware that modifies context multiple times
+      const modifyingMiddleware: Middleware = {
+        async execute<T, R>(
+          context: { command: T; result?: R },
+          next: (context: { command: T; result?: R }) => Promise<{ command: T; result: R }>
+        ) {
+          // First modification
+          const modifiedContext = {
+            command: { ...(context.command as any), modified: true },
+            result: context.result
+          };
+          
+          // Second modification through next
+          const result = await next(modifiedContext);
+          
+          // Third modification of result
+          return {
+            command: result.command,
+            result: { ...(result.result as any), middlewareModified: true }
+          };
+        }
+      };
+
+      // When adding the middleware
+      commandHandler.use(modifyingMiddleware);
+
+      // And handling a command
+      const result = await commandHandler.execute({
+        type: "TEST_COMMAND",
+        payload: { id: "123", value: 42 }
+      });
+
+      // Then the context should be modified multiple times
+      expect(result.middlewareModified).toBe(true);
+    });
+
+    it("should handle middleware that skips next()", async () => {
+      // Given middleware that returns early without calling next
+      const skippingMiddleware: Middleware = {
+        async execute<T, R>(
+          context: { command: T; result?: R },
+          next: (context: { command: T; result?: R }) => Promise<{ command: T; result: R }>
+        ) {
+          return {
+            command: context.command,
+            result: { skipped: true } as unknown as R
+          };
+        }
+      };
+
+      // When adding the middleware
+      commandHandler.use(skippingMiddleware);
+
+      // And handling a command
+      const result = await commandHandler.execute({
+        type: "TEST_COMMAND",
+        payload: { id: "123", value: 42 }
+      });
+
+      // Then the result should be from middleware without command execution
+      expect(result).toEqual({ skipped: true });
+    });
+
+    it("should handle middleware that throws after next()", async () => {
+      // Given middleware that throws after calling next
+      const throwingMiddleware: Middleware = {
+        async execute<T, R>(
+          context: { command: T; result?: R },
+          next: (context: { command: T; result?: R }) => Promise<{ command: T; result: R }>
+        ) {
+          await next(context);
+          throw new Error("Post-next error");
+        }
+      };
+
+      // When adding the middleware
+      commandHandler.use(throwingMiddleware);
+
+      // And handling a command
+      // Then it should throw the error
+      await expect(commandHandler.execute({
+        type: "TEST_COMMAND",
+        payload: { id: "123", value: 42 }
+      })).rejects.toThrow("Post-next error");
+    });
+
+    it("should handle middleware that modifies command type", async () => {
+      // Given middleware that changes command type
+      const typeModifyingMiddleware: Middleware = {
+        async execute<T, R>(
+          context: { command: T; result?: R },
+          next: (context: { command: T; result?: R }) => Promise<{ command: T; result: R }>
+        ) {
+          const modifiedCommand = {
+            type: "MODIFIED_COMMAND",
+            payload: (context.command as any).payload
+          };
+          return next({ command: modifiedCommand as unknown as T, result: context.result });
+        }
+      };
+
+      // When adding the middleware
+      commandHandler.use(typeModifyingMiddleware);
+
+      // And handling a command
+      const result = await commandHandler.execute({
+        type: "TEST_COMMAND",
+        payload: { id: "123", value: 42 }
+      });
+
+      // Then the command should be processed with modified type
+      expect(result.success).toBe(true);
     });
   });
 });

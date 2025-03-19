@@ -3,11 +3,9 @@
  */
 
 // Export models
-export * from './models/index.ts';
+export * from './models/index.js';
 
 // Export implementations
-export { ReactiveEventBus } from './implementations/event-bus.ts';
-export { CommandHandler, Middleware, MiddlewareImpl } from './implementations/command-handler.ts';
-export { DefaultCircuitBreaker } from './implementations/circuit-breaker.ts';
-export { DefaultRetryPolicy } from './implementations/retry-policy.ts';
-export { ReactiveRuntime, createRuntime } from './implementations/runtime.ts';
+export * from './implementations/event-bus.js';
+export * from './implementations/command-handler.js';
+export * from './implementations/runtime.js';

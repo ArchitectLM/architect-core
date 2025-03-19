@@ -6,8 +6,6 @@
 export interface Event<T = any> {
   type: string;
   payload: T;
-  timestamp: number;
-  metadata?: Record<string, any>;
 }
 
 // Process types
@@ -27,10 +25,10 @@ export interface ProcessTransition {
 export interface ProcessDefinition {
   id: string;
   name: string;
-  description?: string;
-  states: ProcessState[];
+  description: string;
   initialState: string;
   transitions: ProcessTransition[];
+  tasks: TaskDefinition[];
 }
 
 export interface ProcessInstance {
@@ -48,33 +46,88 @@ export interface ProcessInstance {
 }
 
 // Task types
+/**
+ * Context object provided to task handlers during execution.
+ * Contains utilities and information needed for task processing.
+ */
 export interface TaskContext {
-  emitEvent: (type: string, payload: any) => void;
-  getProcess: (id: string) => ProcessInstance | undefined;
-  getTaskResult: (taskId: string) => any;
+  processId: string;
+  taskId: string;
+  input: any;
+  eventBus: EventBus;
   logger: {
     info: (message: string, data?: any) => void;
     warn: (message: string, data?: any) => void;
     error: (message: string, data?: any) => void;
   };
+  emitEvent: (type: string, payload: any) => void;
+  getTaskResult: (taskId: string) => any;
+  isCancelled: () => boolean;
 }
 
+/**
+ * Definition of a task that can be executed by the runtime.
+ * Tasks are the basic units of work in the system.
+ */
 export interface TaskDefinition {
+  /**
+   * Unique identifier for the task.
+   */
   id: string;
+
+  /**
+   * Human-readable name of the task.
+   */
   name: string;
+
+  /**
+   * Description of what the task does.
+   */
   description?: string;
-  implementation: (input: any, context: TaskContext) => Promise<any>;
+
+  /**
+   * Async function that implements the task logic.
+   * Receives a TaskContext object with utilities and information.
+   * @param context - The task context containing utilities and information
+   * @returns A promise that resolves to the task result
+   */
+  handler: (context: TaskContext) => Promise<any>;
+
+  /**
+   * Optional list of task IDs that this task depends on.
+   * Results from dependent tasks can be accessed via context.getTaskResult().
+   */
+  dependencies?: string[];
+
+  /**
+   * Optional number of retries for the task.
+   */
+  retries?: number;
+  
+  /**
+   * Maximum number of times to retry the task if it fails.
+   * Defaults to 3 if not specified.
+   */
+  maxRetries?: number;
+  
+  /**
+   * Delay in milliseconds between retry attempts.
+   * Defaults to 1000ms if not specified.
+   */
+  retryDelay?: number;
 }
 
 export interface TaskExecution {
   id: string;
   taskId: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  startTime: Date;
+  endTime?: Date;
   input: any;
-  status: 'pending' | 'running' | 'completed' | 'failed';
   result?: any;
   error?: string;
-  startedAt?: number;
-  completedAt?: number;
+  retryCount: number;
+  processId?: string;
 }
 
 // Runtime types
@@ -95,6 +148,7 @@ export interface Runtime {
   // Task management
   executeTask: (taskId: string, input: any) => Promise<any>;
   getTaskExecution: (id: string) => TaskExecution | undefined;
+  cancelTask: (executionId: string) => void;
 
   // Event handling
   subscribe: (eventType: string, handler: (event: Event) => void) => () => void;
@@ -134,4 +188,28 @@ export interface RetryPolicy {
 
 // Enhanced retry policy types have been moved to the extension system
 
-export * from '../implementations/dead-letter-queue.js';
+// Core models
+export interface Command<T = any> {
+  type: string;
+  payload: T;
+}
+
+export interface Extension {
+  name: string;
+  description: string;
+  hooks: Record<string, ExtensionHookHandler>;
+  cleanup(): Promise<void>;
+}
+
+export type ExtensionHookHandler = (context: any) => Promise<any>;
+
+export interface ExtensionPoint {
+  name: string;
+  description: string;
+  hooks: string[];
+}
+
+export interface EventBus {
+  publish: (type: string, payload: any) => void;
+  subscribe: (type: string, handler: (event: Event) => void) => () => void;
+}
