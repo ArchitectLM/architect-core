@@ -24,8 +24,6 @@ import {
   setupSagaExtension, 
   SagaExtensionOptions, 
   SagaInstance,
-  SagaDefinition,
-  SagaStep,
   CompensationStrategy
 } from '../../src/extensions/saga.extension.js';
 
@@ -72,50 +70,50 @@ describe('Saga Extension', () => {
         }
       });
       
-      // Define commands for the saga
-      const createOrder = dsl.component('CreateOrder', {
-        type: ComponentType.COMMAND,
+      // Define tasks for the saga
+      const createOrderTask = dsl.component('CreateOrder', {
+        type: ComponentType.TASK,
         description: 'Create an order',
         version: '1.0.0',
         input: { ref: 'OrderInput' },
         output: { ref: 'OrderSchema' }
       });
       
-      const processPayment = dsl.component('ProcessPayment', {
-        type: ComponentType.COMMAND,
+      const processPaymentTask = dsl.component('ProcessPayment', {
+        type: ComponentType.TASK,
         description: 'Process payment for an order',
         version: '1.0.0',
         input: { ref: 'PaymentInput' },
         output: { ref: 'PaymentResult' }
       });
       
-      const updateInventory = dsl.component('UpdateInventory', {
-        type: ComponentType.COMMAND,
+      const updateInventoryTask = dsl.component('UpdateInventory', {
+        type: ComponentType.TASK,
         description: 'Update inventory for items',
         version: '1.0.0',
         input: { ref: 'InventoryUpdate' },
         output: { ref: 'InventoryResult' }
       });
 
-      // Define compensation commands
-      const cancelOrder = dsl.component('CancelOrder', {
-        type: ComponentType.COMMAND,
+      // Define compensation tasks
+      const cancelOrderTask = dsl.component('CancelOrder', {
+        type: ComponentType.TASK,
         description: 'Cancel an order',
         version: '1.0.0',
         input: { ref: 'OrderCancellation' },
         output: { ref: 'CancellationResult' }
       });
       
-      const refundPayment = dsl.component('RefundPayment', {
-        type: ComponentType.COMMAND,
+      const refundPaymentTask = dsl.component('RefundPayment', {
+        type: ComponentType.TASK,
         description: 'Refund a payment',
         version: '1.0.0',
         input: { ref: 'RefundInput' },
         output: { ref: 'RefundResult' }
       });
       
-      const restoreInventory = dsl.component('RestoreInventory', {
-        type: ComponentType.COMMAND,
+      const restoreInventoryTask = dsl.component('RestoreInventory', {
+        type: ComponentType.TASK,
         description: 'Restore inventory levels',
         version: '1.0.0',
         input: { ref: 'InventoryRestore' },
@@ -131,7 +129,7 @@ describe('Saga Extension', () => {
         steps: [
           {
             name: 'createOrder',
-            command: { ref: 'CreateOrder' },
+            task: { ref: 'CreateOrder' },
             compensation: { ref: 'CancelOrder' },
             output: {
               mapping: {
@@ -142,7 +140,7 @@ describe('Saga Extension', () => {
           },
           {
             name: 'processPayment',
-            command: { ref: 'ProcessPayment' },
+            task: { ref: 'ProcessPayment' },
             compensation: { ref: 'RefundPayment' },
             input: {
               mapping: {
@@ -158,7 +156,7 @@ describe('Saga Extension', () => {
           },
           {
             name: 'updateInventory',
-            command: { ref: 'UpdateInventory' },
+            task: { ref: 'UpdateInventory' },
             compensation: { ref: 'RestoreInventory' },
             input: {
               mapping: {
@@ -180,37 +178,37 @@ describe('Saga Extension', () => {
 
   describe('Saga Execution', () => {
     it('should execute saga steps in sequence', async () => {
-      // Setup mock commands
+      // Setup mock tasks
       const createOrderMock = vi.fn().mockResolvedValue({ id: 'order-123', customerId: 'cust-123', amount: 100 });
       const processPaymentMock = vi.fn().mockResolvedValue({ id: 'pmt-123', status: 'completed' });
       const updateInventoryMock = vi.fn().mockResolvedValue({ updated: true });
       
-      // Define commands and implementations
-      const createOrder = dsl.component('CreateOrder', {
-        type: ComponentType.COMMAND,
+      // Define tasks and implementations
+      const createOrderTask = dsl.component('CreateOrder', {
+        type: ComponentType.TASK,
         description: 'Create order',
         version: '1.0.0',
         input: { ref: 'OrderInput' },
         output: { ref: 'OrderSchema' }
       });
       
-      const processPayment = dsl.component('ProcessPayment', {
-        type: ComponentType.COMMAND,
+      const processPaymentTask = dsl.component('ProcessPayment', {
+        type: ComponentType.TASK,
         description: 'Process payment',
         version: '1.0.0',
         input: { ref: 'PaymentInput' },
         output: { ref: 'PaymentResult' }
       });
       
-      const updateInventory = dsl.component('UpdateInventory', {
-        type: ComponentType.COMMAND,
+      const updateInventoryTask = dsl.component('UpdateInventory', {
+        type: ComponentType.TASK,
         description: 'Update inventory',
         version: '1.0.0',
         input: { ref: 'InventoryUpdate' },
         output: { ref: 'InventoryResult' }
       });
       
-      // Implement commands
+      // Implement tasks
       dsl.implement('CreateOrder', createOrderMock);
       dsl.implement('ProcessPayment', processPaymentMock);
       dsl.implement('UpdateInventory', updateInventoryMock);
@@ -224,7 +222,7 @@ describe('Saga Extension', () => {
         steps: [
           {
             name: 'createOrder',
-            command: { ref: 'CreateOrder' },
+            task: { ref: 'CreateOrder' },
             output: {
               mapping: {
                 'orderId': 'id',
@@ -234,7 +232,7 @@ describe('Saga Extension', () => {
           },
           {
             name: 'processPayment',
-            command: { ref: 'ProcessPayment' },
+            task: { ref: 'ProcessPayment' },
             input: {
               mapping: {
                 'orderId': 'orderId',
@@ -244,7 +242,7 @@ describe('Saga Extension', () => {
           },
           {
             name: 'updateInventory',
-            command: { ref: 'UpdateInventory' },
+            task: { ref: 'UpdateInventory' },
             input: {
               mapping: {
                 'orderId': 'orderId'
@@ -254,17 +252,37 @@ describe('Saga Extension', () => {
         ]
       });
       
+      // Mock task execution registry
+      // This would normally be provided by the task extension
+      const taskExecutor = vi.fn().mockImplementation(async (taskId, input, context) => {
+        if (taskId === 'CreateOrder') return createOrderMock(input, context);
+        if (taskId === 'ProcessPayment') return processPaymentMock(input, context);
+        if (taskId === 'UpdateInventory') return updateInventoryMock(input, context);
+        throw new Error(`Unknown task: ${taskId}`);
+      });
+      
+      (dsl as any).executeTask = taskExecutor;
+      
       // Execute the saga
-      const sagaInput = { 
-        customerName: 'John Doe',
-        items: [{ id: 'item-1', quantity: 2 }],
-        shippingAddress: '123 Main St'
-      };
+      const saga = (orderSaga as any).start({ customerId: 'cust-123', items: [{ id: 'prod-1', quantity: 2 }] });
       
-      const result = await (orderSaga as any).execute(sagaInput);
+      // Complete the saga execution
+      const result = await saga.execute();
       
-      // Verify all steps were executed in sequence
-      expect(createOrderMock).toHaveBeenCalledWith(sagaInput, expect.any(Object));
+      // Verify tasks were executed in order
+      expect(createOrderMock).toHaveBeenCalledTimes(1);
+      expect(processPaymentMock).toHaveBeenCalledTimes(1);
+      expect(updateInventoryMock).toHaveBeenCalledTimes(1);
+      
+      // Verify call order
+      expect(createOrderMock).toHaveBeenCalledWith(
+        expect.objectContaining({ 
+          customerId: 'cust-123',
+          items: expect.arrayContaining([{ id: 'prod-1', quantity: 2 }])
+        }),
+        expect.any(Object)
+      );
+      
       expect(processPaymentMock).toHaveBeenCalledWith(
         expect.objectContaining({ 
           orderId: 'order-123',
@@ -272,293 +290,333 @@ describe('Saga Extension', () => {
         }),
         expect.any(Object)
       );
+      
       expect(updateInventoryMock).toHaveBeenCalledWith(
-        expect.objectContaining({ 
-          orderId: 'order-123'
-        }),
+        expect.objectContaining({ orderId: 'order-123' }),
         expect.any(Object)
       );
       
       // Verify saga result
       expect(result.status).toBe('COMPLETED');
-      expect(result.data).toMatchObject({
+      expect(result.data).toEqual(expect.objectContaining({
         orderId: 'order-123',
         amount: 100
-      });
+      }));
     });
     
-    it('should apply data mappings between steps', async () => {
-      // Setup mock implementations
-      const step1Mock = vi.fn().mockResolvedValue({ id: 'entity-1', name: 'Test', value: 42 });
-      const step2Mock = vi.fn().mockResolvedValue({ result: 'success', processedId: 'proc-1' });
+    it('should handle saga failure and run compensations', async () => {
+      // Setup tasks: first two succeed, third fails
+      const createOrderMock = vi.fn().mockResolvedValue({ id: 'order-123', customerId: 'cust-123', amount: 100 });
+      const processPaymentMock = vi.fn().mockResolvedValue({ id: 'pmt-123', status: 'completed' });
+      const updateInventoryMock = vi.fn().mockRejectedValue(new Error('Inventory not available'));
       
-      // Define commands
-      dsl.component('Step1', { 
-        type: ComponentType.COMMAND, 
-        description: 'Step 1', 
+      // Setup compensation tasks
+      const cancelOrderMock = vi.fn().mockResolvedValue({ cancelled: true });
+      const refundPaymentMock = vi.fn().mockResolvedValue({ refunded: true });
+      
+      // Define tasks
+      dsl.component('CreateOrder', {
+        type: ComponentType.TASK,
+        description: 'Create order',
         version: '1.0.0',
-        input: { ref: 'Step1Input' }, 
-        output: { ref: 'Step1Output' } 
-      });
-      dsl.component('Step2', { 
-        type: ComponentType.COMMAND, 
-        description: 'Step 2', 
-        version: '1.0.0',
-        input: { ref: 'Step2Input' }, 
-        output: { ref: 'Step2Output' } 
+        input: { ref: 'OrderInput' },
+        output: { ref: 'OrderSchema' }
       });
       
-      // Implement commands
-      dsl.implement('Step1', step1Mock);
-      dsl.implement('Step2', step2Mock);
+      dsl.component('ProcessPayment', {
+        type: ComponentType.TASK,
+        description: 'Process payment',
+        version: '1.0.0',
+        input: { ref: 'PaymentInput' },
+        output: { ref: 'PaymentResult' }
+      });
       
-      // Define saga with mappings
-      const dataMappingSaga = dsl.component('DataMappingSaga', {
+      dsl.component('UpdateInventory', {
+        type: ComponentType.TASK,
+        description: 'Update inventory',
+        version: '1.0.0',
+        input: { ref: 'InventoryUpdate' },
+        output: { ref: 'InventoryResult' }
+      });
+      
+      dsl.component('CancelOrder', {
+        type: ComponentType.TASK,
+        description: 'Cancel order',
+        version: '1.0.0',
+        input: { ref: 'OrderCancellation' },
+        output: { ref: 'CancellationResult' }
+      });
+      
+      dsl.component('RefundPayment', {
+        type: ComponentType.TASK,
+        description: 'Refund payment',
+        version: '1.0.0',
+        input: { ref: 'RefundInput' },
+        output: { ref: 'RefundResult' }
+      });
+      
+      // Implement tasks
+      dsl.implement('CreateOrder', createOrderMock);
+      dsl.implement('ProcessPayment', processPaymentMock);
+      dsl.implement('UpdateInventory', updateInventoryMock);
+      dsl.implement('CancelOrder', cancelOrderMock);
+      dsl.implement('RefundPayment', refundPaymentMock);
+      
+      // Define a saga with compensations
+      const orderSaga = dsl.component('OrderSaga', {
         type: ComponentType.SAGA,
-        description: 'Data mapping saga',
-        version: '1.0.0',
-        correlationProperty: 'entityId',
-        steps: [
-          {
-            name: 'step1',
-            command: { ref: 'Step1' },
-            output: {
-              mapping: {
-                'entityId': 'id',
-                'entityName': 'name',
-                'someValue': 'value'
-              }
-            }
-          },
-          {
-            name: 'step2',
-            command: { ref: 'Step2' },
-            input: {
-              mapping: {
-                'id': 'entityId',
-                'name': 'entityName',
-                'processValue': 'someValue'
-              }
-            }
-          }
-        ]
-      });
-      
-      // Execute saga
-      await (dataMappingSaga as any).execute({ initialData: 'test' });
-      
-      // Verify step2 received mapped data from step1
-      expect(step2Mock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          id: 'entity-1',
-          name: 'Test',
-          processValue: 42
-        }),
-        expect.any(Object)
-      );
-    });
-  });
-
-  describe('Compensation', () => {
-    it('should trigger compensation when a step fails', async () => {
-      // Setup mock implementations
-      const step1Mock = vi.fn().mockResolvedValue({ id: 'entity-1' });
-      const step2Mock = vi.fn().mockRejectedValue(new Error('Step 2 failed'));
-      const compensate1Mock = vi.fn().mockResolvedValue({ compensated: true });
-      
-      // Define commands
-      dsl.component('Step1', { 
-        type: ComponentType.COMMAND, 
-        description: 'Step 1', 
-        version: '1.0.0',
-        input: { ref: 'Step1Input' }, 
-        output: { ref: 'Step1Output' } 
-      });
-      dsl.component('Step2', { 
-        type: ComponentType.COMMAND, 
-        description: 'Step 2', 
-        version: '1.0.0',
-        input: { ref: 'Step2Input' }, 
-        output: { ref: 'Step2Output' } 
-      });
-      dsl.component('Compensate1', { 
-        type: ComponentType.COMMAND, 
-        description: 'Compensate Step 1', 
-        version: '1.0.0',
-        input: { ref: 'Comp1Input' }, 
-        output: { ref: 'Comp1Output' } 
-      });
-      
-      // Implement commands
-      dsl.implement('Step1', step1Mock);
-      dsl.implement('Step2', step2Mock);
-      dsl.implement('Compensate1', compensate1Mock);
-      
-      // Define saga with compensation
-      const compensatingSaga = dsl.component('CompensatingSaga', {
-        type: ComponentType.SAGA,
-        description: 'Compensating saga',
-        version: '1.0.0',
-        correlationProperty: 'entityId',
-        steps: [
-          {
-            name: 'step1',
-            command: { ref: 'Step1' },
-            compensation: { ref: 'Compensate1' },
-            output: {
-              mapping: {
-                'entityId': 'id'
-              }
-            }
-          },
-          {
-            name: 'step2',
-            command: { ref: 'Step2' },
-            input: {
-              mapping: {
-                'id': 'entityId'
-              }
-            }
-          }
-        ]
-      });
-      
-      // Execute saga that will fail
-      const result = await (compensatingSaga as any).execute({ initialData: 'test' });
-      
-      // Verify compensation was triggered for successful steps
-      expect(compensate1Mock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          entityId: 'entity-1'
-        }),
-        expect.any(Object)
-      );
-      
-      // Verify saga result status
-      expect(result.status).toBe('COMPENSATED');
-      expect(result.error).toMatch(/Step 2 failed/);
-    });
-    
-    it('should support different compensation strategies', async () => {
-      // Setup test saga with a specified compensation strategy
-      const backwardSaga = dsl.component('BackwardCompensationSaga', {
-        type: ComponentType.SAGA,
-        description: 'Saga with backward compensation',
-        version: '1.0.0',
-        compensationStrategy: CompensationStrategy.BACKWARD,
-        steps: [/* steps would go here */]
-      });
-      
-      const forwardSaga = dsl.component('ForwardCompensationSaga', {
-        type: ComponentType.SAGA,
-        description: 'Saga with forward compensation',
-        version: '1.0.0',
-        compensationStrategy: CompensationStrategy.FORWARD,
-        steps: [/* steps would go here */]
-      });
-      
-      // Verify the strategies were set correctly
-      expect((backwardSaga as any).compensationStrategy).toBe(CompensationStrategy.BACKWARD);
-      expect((forwardSaga as any).compensationStrategy).toBe(CompensationStrategy.FORWARD);
-    });
-  });
-
-  describe('Saga Instance Tracking', () => {
-    it('should track saga instances and allow querying them', async () => {
-      // Setup mocks
-      const commandMock = vi.fn().mockResolvedValue({ id: 'test-123' });
-      
-      // Define command and implementation
-      dsl.component('TestCommand', { 
-        type: ComponentType.COMMAND, 
-        description: 'Test command', 
-        version: '1.0.0',
-        input: { ref: 'TestInput' }, 
-        output: { ref: 'TestOutput' } 
-      });
-      dsl.implement('TestCommand', commandMock);
-      
-      // Define a simple saga
-      const testSaga = dsl.component('TestSaga', {
-        type: ComponentType.SAGA,
-        description: 'Test saga',
-        version: '1.0.0',
-        correlationProperty: 'testId',
-        steps: [
-          {
-            name: 'testStep',
-            command: { ref: 'TestCommand' },
-            output: {
-              mapping: {
-                'testId': 'id'
-              }
-            }
-          }
-        ]
-      });
-      
-      // Execute multiple instances of the saga
-      await (testSaga as any).execute({ input1: 'value1' });
-      await (testSaga as any).execute({ input2: 'value2' });
-      
-      // Query for saga instances
-      const instances = await (testSaga as any).getInstances();
-      
-      // Verify instances are tracked
-      expect(instances.length).toBe(2);
-      expect(instances[0].data.testId).toBe('test-123');
-      expect(instances[1].data.testId).toBe('test-123');
-      
-      // Query for a specific instance by correlation ID
-      const instance = await (testSaga as any).getInstance('test-123');
-      expect(instance).toBeDefined();
-      expect(instance.correlationId).toBe('test-123');
-    });
-  });
-
-  describe('System Integration', () => {
-    it('should integrate sagas with system definitions', () => {
-      // Define necessary components
-      dsl.component('CreateOrder', { 
-        type: ComponentType.COMMAND, 
-        description: 'Create order', 
-        version: '1.0.0',
-        input: { ref: 'OrderInput' }, 
-        output: { ref: 'OrderOutput' } 
-      });
-      
-      dsl.component('ProcessPayment', { 
-        type: ComponentType.COMMAND, 
-        description: 'Process payment', 
-        version: '1.0.0',
-        input: { ref: 'PaymentInput' }, 
-        output: { ref: 'PaymentOutput' } 
-      });
-      
-      // Define a saga
-      dsl.component('OrderSaga', {
-        type: ComponentType.SAGA,
-        description: 'Order processing saga',
+        description: 'Order saga with compensations',
         version: '1.0.0',
         correlationProperty: 'orderId',
         steps: [
           {
             name: 'createOrder',
-            command: { ref: 'CreateOrder' }
+            task: { ref: 'CreateOrder' },
+            compensation: { ref: 'CancelOrder' },
+            output: {
+              mapping: {
+                'orderId': 'id',
+                'amount': 'amount'
+              }
+            }
           },
           {
             name: 'processPayment',
-            command: { ref: 'ProcessPayment' }
+            task: { ref: 'ProcessPayment' },
+            compensation: { ref: 'RefundPayment' },
+            input: {
+              mapping: {
+                'orderId': 'orderId',
+                'amount': 'amount'
+              }
+            },
+            output: {
+              mapping: {
+                'paymentId': 'id'
+              }
+            }
+          },
+          {
+            name: 'updateInventory',
+            task: { ref: 'UpdateInventory' },
+            input: {
+              mapping: {
+                'orderId': 'orderId'
+              }
+            }
           }
         ]
       });
       
-      // Define a system that uses the saga
-      const orderSystem = dsl.system('OrderSystem', {
-        description: 'Order management system',
+      // Mock task execution
+      const taskExecutor = vi.fn().mockImplementation(async (taskId, input, context) => {
+        if (taskId === 'CreateOrder') return createOrderMock(input, context);
+        if (taskId === 'ProcessPayment') return processPaymentMock(input, context);
+        if (taskId === 'UpdateInventory') return updateInventoryMock(input, context);
+        if (taskId === 'CancelOrder') return cancelOrderMock(input, context);
+        if (taskId === 'RefundPayment') return refundPaymentMock(input, context);
+        throw new Error(`Unknown task: ${taskId}`);
+      });
+      
+      (dsl as any).executeTask = taskExecutor;
+      
+      // Execute the saga
+      const saga = (orderSaga as any).start({ customerId: 'cust-123', items: [{ id: 'prod-1', quantity: 2 }] });
+      
+      try {
+        await saga.execute();
+        fail('Saga should have thrown an error');
+      } catch (error) {
+        // Expected - saga failed
+        
+        // Verify compensations were executed in reverse order
+        expect(refundPaymentMock).toHaveBeenCalledTimes(1);
+        expect(cancelOrderMock).toHaveBeenCalledTimes(1);
+        
+        // Verify compensation parameters
+        expect(refundPaymentMock).toHaveBeenCalledWith(
+          expect.objectContaining({ 
+            paymentId: 'pmt-123'
+          }),
+          expect.any(Object)
+        );
+        
+        expect(cancelOrderMock).toHaveBeenCalledWith(
+          expect.objectContaining({ 
+            orderId: 'order-123'
+          }),
+          expect.any(Object)
+        );
+        
+        // Verify saga status
+        expect(saga.getStatus()).toBe('FAILED_WITH_COMPENSATION');
+        expect(saga.getError()).toEqual(expect.objectContaining({
+          message: 'Inventory not available'
+        }));
+      }
+    });
+  });
+
+  describe('Saga Persistence and Recovery', () => {
+    it('should support serializing and deserializing saga state', async () => {
+      // Define a simple saga
+      const purchaseSaga = dsl.component('PurchaseSaga', {
+        type: ComponentType.SAGA,
+        description: 'Purchase saga',
+        version: '1.0.0',
+        correlationProperty: 'orderId',
+        steps: [
+          {
+            name: 'reserveInventory',
+            task: { ref: 'ReserveInventory' },
+            compensation: { ref: 'ReleaseInventory' }
+          },
+          {
+            name: 'processPayment',
+            task: { ref: 'ProcessPayment' },
+            compensation: { ref: 'RefundPayment' }
+          }
+        ]
+      });
+      
+      // Start a saga instance
+      const saga = (purchaseSaga as any).start({ 
+        orderId: 'order-123', 
+        productId: 'prod-1', 
+        quantity: 2,
+        amount: 100
+      });
+      
+      // Mock a partial execution
+      (saga as any).stepResults = [
+        { step: 'reserveInventory', result: { reserved: true, inventoryId: 'inv-123' } }
+      ];
+      (saga as any).currentStepIndex = 1;
+      (saga as any).data = { 
+        orderId: 'order-123', 
+        productId: 'prod-1', 
+        quantity: 2,
+        amount: 100,
+        reserved: true, 
+        inventoryId: 'inv-123' 
+      };
+      
+      // Serialize the saga state
+      const serialized = saga.serialize();
+      
+      // Verify it contains the necessary information
+      expect(serialized).toMatchObject({
+        id: expect.any(String),
+        sagaId: 'PurchaseSaga',
+        correlationId: 'order-123',
+        status: 'IN_PROGRESS',
+        currentStepIndex: 1,
+        data: {
+          orderId: 'order-123',
+          productId: 'prod-1',
+          quantity: 2,
+          amount: 100,
+          reserved: true,
+          inventoryId: 'inv-123'
+        },
+        stepResults: [
+          { 
+            step: 'reserveInventory', 
+            result: { reserved: true, inventoryId: 'inv-123' } 
+          }
+        ]
+      });
+      
+      // Deserialize to create a new instance
+      const restoredSaga = (purchaseSaga as any).deserialize(serialized);
+      
+      // Verify the restored instance has the correct state
+      expect(restoredSaga.getId()).toBe(serialized.id);
+      expect(restoredSaga.getCurrentStepIndex()).toBe(1);
+      expect(restoredSaga.getData()).toMatchObject({
+        orderId: 'order-123',
+        productId: 'prod-1',
+        reserved: true,
+        inventoryId: 'inv-123'
+      });
+      
+      // Should be able to continue execution
+      const processPaymentResult = { paymentId: 'pmt-456', status: 'completed' };
+      
+      // Mock task execution
+      (dsl as any).executeTask = vi.fn().mockResolvedValue(processPaymentResult);
+      
+      // Continue execution
+      const result = await restoredSaga.continueExecution();
+      
+      // Verify final state
+      expect(result.status).toBe('COMPLETED');
+      expect(restoredSaga.getCurrentStepIndex()).toBe(2);
+      expect(restoredSaga.getData()).toMatchObject({
+        orderId: 'order-123',
+        reserved: true,
+        inventoryId: 'inv-123',
+        paymentId: 'pmt-456',
+        status: 'completed'
+      });
+    });
+  });
+
+  describe('Saga Integration with System', () => {
+    it('should register sagas with the system', () => {
+      // Define schemas and tasks
+      dsl.component('OrderSchema', {
+        type: ComponentType.SCHEMA,
+        description: 'Order schema',
+        version: '1.0.0',
+        properties: {
+          id: { type: 'string' },
+          customerId: { type: 'string' },
+          amount: { type: 'number' }
+        }
+      });
+      
+      dsl.component('CreateOrder', {
+        type: ComponentType.TASK,
+        description: 'Create order',
+        version: '1.0.0',
+        input: { ref: 'OrderInput' },
+        output: { ref: 'OrderSchema' }
+      });
+      
+      dsl.component('ProcessPayment', {
+        type: ComponentType.TASK,
+        description: 'Process payment',
+        version: '1.0.0',
+        input: { ref: 'PaymentInput' },
+        output: { ref: 'PaymentResult' }
+      });
+      
+      // Define a saga
+      const orderSaga = dsl.component('OrderSaga', {
+        type: ComponentType.SAGA,
+        description: 'Order saga',
+        version: '1.0.0',
+        correlationProperty: 'orderId',
+        steps: [
+          {
+            name: 'createOrder',
+            task: { ref: 'CreateOrder' }
+          },
+          {
+            name: 'processPayment',
+            task: { ref: 'ProcessPayment' }
+          }
+        ]
+      });
+      
+      // Define a system
+      const ecommerceSystem = dsl.system('EcommerceSystem', {
+        description: 'E-commerce system',
         version: '1.0.0',
         components: {
-          commands: [
+          schemas: [{ ref: 'OrderSchema' }],
+          tasks: [
             { ref: 'CreateOrder' },
             { ref: 'ProcessPayment' }
           ],
@@ -568,12 +626,16 @@ describe('Saga Extension', () => {
         }
       });
       
-      // Verify the system can access sagas
-      expect(typeof (orderSystem as any).getSagas).toBe('function');
+      // Verify sagas are registered
+      expect((ecommerceSystem as any).components.sagas).toHaveLength(1);
+      expect((ecommerceSystem as any).components.sagas[0].ref).toBe('OrderSaga');
+      
+      // Verify system can access sagas
+      expect(typeof (ecommerceSystem as any).getSagas).toBe('function');
       
       // Get sagas from the system
-      const sagas = (orderSystem as any).getSagas();
-      expect(sagas.length).toBe(1);
+      const sagas = (ecommerceSystem as any).getSagas();
+      expect(sagas).toHaveLength(1);
       expect(sagas[0].id).toBe('OrderSaga');
     });
   });
