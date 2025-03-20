@@ -6,13 +6,15 @@
  * Component types supported by the DSL
  */
 export enum ComponentType {
-  SCHEMA = 'SCHEMA',
-  COMMAND = 'COMMAND',
-  QUERY = 'QUERY',
-  EVENT = 'EVENT',
-  WORKFLOW = 'WORKFLOW',
-  POLICY = 'POLICY',
-  SYSTEM = 'SYSTEM'
+  SCHEMA = 'schema',
+  COMMAND = 'command',
+  QUERY = 'query',
+  EVENT = 'event',
+  WORKFLOW = 'workflow',
+  ACTOR = 'actor',
+  PROCESS = 'process',
+  SAGA = 'saga',
+  SYSTEM = 'system'
 }
 
 /**
@@ -23,7 +25,6 @@ export interface ComponentDefinition {
   type: ComponentType;
   description: string;
   version: string;
-  tags?: string[];
 }
 
 /**
@@ -102,16 +103,62 @@ export interface WorkflowTransition {
  */
 export interface SystemDefinition extends ComponentDefinition {
   type: ComponentType.SYSTEM;
-  components: {
-    schemas?: Array<{ ref: string }>;
-    commands?: Array<{ ref: string }>;
-    queries?: Array<{ ref: string }>;
-    events?: Array<{ ref: string }>;
-    workflows?: Array<{ ref: string }>;
+  components: SystemComponents;
+  processes?: Array<ProcessDefinition>;
+  tenancy?: {
+    mode: 'single' | 'multi';
+    tenantIdentifier?: string;
+    tenantResolution?: string;
+    tenantHeader?: string;
+    databaseStrategy?: string;
   };
-  workflows?: Array<WorkflowDefinition>;
-  plugins?: Record<string, any>;
-  extensions?: Array<{ ref: string; config?: any }>;
+  security?: {
+    authentication?: {
+      providers: string[];
+      jwtConfig?: Record<string, any>;
+      oauth2Config?: Record<string, any>;
+    };
+    authorization?: {
+      type: string;
+      defaultRole?: string;
+      superAdminRole?: string;
+    };
+    cors?: {
+      enabled: boolean;
+      origins?: string[];
+      methods?: string[];
+    };
+  };
+  observability?: {
+    metrics?: {
+      enabled: boolean;
+      providers?: string[];
+      endpoint?: string;
+    };
+    logging?: {
+      level: string;
+      format: string;
+      destination: string;
+    };
+    tracing?: {
+      enabled: boolean;
+      sampler?: string;
+      samplingRate?: number;
+    };
+  };
+  deployment?: {
+    environment?: string;
+    region?: string;
+    scaling?: {
+      minInstances: number;
+      maxInstances: number;
+      targetCpuUtilization?: number;
+    };
+    resources?: {
+      memory: string;
+      cpu: string;
+    };
+  };
 }
 
 /**
@@ -150,4 +197,124 @@ export type ComponentRegistry = Map<string, ComponentDefinition>;
 /**
  * Type for the registry of implementations in the DSL
  */
-export type ImplementationRegistry = Map<string, ComponentImplementation>; 
+export type ImplementationRegistry = Map<string, ComponentImplementation>;
+
+/**
+ * Schema definition
+ */
+export interface SchemaDefinition {
+  type: string;
+  description?: string;
+  properties?: Record<string, any>;
+  required?: string[];
+  items?: SchemaDefinition;
+  nullable?: boolean;
+}
+
+// Actor-specific interfaces
+export interface MessageHandlerDefinition {
+  description?: string;
+  input: SchemaDefinition;
+  output: SchemaDefinition;
+  isReadOnly?: boolean;
+}
+
+export interface ActorConfigDefinition {
+  backpressure?: {
+    strategy: 'drop' | 'buffer' | 'throttle';
+    maxMailboxSize: number;
+  };
+  supervision?: {
+    maxRetries: number;
+    backoffStrategy: 'linear' | 'exponential';
+    resetTimeout: number;
+    circuitBreaker?: {
+      enabled: boolean;
+      failureThreshold: number;
+      resetTimeout: number;
+    };
+  };
+  stateManagement?: {
+    persistence: boolean;
+    snapshotInterval?: number;
+  };
+}
+
+export interface InterfaceTest {
+  name: string;
+  messageHandler: string;
+  input: any;
+  expectedSchema?: SchemaDefinition;
+  expectedResult?: any;
+  expectError?: boolean;
+}
+
+export interface ImplementationTest {
+  name: string;
+  setup?: string;
+  messageHandler: string;
+  input: any;
+  expectError?: boolean;
+  assertions: string;
+}
+
+export interface ActorTestSuite {
+  interface?: InterfaceTest[];
+  implementation?: ImplementationTest[];
+}
+
+export interface ActorDefinition extends ComponentDefinition {
+  type: ComponentType.ACTOR;
+  messageHandlers: Record<string, MessageHandlerDefinition>;
+  tests?: ActorTestSuite;
+  config?: ActorConfigDefinition;
+}
+
+// System definition interfaces
+export interface SystemComponentReference {
+  ref: string;
+}
+
+export interface SystemComponents {
+  schemas?: SystemComponentReference[];
+  commands?: SystemComponentReference[];
+  queries?: SystemComponentReference[];
+  events?: SystemComponentReference[];
+  workflows?: SystemComponentReference[];
+  actors?: SystemComponentReference[];
+  processes?: SystemComponentReference[];
+  sagas?: SystemComponentReference[];
+}
+
+export interface ProcessActionBase {
+  type: string;
+}
+
+export interface ActorMessageAction extends ProcessActionBase {
+  type: 'actorMessage';
+  actor: string;
+  message: string;
+  input?: {
+    mapping: Record<string, string>;
+  };
+  output?: string;
+}
+
+export interface ProcessTransition {
+  to: string;
+  condition?: string;
+  on?: string;
+}
+
+export interface ProcessState {
+  description: string;
+  actions?: Array<ActorMessageAction | ProcessActionBase>;
+  transitions?: Array<ProcessTransition>;
+  final?: boolean;
+}
+
+export interface ProcessDefinition extends ComponentDefinition {
+  type: ComponentType.PROCESS;
+  states: Record<string, ProcessState>;
+  transitions: Record<string, any>;
+} 
