@@ -1,45 +1,4 @@
-<think>I need to write comprehensive documentation about the DSL (Domain-Specific Language) and how it works with the core. The request asks for:
-
-1. An explanation of how the DSL works
-2. How it integrates with the core
-3. Information about each component and its purpose
-4. Details about reactive system patterns and philosophy
-5. Why this approach is better
-
-Based on the code and tests I've seen, this is a DSL for building reactive systems with an actor-based approach. Let me outline the key components and concepts first:
-
-### Key Components of the DSL:
-
-1. **Component Model**
-   - Base definitions in `components.ts`
-   - Component types: Schema, Command, Query, Event, Workflow, Actor, Process, etc.
-   - Actor-specific models with message handlers, tests, and configuration
-
-2. **Core DSL**
-   - Main DSL class that provides the API for defining components
-   - Methods for registering, implementing, and testing actors
-   - System definitions for composing actor-based systems
-
-3. **Runtime Adapter**
-   - Bridges the DSL to the core runtime
-   - Actor system creation and management
-   - Message handling and actor lifecycle management
-   - Monitoring and metrics
-
-4. **Testing Framework**
-   - Self-testing capabilities for actors
-   - Interface tests and implementation tests
-   - Test runner for validating actor implementations
-
-### Actor Model and Reactive Systems:
-
-The code implements an actor-based approach to reactive systems, which follows principles like:
-- Isolation of components
-- Message-based communication
-- Supervision and fault tolerance
-- State encapsulation
-
-Now I'll draft a comprehensive documentation that covers all these aspects.</think># Actor-Based DSL for Reactive Systems
+# Actor-Based DSL for Reactive Systems
 
 ## Introduction
 
