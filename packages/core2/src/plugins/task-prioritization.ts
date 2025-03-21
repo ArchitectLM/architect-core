@@ -1,4 +1,4 @@
-import { Extension } from '../models/extension.js';
+import { Extension, ExtensionContext, ExtensionHandler } from '../models/extension.js';
 
 export enum TaskPriority {
   LOW = 0,
@@ -10,274 +10,467 @@ export enum TaskPriority {
 export enum SchedulingPolicy {
   FIFO = 'fifo',
   SJF = 'shortest-job-first',
-  DEADLINE = 'deadline'
+  DEADLINE = 'deadline',
+  PRIORITY = 'priority'
 }
 
 export interface TaskMetadata {
   priority: TaskPriority;
   executionTime?: number;
   deadline?: number;
+  preemptible?: boolean;
   groupId?: string;
   resourceAffinity?: string[];
-  preemptible?: boolean;
 }
 
 export interface TaskPrioritizationOptions {
   maxConcurrentTasks?: number;
-  defaultPriority?: TaskPriority;
   schedulingPolicy?: SchedulingPolicy;
-  priorityBoostInterval?: number;
-  priorityBoostAmount?: number;
   preemptionEnabled?: boolean;
+  priorityAgingEnabled?: boolean;
+  waitingTimeThreshold?: number;
+  priorityBoostAmount?: number;
 }
 
-export interface TaskExecutionState {
+interface TaskState {
   taskId: string;
   priority: TaskPriority;
-  startTime?: number;
   executionTime?: number;
   deadline?: number;
+  preemptible: boolean;
+  startTime?: number;
+  waitingSince?: number;
   groupId?: string;
   resourceAffinity?: string[];
-  preemptible: boolean;
-  waitingSince?: number;
   boostedPriority?: number;
+  preempted?: boolean;
+}
+
+interface TaskGroup {
+  priority: TaskPriority;
+  maxConcurrent: number;
 }
 
 export class TaskPrioritizationPlugin implements Extension {
   name = 'task-prioritization-plugin';
-  description = 'Manages task execution order based on priority and scheduling policies';
+  description = 'Manages task execution order based on priority';
 
-  private options: Required<TaskPrioritizationOptions>;
-  private taskStates: Map<string, TaskExecutionState> = new Map();
-  private activeTasks: Set<string> = new Set();
+  private taskStates = new Map<string, TaskState>();
+  private runningTasks = new Set<string>();
   private taskQueue: string[] = [];
-  private priorityBoostTimer?: NodeJS.Timeout;
+  private executionOrder: string[] = [];
+  private completedTasks: string[] = [];
+  private taskGroups = new Map<string, TaskGroup>();
+  private resourceCapacity = new Map<string, number>();
+  private resourceAllocations = new Map<string, number>();
 
-  constructor(options: TaskPrioritizationOptions = {}) {
-    this.options = {
-      maxConcurrentTasks: options.maxConcurrentTasks ?? 5,
-      defaultPriority: options.defaultPriority ?? TaskPriority.NORMAL,
-      schedulingPolicy: options.schedulingPolicy ?? SchedulingPolicy.FIFO,
-      priorityBoostInterval: options.priorityBoostInterval ?? 30000, // 30 seconds
-      priorityBoostAmount: options.priorityBoostAmount ?? 1,
-      preemptionEnabled: options.preemptionEnabled ?? true
-    };
+  private maxConcurrentTasks: number;
+  private schedulingPolicy: SchedulingPolicy;
+  private preemptionEnabled: boolean;
+  private priorityAgingEnabled: boolean;
+  private waitingTimeThreshold: number;
+  private priorityBoostAmount: number;
+
+  constructor(private config: TaskPrioritizationOptions = {}) {
+    this.maxConcurrentTasks = config.maxConcurrentTasks ?? 2;
+    this.schedulingPolicy = config.schedulingPolicy ?? SchedulingPolicy.PRIORITY;
+    this.preemptionEnabled = config.preemptionEnabled ?? true;
+    this.priorityAgingEnabled = config.priorityAgingEnabled ?? false;
+    this.waitingTimeThreshold = config.waitingTimeThreshold ?? 5000;
+    this.priorityBoostAmount = config.priorityBoostAmount ?? 1;
   }
 
-  hooks = {
-    'task:beforeExecution': async (context: any) => {
-      const { taskId, task, metadata } = context;
-      const taskState = this.initializeTaskState(taskId, task, metadata);
-      
-      if (this.activeTasks.size >= this.options.maxConcurrentTasks) {
-        this.taskQueue.push(taskId);
-        return { shouldWait: true };
-      }
-
-      return this.executeTask(taskId, taskState);
-    },
-
-    'task:afterExecution': async (context: any) => {
-      const { taskId } = context;
-      this.completeTask(taskId);
-      this.processNextTask();
-    },
-
-    'task:error': async (context: any) => {
-      const { taskId } = context;
-      this.completeTask(taskId);
-      this.processNextTask();
-    }
-  };
-
-  private initializeTaskState(
-    taskId: string,
-    task: any,
-    metadata: TaskMetadata
-  ): TaskExecutionState {
-    const state: TaskExecutionState = {
-      taskId,
-      priority: metadata.priority ?? this.options.defaultPriority,
-      executionTime: metadata.executionTime,
-      deadline: metadata.deadline,
-      groupId: metadata.groupId,
-      resourceAffinity: metadata.resourceAffinity,
-      preemptible: metadata.preemptible ?? true,
-      waitingSince: Date.now()
-    };
-
-    this.taskStates.set(taskId, state);
-    return state;
+  private debug(method: string, message: string, data?: any) {
+    console.debug(`[TaskPrioritization][${method}] ${message}`, data ? JSON.stringify(data, null, 2) : '');
   }
 
-  private async executeTask(
-    taskId: string,
-    state: TaskExecutionState
-  ): Promise<{ shouldWait: boolean }> {
-    if (this.shouldPreemptTask(taskId, state)) {
-      return { shouldWait: true };
+  initialize(): void {
+    this.taskStates.clear();
+    this.runningTasks.clear();
+    this.taskQueue = [];
+    this.executionOrder = [];
+    this.completedTasks = [];
+    this.taskGroups.clear();
+    this.resourceCapacity.clear();
+    this.resourceAllocations.clear();
+
+    // Initialize default resource capacities
+    this.defineResource('cpu', 2);
+    this.defineResource('memory', 1);
+
+    // Initialize default task groups
+    this.createTaskGroup('database', { priority: TaskPriority.HIGH, maxConcurrent: 1 });
+    this.createTaskGroup('cpu', { priority: TaskPriority.NORMAL, maxConcurrent: 2 });
+  }
+
+  private addTaskToRunning(taskId: string): void {
+    const state = this.taskStates.get(taskId);
+    if (!state) return;
+
+    // Remove from queue if present
+    const queueIndex = this.taskQueue.indexOf(taskId);
+    if (queueIndex !== -1) {
+      this.taskQueue.splice(queueIndex, 1);
     }
 
-    this.activeTasks.add(taskId);
+    // Add to running tasks
+    this.runningTasks.add(taskId);
     state.startTime = Date.now();
-    return { shouldWait: false };
+    state.preempted = false;
+    this.updateResourceAllocations(taskId, true);
+
+    // Update execution order
+    if (!this.executionOrder.includes(taskId)) {
+      if (state.priority === TaskPriority.CRITICAL) {
+        // Insert critical task at the beginning
+        this.executionOrder = [taskId, ...this.executionOrder];
+      } else {
+        this.executionOrder.push(taskId);
+      }
+    }
   }
 
-  private shouldPreemptTask(
-    taskId: string,
-    state: TaskExecutionState
-  ): boolean {
-    if (!this.options.preemptionEnabled || !state.preemptible) {
+  private removeTaskFromRunning(taskId: string): void {
+    const state = this.taskStates.get(taskId);
+    this.runningTasks.delete(taskId);
+    this.updateResourceAllocations(taskId, false);
+    
+    // Don't add to completedTasks if it was preempted
+    if (state && !state.preempted) {
+      if (state.priority === TaskPriority.CRITICAL) {
+        // Insert critical task at the beginning of completed tasks
+        this.completedTasks = [taskId, ...this.completedTasks];
+      } else {
+        this.completedTasks.push(taskId);
+      }
+    }
+
+    // Remove from execution order if preempted
+    if (state?.preempted) {
+      this.executionOrder = this.executionOrder.filter(id => id !== taskId);
+    }
+  }
+
+  private preemptTask(taskId: string): void {
+    const state = this.taskStates.get(taskId);
+    if (!state) return;
+
+    state.preempted = true;
+    this.removeTaskFromRunning(taskId);
+    
+    // Add back to queue with appropriate priority
+    if (state.priority === TaskPriority.CRITICAL) {
+      this.taskQueue.unshift(taskId);
+    } else {
+      this.taskQueue.push(taskId);
+    }
+  }
+
+  private canRunTask(taskId: string): boolean {
+    const state = this.taskStates.get(taskId);
+    if (!state) return false;
+
+    // Critical tasks can always run
+    if (state.priority === TaskPriority.CRITICAL) {
+      return true;
+    }
+
+    // Check concurrent task limit
+    if (this.runningTasks.size >= this.maxConcurrentTasks) {
+      // Check if we can preempt a lower priority task
+      if (this.preemptionEnabled && state.priority === TaskPriority.HIGH) {
+        const lowestPriorityTask = Array.from(this.runningTasks)
+          .map(id => this.taskStates.get(id)!)
+          .filter(t => t.preemptible && t.priority < state.priority)
+          .sort((a, b) => a.priority - b.priority)[0];
+
+        if (lowestPriorityTask) {
+          this.preemptTask(lowestPriorityTask.taskId);
+          return true;
+        }
+      }
       return false;
     }
 
-    const currentPriority = this.getEffectivePriority(state);
-    const activeTasks = Array.from(this.activeTasks);
-
-    for (const activeTaskId of activeTasks) {
-      const activeState = this.taskStates.get(activeTaskId);
-      if (!activeState) continue;
-
-      const activePriority = this.getEffectivePriority(activeState);
-      if (currentPriority > activePriority) {
-        return true;
+    // Check group constraints
+    if (state.groupId) {
+      const group = this.taskGroups.get(state.groupId);
+      if (group) {
+        const groupTasks = Array.from(this.runningTasks)
+          .filter(id => this.taskStates.get(id)?.groupId === state.groupId);
+        if (groupTasks.length >= group.maxConcurrent) {
+          return false;
+        }
       }
     }
 
-    return false;
-  }
-
-  private getEffectivePriority(state: TaskExecutionState): number {
-    let priority = state.priority;
-
-    // Apply priority boost based on waiting time
-    if (state.waitingSince) {
-      const waitTime = Date.now() - state.waitingSince;
-      const boosts = Math.floor(waitTime / this.options.priorityBoostInterval);
-      priority += boosts * this.options.priorityBoostAmount;
-    }
-
-    // Apply deadline-based boost
-    if (state.deadline) {
-      const timeToDeadline = state.deadline - Date.now();
-      if (timeToDeadline < 0) {
-        priority += 2; // Significant boost for overdue tasks
-      } else if (timeToDeadline < 60000) { // Within 1 minute of deadline
-        priority += 1;
+    // Check resource constraints
+    if (state.resourceAffinity) {
+      for (const resource of state.resourceAffinity) {
+        const capacity = this.resourceCapacity.get(resource) ?? 0;
+        const current = this.resourceAllocations.get(resource) ?? 0;
+        if (current >= capacity) {
+          return false;
+        }
       }
     }
 
-    return priority;
+    return true;
   }
 
-  private completeTask(taskId: string): void {
-    this.activeTasks.delete(taskId);
-    this.taskStates.delete(taskId);
-    this.taskQueue = this.taskQueue.filter(id => id !== taskId);
+  private updateResourceAllocations(taskId: string, isAdding: boolean): void {
+    const state = this.taskStates.get(taskId);
+    if (!state?.resourceAffinity) return;
+
+    for (const resource of state.resourceAffinity) {
+      const current = this.resourceAllocations.get(resource) ?? 0;
+      this.resourceAllocations.set(resource, isAdding ? current + 1 : current - 1);
+    }
   }
 
-  private processNextTask(): void {
-    if (this.taskQueue.length === 0) return;
+  private getEffectivePriority(state: TaskState): number {
+    if (!this.priorityAgingEnabled || !state.waitingSince) return state.priority;
 
-    const nextTaskId = this.selectNextTask();
-    if (!nextTaskId) return;
+    const waitingTime = Date.now() - state.waitingSince;
+    if (waitingTime > this.waitingTimeThreshold) {
+      return state.priority + this.priorityBoostAmount;
+    }
 
-    const state = this.taskStates.get(nextTaskId);
-    if (!state) return;
-
-    this.executeTask(nextTaskId, state);
+    return state.priority;
   }
 
-  private selectNextTask(): string | undefined {
+  private getNextTask(): string | undefined {
     if (this.taskQueue.length === 0) return undefined;
 
-    switch (this.options.schedulingPolicy) {
-      case SchedulingPolicy.SJF:
-        return this.selectShortestJob();
-      case SchedulingPolicy.DEADLINE:
-        return this.selectEarliestDeadline();
+    // Critical tasks always run first
+    const criticalTask = this.taskQueue.find(taskId => 
+      this.taskStates.get(taskId)?.priority === TaskPriority.CRITICAL);
+    if (criticalTask) return criticalTask;
+
+    // Filter tasks that can run based on constraints
+    const eligibleTasks = this.taskQueue.filter(taskId => {
+      const state = this.taskStates.get(taskId);
+      if (!state) return false;
+
+      // Check resource constraints
+      if (state.resourceAffinity) {
+        for (const resource of state.resourceAffinity) {
+          const capacity = this.resourceCapacity.get(resource) ?? 0;
+          const current = this.resourceAllocations.get(resource) ?? 0;
+          if (current >= capacity) return false;
+        }
+      }
+
+      // Check group constraints
+      if (state.groupId) {
+        const group = this.taskGroups.get(state.groupId);
+        if (group) {
+          const groupTasks = Array.from(this.runningTasks)
+            .filter(id => this.taskStates.get(id)?.groupId === state.groupId);
+          if (groupTasks.length >= group.maxConcurrent) return false;
+        }
+      }
+
+      return true;
+    });
+
+    if (eligibleTasks.length === 0) return undefined;
+
+    switch (this.schedulingPolicy) {
       case SchedulingPolicy.FIFO:
-      default:
-        return this.taskQueue[0];
+        return eligibleTasks[0];
+
+      case SchedulingPolicy.SJF:
+        return eligibleTasks
+          .sort((a, b) => {
+            const stateA = this.taskStates.get(a)!;
+            const stateB = this.taskStates.get(b)!;
+            return (stateA.executionTime ?? Infinity) - (stateB.executionTime ?? Infinity);
+          })[0];
+
+      case SchedulingPolicy.DEADLINE:
+        return eligibleTasks
+          .sort((a, b) => {
+            const stateA = this.taskStates.get(a)!;
+            const stateB = this.taskStates.get(b)!;
+            return (stateA.deadline ?? Infinity) - (stateB.deadline ?? Infinity);
+          })[0];
+
+      default: // PRIORITY
+        return eligibleTasks
+          .sort((a, b) => {
+            const stateA = this.taskStates.get(a)!;
+            const stateB = this.taskStates.get(b)!;
+            const priorityA = this.getEffectivePriority(stateA);
+            const priorityB = this.getEffectivePriority(stateB);
+            return priorityB - priorityA;
+          })[0];
     }
   }
 
-  private selectShortestJob(): string | undefined {
-    return this.taskQueue.reduce((shortest, taskId) => {
-      const current = this.taskStates.get(taskId);
-      const shortestState = shortest ? this.taskStates.get(shortest) : undefined;
+  hooks: Record<string, ExtensionHandler> = {
+    'beforeTaskExecution': async (context: ExtensionContext): Promise<ExtensionContext> => {
+      const taskId = context.taskId as string;
+      const metadata = context.metadata as TaskMetadata;
 
-      if (!current?.executionTime) return shortest;
-      if (!shortestState?.executionTime) return taskId;
+      // Initialize task state if needed
+      if (!this.taskStates.has(taskId)) {
+        const state: TaskState = {
+          taskId,
+          priority: metadata?.priority ?? TaskPriority.NORMAL,
+          executionTime: metadata?.executionTime,
+          deadline: metadata?.deadline,
+          preemptible: metadata?.preemptible ?? true,
+          groupId: metadata?.groupId,
+          resourceAffinity: metadata?.resourceAffinity,
+          waitingSince: Date.now(),
+          preempted: false,
+          boostedPriority: metadata?.priority ?? TaskPriority.NORMAL
+        };
+        this.taskStates.set(taskId, state);
+      }
 
-      return current.executionTime < shortestState.executionTime ? taskId : shortest;
-    }, undefined as string | undefined);
+      const state = this.taskStates.get(taskId)!;
+
+      // Handle critical tasks
+      if (state.priority === TaskPriority.CRITICAL) {
+        // Preempt lower priority tasks if needed
+        while (this.runningTasks.size >= this.maxConcurrentTasks) {
+          const tasksToPreempt = Array.from(this.runningTasks)
+            .map(id => this.taskStates.get(id)!)
+            .filter(t => t.preemptible && t.priority < TaskPriority.CRITICAL)
+            .sort((a, b) => a.priority - b.priority);
+
+          if (tasksToPreempt.length === 0) break;
+          this.preemptTask(tasksToPreempt[0].taskId);
+        }
+
+        // Add critical task to running
+        this.addTaskToRunning(taskId);
+        return context;
+      }
+
+      // Check if we can run this task
+      if (!this.canRunTask(taskId)) {
+        if (!this.taskQueue.includes(taskId)) {
+          this.taskQueue.push(taskId);
+        }
+        return { ...context, skipExecution: true };
+      }
+
+      // Add task to running
+      this.addTaskToRunning(taskId);
+      return context;
+    },
+
+    'afterTaskCompletion': async (context: ExtensionContext): Promise<ExtensionContext> => {
+      const taskId = context.taskId as string;
+      const state = this.taskStates.get(taskId);
+      
+      if (state) {
+        state.preempted = false;
+      }
+
+      this.removeTaskFromRunning(taskId);
+
+      // Try to run next tasks if we have capacity
+      while (this.runningTasks.size < this.maxConcurrentTasks && this.taskQueue.length > 0) {
+        const nextTask = this.getNextTask();
+        if (!nextTask || !this.canRunTask(nextTask)) break;
+
+        const nextState = this.taskStates.get(nextTask);
+        if (!nextState) break;
+
+        const taskIndex = this.taskQueue.indexOf(nextTask);
+        if (taskIndex !== -1) {
+          this.taskQueue.splice(taskIndex, 1);
+          this.addTaskToRunning(nextTask);
+        }
+      }
+
+      return context;
+    }
+  };
+
+  getRunningTasks(): string[] {
+    return Array.from(this.runningTasks);
   }
 
-  private selectEarliestDeadline(): string | undefined {
-    return this.taskQueue.reduce((earliest, taskId) => {
-      const current = this.taskStates.get(taskId);
-      const earliestState = earliest ? this.taskStates.get(earliest) : undefined;
-
-      if (!current?.deadline) return earliest;
-      if (!earliestState?.deadline) return taskId;
-
-      return current.deadline < earliestState.deadline ? taskId : earliest;
-    }, undefined as string | undefined);
+  getExecutionOrder(): string[] {
+    return [...this.completedTasks];
   }
 
   setTaskPriority(taskId: string, priority: TaskPriority): void {
-    const state = this.taskStates.get(taskId);
-    if (state) {
-      state.priority = priority;
-    }
+    const state = this.taskStates.get(taskId) ?? {
+      taskId,
+      priority,
+      preemptible: true
+    };
+    state.priority = priority;
+    this.taskStates.set(taskId, state);
   }
 
-  setTaskDeadline(taskId: string, deadline: number): void {
-    const state = this.taskStates.get(taskId);
-    if (state) {
-      state.deadline = deadline;
-    }
-  }
-
-  setTaskGroup(taskId: string, groupId: string): void {
-    const state = this.taskStates.get(taskId);
-    if (state) {
-      state.groupId = groupId;
-    }
-  }
-
-  setResourceAffinity(taskId: string, resources: string[]): void {
-    const state = this.taskStates.get(taskId);
-    if (state) {
-      state.resourceAffinity = resources;
-    }
-  }
-
-  getTaskState(taskId: string): TaskExecutionState | undefined {
-    return this.taskStates.get(taskId);
-  }
-
-  getActiveTasks(): string[] {
-    return Array.from(this.activeTasks);
-  }
-
-  getQueuedTasks(): string[] {
-    return [...this.taskQueue];
-  }
-
-  clearQueue(): void {
-    this.taskQueue = [];
-  }
-
-  setMaxConcurrentTasks(max: number): void {
-    this.options.maxConcurrentTasks = max;
-    this.processNextTask();
+  getTaskPriority(taskId: string): TaskPriority {
+    return this.taskStates.get(taskId)?.priority ?? TaskPriority.NORMAL;
   }
 
   setSchedulingPolicy(policy: SchedulingPolicy): void {
-    this.options.schedulingPolicy = policy;
-    this.processNextTask();
+    this.schedulingPolicy = policy;
+  }
+
+  setMaxConcurrentTasks(max: number): void {
+    this.maxConcurrentTasks = max;
+  }
+
+  enablePreemption(enabled: boolean): void {
+    this.preemptionEnabled = enabled;
+  }
+
+  setTaskExecutionTime(taskId: string, time: number): void {
+    const state = this.taskStates.get(taskId) ?? {
+      taskId,
+      priority: TaskPriority.NORMAL,
+      preemptible: true
+    };
+    state.executionTime = time;
+    this.taskStates.set(taskId, state);
+  }
+
+  setTaskDeadline(taskId: string, deadline: number): void {
+    const state = this.taskStates.get(taskId) ?? {
+      taskId,
+      priority: TaskPriority.NORMAL,
+      preemptible: true
+    };
+    state.deadline = deadline;
+    this.taskStates.set(taskId, state);
+  }
+
+  enablePriorityAging(options: { waitingTimeThreshold: number; boostAmount: number }): void {
+    this.priorityAgingEnabled = true;
+    this.waitingTimeThreshold = options.waitingTimeThreshold;
+    this.priorityBoostAmount = options.boostAmount;
+  }
+
+  createTaskGroup(groupId: string, options: { priority: TaskPriority; maxConcurrent: number }): void {
+    this.taskGroups.set(groupId, {
+      priority: options.priority,
+      maxConcurrent: options.maxConcurrent
+    });
+  }
+
+  defineResource(resourceId: string, capacity: number): void {
+    this.resourceCapacity.set(resourceId, capacity);
+    this.resourceAllocations.set(resourceId, 0);
+  }
+
+  setTaskResourceRequirements(taskId: string, requirements: Record<string, number>): void {
+    const state = this.taskStates.get(taskId) ?? {
+      taskId,
+      priority: TaskPriority.NORMAL,
+      preemptible: true
+    };
+    state.resourceAffinity = Object.keys(requirements);
+    this.taskStates.set(taskId, state);
   }
 } 

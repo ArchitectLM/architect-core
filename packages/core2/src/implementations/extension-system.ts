@@ -1,4 +1,4 @@
-import { ExtensionPoint, Extension, ExtensionContext, EventInterceptor, ExtensionSystem } from '../models/extension.js';
+import { ExtensionSystem, ExtensionPoint, Extension, ExtensionContext, ExtensionHandler, EventInterceptor } from '../models/extension.js';
 
 export class ExtensionSystemImpl implements ExtensionSystem {
   private extensionPoints: Map<string, ExtensionPoint> = new Map();
@@ -32,6 +32,7 @@ export class ExtensionSystemImpl implements ExtensionSystem {
         result = handlerResult as T;
       } catch (error) {
         console.error(`Error in extension point handler for ${pointName}:`, error);
+        throw error;
       }
     }
 
@@ -44,6 +45,7 @@ export class ExtensionSystemImpl implements ExtensionSystem {
           result = hookResult as T;
         } catch (error) {
           console.error(`Error in extension hook for ${extension.name}:`, error);
+          throw error;
         }
       }
     }
@@ -58,9 +60,29 @@ export class ExtensionSystemImpl implements ExtensionSystem {
         result = interceptor(result);
       } catch (error) {
         console.error('Error in event interceptor:', error);
+        throw error;
       }
     }
     return result;
+  }
+
+  // Additional utility methods for testing and debugging
+  getExtensionPoints(): string[] {
+    return Array.from(this.extensionPoints.keys());
+  }
+
+  getExtensions(): string[] {
+    return Array.from(this.extensions.keys());
+  }
+
+  getEventInterceptors(): EventInterceptor[] {
+    return [...this.eventInterceptors];
+  }
+
+  clear(): void {
+    this.extensionPoints.clear();
+    this.extensions.clear();
+    this.eventInterceptors = [];
   }
 }
 

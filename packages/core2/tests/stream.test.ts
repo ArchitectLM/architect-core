@@ -1,12 +1,23 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { Runtime, ReactiveRuntime, ExtensionSystemImpl, EventBusImpl, InMemoryEventStorage } from '../src/index.js';
 import { Stream, createStream } from '../src/models/stream.js';
-import { EventBus } from '../src/models/event.js';
 
 describe('Stream Processing', () => {
-  let eventBus: EventBus;
+  let runtime: Runtime;
+  let eventBus: EventBusImpl;
+  let extensionSystem: ExtensionSystemImpl;
+  let eventStorage: InMemoryEventStorage;
 
   beforeEach(() => {
-    eventBus = createEventBus();
+    extensionSystem = new ExtensionSystemImpl();
+    eventBus = new EventBusImpl();
+    eventStorage = new InMemoryEventStorage();
+    
+    runtime = new ReactiveRuntime({}, {}, {
+      extensionSystem,
+      eventBus,
+      eventStorage
+    });
   });
 
   describe('Stream Creation', () => {
@@ -14,9 +25,12 @@ describe('Stream Processing', () => {
       const stream = createStream<number>('TEST_EVENT', eventBus);
       const results: number[] = [];
 
-      stream.subscribe(value => results.push(value));
-      eventBus.publish('TEST_EVENT', 1);
-      eventBus.publish('TEST_EVENT', 2);
+      stream.subscribe(value => {
+        results.push(value);
+        return;
+      });
+      runtime.publish('TEST_EVENT', 1);
+      runtime.publish('TEST_EVENT', 2);
 
       expect(results).toEqual([1, 2]);
     });
@@ -26,9 +40,15 @@ describe('Stream Processing', () => {
       const results1: number[] = [];
       const results2: number[] = [];
 
-      stream.subscribe(value => results1.push(value));
-      stream.subscribe(value => results2.push(value));
-      eventBus.publish('TEST_EVENT', 1);
+      stream.subscribe(value => {
+        results1.push(value);
+        return;
+      });
+      stream.subscribe(value => {
+        results2.push(value);
+        return;
+      });
+      runtime.publish('TEST_EVENT', 1);
 
       expect(results1).toEqual([1]);
       expect(results2).toEqual([1]);
@@ -42,10 +62,13 @@ describe('Stream Processing', () => {
 
       stream
         .map(x => x * 2)
-        .subscribe(value => results.push(value));
+        .subscribe(value => {
+          results.push(value);
+          return;
+        });
       
-      eventBus.publish('TEST_EVENT', 1);
-      eventBus.publish('TEST_EVENT', 2);
+      runtime.publish('TEST_EVENT', 1);
+      runtime.publish('TEST_EVENT', 2);
 
       expect(results).toEqual([2, 4]);
     });
@@ -56,11 +79,14 @@ describe('Stream Processing', () => {
 
       stream
         .filter(x => x > 2)
-        .subscribe(value => results.push(value));
+        .subscribe(value => {
+          results.push(value);
+          return;
+        });
       
-      eventBus.publish('TEST_EVENT', 1);
-      eventBus.publish('TEST_EVENT', 2);
-      eventBus.publish('TEST_EVENT', 3);
+      runtime.publish('TEST_EVENT', 1);
+      runtime.publish('TEST_EVENT', 2);
+      runtime.publish('TEST_EVENT', 3);
 
       expect(results).toEqual([3]);
     });
@@ -72,11 +98,14 @@ describe('Stream Processing', () => {
       stream
         .map(x => x * 2)
         .filter(x => x > 4)
-        .subscribe(value => results.push(value));
+        .subscribe(value => {
+          results.push(value);
+          return;
+        });
       
-      eventBus.publish('TEST_EVENT', 1);
-      eventBus.publish('TEST_EVENT', 2);
-      eventBus.publish('TEST_EVENT', 3);
+      runtime.publish('TEST_EVENT', 1);
+      runtime.publish('TEST_EVENT', 2);
+      runtime.publish('TEST_EVENT', 3);
 
       expect(results).toEqual([6]);
     });
@@ -92,13 +121,16 @@ describe('Stream Processing', () => {
           return x * 2;
         })
         .subscribe({
-          next: value => results.push(value),
+          next: value => {
+            results.push(value);
+            return;
+          },
           error: errorHandler
         });
       
-      eventBus.publish('TEST_EVENT', 1);
-      eventBus.publish('TEST_EVENT', 2);
-      eventBus.publish('TEST_EVENT', 3);
+      runtime.publish('TEST_EVENT', 1);
+      runtime.publish('TEST_EVENT', 2);
+      runtime.publish('TEST_EVENT', 3);
 
       expect(results).toEqual([2]);
       expect(errorHandler).toHaveBeenCalledWith(expect.any(Error));
@@ -110,9 +142,9 @@ describe('Stream Processing', () => {
       const stream = createStream<number>('TEST_EVENT', eventBus);
       const result = await stream.reduce((acc, x) => acc + x, 0);
       
-      eventBus.publish('TEST_EVENT', 1);
-      eventBus.publish('TEST_EVENT', 2);
-      eventBus.publish('TEST_EVENT', 3);
+      runtime.publish('TEST_EVENT', 1);
+      runtime.publish('TEST_EVENT', 2);
+      runtime.publish('TEST_EVENT', 3);
 
       expect(result).toBe(6);
     });
@@ -121,6 +153,46 @@ describe('Stream Processing', () => {
       const stream = createStream<number>('TEST_EVENT', eventBus);
       const result = await stream.reduce((acc, x) => acc + x, 0);
       expect(result).toBe(0);
+    });
+  });
+
+  describe('Stream Persistence', () => {
+    it('should persist stream events', async () => {
+      const stream = createStream<number>('TEST_EVENT', eventBus);
+      const results: number[] = [];
+
+      stream.subscribe(value => {
+        results.push(value);
+        return;
+      });
+      runtime.publish('TEST_EVENT', 1);
+      runtime.publish('TEST_EVENT', 2);
+
+      // Check persisted events
+      const events = await eventStorage.getEvents({ types: ['TEST_EVENT'] });
+      expect(events.length).toBe(2);
+      expect(events.map(e => e.payload)).toEqual([1, 2]);
+      expect(results).toEqual([1, 2]);
+    });
+
+    it('should replay stream events', async () => {
+      const stream = createStream<number>('TEST_EVENT', eventBus);
+      const results: number[] = [];
+
+      // Publish some events
+      runtime.publish('TEST_EVENT', 1);
+      runtime.publish('TEST_EVENT', 2);
+
+      // Subscribe after events are published
+      stream.subscribe(value => {
+        results.push(value);
+        return;
+      });
+
+      // Replay events
+      await runtime.replayEvents(0, Date.now(), ['TEST_EVENT']);
+
+      expect(results).toEqual([1, 2]);
     });
   });
 }); 

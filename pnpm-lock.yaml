@@ -95,11 +95,82 @@ importers:
         specifier: ^3.0.8
         version: 3.0.8(@types/node@20.17.24)(tsx@4.19.3)(yaml@2.7.0)
 
+  packages/core2:
+    dependencies:
+      uuid:
+        specifier: ^9.0.0
+        version: 9.0.1
+    devDependencies:
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.17.24
+      '@types/uuid':
+        specifier: ^9.0.0
+        version: 9.0.8
+      '@typescript-eslint/eslint-plugin':
+        specifier: ^6.0.0
+        version: 6.21.0(@typescript-eslint/parser@6.21.0(eslint@8.57.1)(typescript@5.8.2))(eslint@8.57.1)(typescript@5.8.2)
+      '@typescript-eslint/parser':
+        specifier: ^6.0.0
+        version: 6.21.0(eslint@8.57.1)(typescript@5.8.2)
+      eslint:
+        specifier: ^8.0.0
+        version: 8.57.1
+      rimraf:
+        specifier: ^5.0.0
+        version: 5.0.10
+      typescript:
+        specifier: ^5.0.0
+        version: 5.8.2
+      vitest:
+        specifier: ^1.0.0
+        version: 1.6.1(@types/node@20.17.24)(@vitest/ui@1.6.1)
+
   packages/dsl:
     dependencies:
       '@architectlm/core':
         specifier: workspace:*
-        version: link:../core
+        version: link:../core2
+      '@architectlm/extensions':
+        specifier: workspace:*
+        version: link:../extensions
+      uuid:
+        specifier: ^9.0.1
+        version: 9.0.1
+      zod:
+        specifier: ^3.22.4
+        version: 3.24.2
+    devDependencies:
+      '@types/express':
+        specifier: ^4.17.21
+        version: 4.17.21
+      '@types/node':
+        specifier: ^20.17.24
+        version: 20.17.24
+      '@types/supertest':
+        specifier: ^6.0.2
+        version: 6.0.2
+      '@types/uuid':
+        specifier: ^9.0.8
+        version: 9.0.8
+      express:
+        specifier: ^4.18.3
+        version: 4.21.2
+      supertest:
+        specifier: ^6.3.4
+        version: 6.3.4
+      typescript:
+        specifier: ^5.8.2
+        version: 5.8.2
+      vitest:
+        specifier: ^3.0.8
+        version: 3.0.8(@types/node@20.17.24)(tsx@4.19.3)(yaml@2.7.0)
+
+  packages/dsl2:
+    dependencies:
+      '@architectlm/core':
+        specifier: workspace:*
+        version: link:../core2
       '@architectlm/extensions':
         specifier: workspace:*
         version: link:../extensions
@@ -139,7 +210,7 @@ importers:
     dependencies:
       '@architectlm/core':
         specifier: workspace:*
-        version: link:../core
+        version: link:../core2
     devDependencies:
       '@types/node':
         specifier: ^20.0.0
@@ -155,10 +226,10 @@ importers:
     dependencies:
       '@architectlm/core':
         specifier: workspace:*
-        version: link:../core
+        version: link:../core2
       '@architectlm/dsl':
         specifier: workspace:*
-        version: link:../dsl
+        version: link:../dsl2
       '@architectlm/extensions':
         specifier: workspace:*
         version: link:../extensions
@@ -3632,6 +3703,10 @@ packages:
   rimraf@3.0.2:
     resolution: {integrity: sha512-JZkJMZkAGFFPP2YqXZXPbMlMBgsxzE8ILs4lMIX/2o0L9UBw9O/Y3o6wFw/i9YLapcUJWwqbi3kdxIPdC62TIA==}
     deprecated: Rimraf versions prior to v4 are no longer supported
+    hasBin: true
+
+  rimraf@5.0.10:
+    resolution: {integrity: sha512-l0OE8wL34P4nJH/H2ffoaniAokM2qSmrtXHmlpvYr5AVVX8msAyW0l8NVJFDxlSK4u3Uh/f41cQheDVdnYijwQ==}
     hasBin: true
 
   rollup@4.35.0:
@@ -8101,6 +8176,10 @@ snapshots:
   rimraf@3.0.2:
     dependencies:
       glob: 7.2.3
+
+  rimraf@5.0.10:
+    dependencies:
+      glob: 10.4.5
 
   rollup@4.35.0:
     dependencies:

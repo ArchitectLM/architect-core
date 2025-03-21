@@ -1,12 +1,13 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EventBus } from '../src/models/event.js';
-import { BackpressureStrategy, ThresholdBackpressure, createEventBus } from '../src/models/backpressure.js';
+import { BackpressureStrategy, ThresholdBackpressure } from '../src/models/backpressure.js';
+import { createEventBusInstance } from '../src/factories.js';
 
 describe('Backpressure Mechanisms', () => {
   let eventBus: EventBus;
 
   beforeEach(() => {
-    eventBus = createEventBus();
+    eventBus = createEventBusInstance();
   });
 
   describe('Threshold Backpressure', () => {

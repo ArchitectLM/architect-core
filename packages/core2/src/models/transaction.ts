@@ -1,26 +1,29 @@
 import { EventBus } from './event.js';
 import { v4 as uuidv4 } from 'uuid';
 
-export type TransactionStatus = 'active' | 'committed' | 'rolled_back';
-
 export interface Transaction {
   id: string;
-  status: TransactionStatus;
-  startTime: number;
-  endTime?: number;
+  status: 'active' | 'committed' | 'rolled_back';
+  startedAt: number;
+  completedAt?: number;
 }
 
 export interface TransactionContext {
   transactionId: string;
   data: Map<string, any>;
+  metadata: {
+    startedAt: number;
+    lastAccessedAt: number;
+  };
 }
 
 export interface TransactionManager {
   beginTransaction(): Transaction;
   commitTransaction(transactionId: string): void;
   rollbackTransaction(transactionId: string): void;
-  getActiveTransactions(): Transaction[];
   getTransactionContext(transactionId: string): TransactionContext;
+  getActiveTransactions(): Transaction[];
+  getTransaction(transactionId: string): Transaction | undefined;
 }
 
 export class TransactionManagerImpl implements TransactionManager {
@@ -33,13 +36,17 @@ export class TransactionManagerImpl implements TransactionManager {
     const transaction: Transaction = {
       id: uuidv4(),
       status: 'active',
-      startTime: Date.now()
+      startedAt: Date.now()
     };
 
     this.transactions.set(transaction.id, transaction);
     this.contexts.set(transaction.id, {
       transactionId: transaction.id,
-      data: new Map()
+      data: new Map(),
+      metadata: {
+        startedAt: transaction.startedAt,
+        lastAccessedAt: Date.now()
+      }
     });
 
     this.eventBus.publish('transaction.started', {

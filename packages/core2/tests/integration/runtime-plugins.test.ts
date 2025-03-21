@@ -21,6 +21,13 @@ import {
   createContentBasedRouter,
   RouteDefinition
 } from '../../src/plugins/content-based-routing.js';
+import { RuntimeImpl } from '../../src/implementations/runtime.new.js';
+import { ProcessDefinition, TaskDefinition } from '../../src/models/index.js';
+import { EventStorage } from '../../src/models/event.js';
+import { TaskDependenciesPlugin, createTaskDependenciesPlugin } from '../../src/plugins/task-dependencies.js';
+import { RetryPlugin, createRetryPlugin, RetryPluginOptions, BackoffStrategy } from '../../src/plugins/retry.js';
+import { ProcessRecoveryPlugin, createProcessRecoveryPlugin } from '../../src/plugins/process-recovery.js';
+import { EventPersistencePlugin, createEventPersistencePlugin } from '../../src/plugins/event-persistence.js';
 
 // Test aggregate implementation
 class TestAggregate implements AggregateRoot {
@@ -81,6 +88,52 @@ describe('Runtime Plugin Integration', () => {
   let outboxPattern: OutboxPattern;
   let contentBasedRouter: ContentBasedRouter;
   let extensionSystem: ExtensionSystem;
+  let eventStorage: EventStorage;
+
+  const processDefinitions: Record<string, ProcessDefinition> = {
+    'test-process': {
+      id: 'test-process',
+      name: 'Test Process',
+      description: 'A test process for integration tests',
+      version: '1.0.0',
+      initialState: 'created',
+      transitions: [
+        { from: 'created', to: 'running', on: 'start' },
+        { from: 'running', to: 'completed', on: 'complete' }
+      ]
+    }
+  };
+
+  const taskDefinitions: Record<string, TaskDefinition> = {
+    'test-task': {
+      id: 'test-task',
+      name: 'Test Task',
+      description: 'A test task for integration tests',
+      handler: async (context) => {
+        return { result: 'success' };
+      }
+    },
+    'dependent-task': {
+      id: 'dependent-task',
+      name: 'Dependent Task',
+      description: 'A task that depends on test-task',
+      handler: async (context) => {
+        return { result: 'dependent-success' };
+      },
+      dependencies: ['test-task']
+    },
+    'retryable-task': {
+      id: 'retryable-task',
+      name: 'Retryable Task',
+      description: 'A task that fails on first attempt',
+      handler: async (context) => {
+        if (context.attemptNumber === 1) {
+          throw new Error('First attempt fails');
+        }
+        return { result: 'retry-success' };
+      }
+    }
+  };
 
   beforeEach(() => {
     // Setup mocks
@@ -88,8 +141,15 @@ describe('Runtime Plugin Integration', () => {
       subscribe: vi.fn(),
       unsubscribe: vi.fn(),
       publish: vi.fn(),
-      applyBackpressure: vi.fn()
-    };
+      applyBackpressure: vi.fn(),
+      enablePersistence: vi.fn(),
+      disablePersistence: vi.fn(),
+      replay: vi.fn(),
+      addEventRouter: vi.fn(),
+      removeEventRouter: vi.fn(),
+      correlate: vi.fn(),
+      getEventMetrics: vi.fn()
+    } as unknown as EventBus;
 
     eventStore = {
       saveEvents: vi.fn().mockResolvedValue(undefined),
@@ -106,12 +166,20 @@ describe('Runtime Plugin Integration', () => {
     };
 
     extensionSystem = {
-      registerExtensionPoint: vi.fn(),
       registerExtension: vi.fn(),
-      registerEventInterceptor: vi.fn(),
-      executeExtensionPoint: vi.fn().mockImplementation(async (point, context) => context),
-      interceptEvent: vi.fn().mockImplementation(event => event)
-    };
+      registerExtensionPoint: vi.fn(),
+      executeExtensionPoint: vi.fn(),
+      getExtensions: vi.fn(),
+      getExtensionPoints: vi.fn(),
+      clear: vi.fn()
+    } as unknown as ExtensionSystem;
+
+    eventStorage = {
+      saveEvent: vi.fn(),
+      getEvents: vi.fn(),
+      getEventById: vi.fn(),
+      getEventsByCorrelationId: vi.fn()
+    } as unknown as EventStorage;
 
     // Create plugins
     eventSourcingPlugin = createEventSourcingPlugin(eventBus, eventStore);
@@ -120,6 +188,12 @@ describe('Runtime Plugin Integration', () => {
 
     // Create runtime with empty definitions for testing
     runtime = createRuntime({}, {}, { extensionSystem, eventBus });
+
+    runtime = new RuntimeImpl(processDefinitions, taskDefinitions, {
+      extensionSystem,
+      eventBus,
+      eventStorage
+    });
   });
 
   afterEach(() => {
