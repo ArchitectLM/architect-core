@@ -12,8 +12,8 @@ import type {
 // Import the actual createRuntime function
 import { createRuntime as createCore2Runtime } from '@architectlm/core';
 
-import { DSL } from '../core/dsl.js';
-import { ComponentType, SystemDefinition, WorkflowDefinition, ActorDefinition } from '../models/component.js';
+import { DSL, ActorImplementation, ActorContext } from '../core/dsl.js';
+import { ComponentType, ActorDefinition, MessageHandlerDefinition, SystemDefinition } from '../models/component.js';
 import { createDefaultExtensionSystem } from './extension-system.js';
 import { createDefaultEventBus } from './event-bus.js';
 
@@ -64,37 +64,42 @@ export class RuntimeAdapter {
     taskDefinitions: Record<string, TaskDefinition>;
   } {
     // Get the system definition
-    const system = this.dsl.getComponent<SystemDefinition>(systemId);
+    const system = this.dsl.getComponent(systemId);
     if (!system) {
       throw new Error(`System not found: ${systemId}`);
     }
 
-    // Convert system workflows to process definitions
+    // Convert system processes to process definitions
     const processDefinitions: Record<string, ProcessDefinition> = {};
     
-    // Use type assertion to access workflows since it might not be defined in the interface
-    const workflows = (system as any).workflows; 
-    if (workflows && Array.isArray(workflows)) {
-      workflows.forEach((workflow: WorkflowDefinition) => {
-        processDefinitions[workflow.name] = this.workflowToProcessDefinition(workflow);
+    // Use type assertion to access processes since it might not be defined in the interface
+    const processes = (system as any).processes; 
+    if (processes && Array.isArray(processes)) {
+      processes.forEach((process: any) => {
+        processDefinitions[process.name] = this.processToProcessDefinition(process);
       });
     }
 
-    // Convert component implementations to task definitions
+    // Convert actors to task definitions
     const taskDefinitions: Record<string, TaskDefinition> = {};
     
-    // Process commands
-    if (system.components.commands) {
-      system.components.commands.forEach(commandRef => {
-        const command = this.dsl.getComponent(commandRef.ref);
-        const implementation = this.dsl.getImplementation(commandRef.ref);
+    // Process actors (which now include commands/tasks)
+    if ((system as any).components && (system as any).components.actors) {
+      (system as any).components.actors.forEach((actorRef: any) => {
+        const actor = this.dsl.getComponent(actorRef.ref) as ActorDefinition;
+        const implementation = this.dsl.getImplementation(actorRef.ref);
         
-        if (command && implementation) {
-          taskDefinitions[commandRef.ref] = this.commandToTaskDefinition(
-            commandRef.ref, 
-            command, 
-            implementation
-          );
+        if (actor && implementation) {
+          // For each message handler in the actor, create a task definition
+          Object.entries(actor.messageHandlers).forEach(([messageName, handlerDef]) => {
+            const taskId = `${actorRef.ref}.${messageName}`;
+            taskDefinitions[taskId] = this.actorMessageHandlerToTaskDefinition(
+              actorRef.ref,
+              messageName,
+              handlerDef,
+              implementation
+            );
+          });
         }
       });
     }
@@ -150,7 +155,7 @@ export class RuntimeAdapter {
    */
   public createActorSystem(systemId: string, options: any = {}): ActorSystem {
     // Get system definition
-    const systemDef = this.dsl.getComponentById(systemId) as SystemDefinition;
+    const systemDef = this.dsl.getComponent<SystemDefinition>(systemId);
     if (!systemDef) {
       throw new Error(`System "${systemId}" not found`);
     }
@@ -167,7 +172,7 @@ export class RuntimeAdapter {
     // Create actor references for each actor in the system
     const actorRefs: ActorRef[] = systemDef.components.actors.map(actorRef => {
       const actorId = actorRef.ref;
-      const actorDef = this.dsl.getComponentById(actorId) as ActorDefinition;
+      const actorDef = this.dsl.getComponent<ActorDefinition>(actorId);
       
       if (!actorDef) {
         throw new Error(`Actor "${actorId}" referenced in system "${systemId}" not found`);
@@ -191,7 +196,7 @@ export class RuntimeAdapter {
       
       createActor: (actorId: string): ActorRef => {
         // Check if actor definition exists
-        const actorDef = this.dsl.getComponentById(actorId) as ActorDefinition;
+        const actorDef = this.dsl.getComponent<ActorDefinition>(actorId);
         if (!actorDef) {
           throw new Error(`Actor "${actorId}" not found`);
         }
@@ -274,7 +279,16 @@ export class RuntimeAdapter {
     
     // Actor state
     let actorStatus = 'idle';
-    let actorContext: any = {};
+    
+    // Initialize actor context with flow method
+    const actorContext: ActorContext = {
+      flow: () => {
+        // This is a placeholder flow method that will be replaced by the DSL
+        // when the message handler is called, but we need to provide it to satisfy
+        // the ActorContext interface
+        throw new Error('Flow not available in direct actor reference calls');
+      }
+    };
     
     // Initialize actor state if state management is enabled
     if (actorDef.config?.stateManagement?.persistence) {
@@ -338,40 +352,66 @@ export class RuntimeAdapter {
   }
 
   /**
-   * Convert a workflow definition to a process definition
+   * Convert a process definition to a runtime process definition
    */
-  private workflowToProcessDefinition(workflow: WorkflowDefinition): ProcessDefinition {
+  private processToProcessDefinition(process: any): ProcessDefinition {
     return {
-      id: workflow.name,
-      name: workflow.name,
-      description: workflow.description,
-      initialState: workflow.initialState,
-      transitions: workflow.transitions
+      id: process.id || process.name,
+      name: process.name,
+      description: process.description,
+      initialState: process.initialState,
+      transitions: process.transitions || []
     };
   }
 
   /**
-   * Convert a command and its implementation to a task definition
+   * Convert an actor message handler to a task definition
    */
-  private commandToTaskDefinition(
-    id: string,
-    command: any,
-    implementation: any
+  private actorMessageHandlerToTaskDefinition(
+    actorId: string,
+    messageName: string,
+    handlerDef: MessageHandlerDefinition,
+    implementation: ActorImplementation
   ): TaskDefinition {
+    // Create a more intuitive task ID
+    const taskId = `${actorId}:${messageName}`;
+    
     return {
-      id,
-      name: command.id || id,
-      description: command.description,
+      id: taskId,
+      name: `${actorId}.${messageName}`,
+      description: handlerDef.description || `Message handler ${messageName} for actor ${actorId}`,
       handler: async (context: any) => {
         try {
-          // Execute the implementation handler
-          return await implementation.handler(context.input, context);
+          // Track execution metrics
+          const start = Date.now();
+          
+          // Execute the implementation message handler
+          if (!implementation[messageName]) {
+            throw new Error(`Message handler ${messageName} not implemented for actor ${actorId}`);
+          }
+          
+          const result = await implementation[messageName](context.input, context);
+          
+          // Track execution time
+          const executionTime = Date.now() - start;
+          // Here we could emit metrics for actor message processing
+          
+          return result;
         } catch (error) {
-          // Handle errors
-          console.error(`Error executing task ${id}:`, error);
+          // Handle errors with more context
+          console.error(`Error executing message handler ${messageName} for actor ${actorId}:`, error);
           throw error;
         }
       }
     };
+  }
+
+  /**
+   * Execute a message on an actor through the runtime
+   */
+  async sendToActor(runtime: Runtime, actorId: string, messageName: string, input: any): Promise<any> {
+    // Map to task execution in the unified model using the new task ID format
+    const taskId = `${actorId}:${messageName}`;
+    return runtime.executeTask(taskId, input);
   }
 } 

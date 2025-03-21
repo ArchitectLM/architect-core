@@ -6,15 +6,35 @@
  * Component types supported by the DSL
  */
 export enum ComponentType {
-  SCHEMA = 'schema',
-  COMMAND = 'command',
-  QUERY = 'query',
-  EVENT = 'event',
-  WORKFLOW = 'workflow',
   ACTOR = 'actor',
+  COMMAND = 'command',
+  EVENT = 'event',
   PROCESS = 'process',
+  QUERY = 'query',
   SAGA = 'saga',
-  SYSTEM = 'system'
+  SCHEMA = 'schema',
+  SYSTEM = 'system',
+  WORKFLOW = 'workflow'
+}
+
+/**
+ * Flow builder interface
+ */
+export interface FlowBuilder {
+  sendToActor: (actorId: string, message: any) => FlowBuilder;
+  then: (callback: (result: any) => any) => FlowBuilder;
+  catch: (errorHandler: (error: Error) => any) => FlowBuilder;
+  finally: (callback: () => void) => FlowBuilder;
+  execute: () => Promise<any>;
+}
+
+/**
+ * Actor context interface
+ */
+export interface ActorContext {
+  flow: () => FlowBuilder;
+  state?: Record<string, any>;
+  [key: string]: any;
 }
 
 /**
@@ -103,60 +123,38 @@ export interface WorkflowTransition {
  */
 export interface SystemDefinition extends ComponentDefinition {
   type: ComponentType.SYSTEM;
-  components: SystemComponents;
+  components: {
+    schemas?: Array<{ ref: string }>;
+    actors?: Array<{ ref: string }>;
+    events?: Array<{ ref: string }>;
+    processes?: Array<{ ref: string }>;
+    sagas?: Array<{ ref: string }>;
+  };
   processes?: Array<ProcessDefinition>;
   tenancy?: {
     mode: 'single' | 'multi';
     tenantIdentifier?: string;
     tenantResolution?: string;
-    tenantHeader?: string;
-    databaseStrategy?: string;
   };
   security?: {
     authentication?: {
       providers: string[];
       jwtConfig?: Record<string, any>;
-      oauth2Config?: Record<string, any>;
     };
     authorization?: {
       type: string;
       defaultRole?: string;
-      superAdminRole?: string;
-    };
-    cors?: {
-      enabled: boolean;
-      origins?: string[];
-      methods?: string[];
     };
   };
   observability?: {
     metrics?: {
       enabled: boolean;
       providers?: string[];
-      endpoint?: string;
     };
     logging?: {
       level: string;
       format: string;
       destination: string;
-    };
-    tracing?: {
-      enabled: boolean;
-      sampler?: string;
-      samplingRate?: number;
-    };
-  };
-  deployment?: {
-    environment?: string;
-    region?: string;
-    scaling?: {
-      minInstances: number;
-      maxInstances: number;
-      targetCpuUtilization?: number;
-    };
-    resources?: {
-      memory: string;
-      cpu: string;
     };
   };
 }
@@ -317,4 +315,16 @@ export interface ProcessDefinition extends ComponentDefinition {
   type: ComponentType.PROCESS;
   states: Record<string, ProcessState>;
   transitions: Record<string, any>;
+}
+
+/**
+ * Actor implementation type
+ */
+export type ActorImplementation = Record<string, (input: any, context: ActorContext) => Promise<any>>;
+
+/**
+ * Flow builder interface
+ */
+export interface FlowBuilder {
+  // ... existing code ...
 } 

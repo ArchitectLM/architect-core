@@ -1,10 +1,7 @@
 export enum ComponentType {
   SCHEMA = 'schema',
-  COMMAND = 'command',
-  QUERY = 'query',
-  EVENT = 'event',
-  WORKFLOW = 'workflow',
   ACTOR = 'actor',
+  EVENT = 'event',
   PROCESS = 'process',
   SAGA = 'saga'
 }
