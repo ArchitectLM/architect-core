@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { DSL } from '../../src/core/dsl.js';
-import { ComponentType } from '../../src/models/component.js';
+import { DSL } from '../../../src/core/dsl.js';
+import { ComponentType } from '../../../src/models/component.js';
 
-// Mock the saga extension module to test
-vi.mock('../../src/extensions/saga.extension.js', async () => {
-  const actual = await vi.importActual('../../src/extensions/saga.extension.js');
+// Mock the saga extension module
+vi.mock('../../../src/extensions/saga.extension.js', async () => {
+  const actual = await vi.importActual('../../../src/extensions/saga.extension.js');
   return {
     ...actual,
     setupSagaExtension: vi.fn().mockImplementation((dsl, options) => {
@@ -25,7 +25,7 @@ import {
   SagaExtensionOptions, 
   SagaInstance,
   CompensationStrategy
-} from '../../src/extensions/saga.extension.js';
+} from '../../../src/extensions/saga.extension.js';
 
 describe('Saga Extension', () => {
   let dsl: DSL;
@@ -72,7 +72,7 @@ describe('Saga Extension', () => {
       
       // Define tasks for the saga
       const createOrderTask = dsl.component('CreateOrder', {
-        type: ComponentType.TASK,
+        type: ComponentType.ACTOR,
         description: 'Create an order',
         version: '1.0.0',
         input: { ref: 'OrderInput' },
@@ -80,7 +80,7 @@ describe('Saga Extension', () => {
       });
       
       const processPaymentTask = dsl.component('ProcessPayment', {
-        type: ComponentType.TASK,
+        type: ComponentType.ACTOR,
         description: 'Process payment for an order',
         version: '1.0.0',
         input: { ref: 'PaymentInput' },
@@ -88,7 +88,7 @@ describe('Saga Extension', () => {
       });
       
       const updateInventoryTask = dsl.component('UpdateInventory', {
-        type: ComponentType.TASK,
+        type: ComponentType.ACTOR,
         description: 'Update inventory for items',
         version: '1.0.0',
         input: { ref: 'InventoryUpdate' },
@@ -97,7 +97,7 @@ describe('Saga Extension', () => {
 
       // Define compensation tasks
       const cancelOrderTask = dsl.component('CancelOrder', {
-        type: ComponentType.TASK,
+        type: ComponentType.ACTOR,
         description: 'Cancel an order',
         version: '1.0.0',
         input: { ref: 'OrderCancellation' },
@@ -105,7 +105,7 @@ describe('Saga Extension', () => {
       });
       
       const refundPaymentTask = dsl.component('RefundPayment', {
-        type: ComponentType.TASK,
+        type: ComponentType.ACTOR,
         description: 'Refund a payment',
         version: '1.0.0',
         input: { ref: 'RefundInput' },
@@ -113,7 +113,7 @@ describe('Saga Extension', () => {
       });
       
       const restoreInventoryTask = dsl.component('RestoreInventory', {
-        type: ComponentType.TASK,
+        type: ComponentType.ACTOR,
         description: 'Restore inventory levels',
         version: '1.0.0',
         input: { ref: 'InventoryRestore' },
@@ -185,7 +185,7 @@ describe('Saga Extension', () => {
       
       // Define tasks and implementations
       const createOrderTask = dsl.component('CreateOrder', {
-        type: ComponentType.TASK,
+        type: ComponentType.ACTOR,
         description: 'Create order',
         version: '1.0.0',
         input: { ref: 'OrderInput' },
@@ -193,7 +193,7 @@ describe('Saga Extension', () => {
       });
       
       const processPaymentTask = dsl.component('ProcessPayment', {
-        type: ComponentType.TASK,
+        type: ComponentType.ACTOR,
         description: 'Process payment',
         version: '1.0.0',
         input: { ref: 'PaymentInput' },
@@ -201,7 +201,7 @@ describe('Saga Extension', () => {
       });
       
       const updateInventoryTask = dsl.component('UpdateInventory', {
-        type: ComponentType.TASK,
+        type: ComponentType.ACTOR,
         description: 'Update inventory',
         version: '1.0.0',
         input: { ref: 'InventoryUpdate' },
@@ -316,7 +316,7 @@ describe('Saga Extension', () => {
       
       // Define tasks
       dsl.component('CreateOrder', {
-        type: ComponentType.TASK,
+        type: ComponentType.ACTOR,
         description: 'Create order',
         version: '1.0.0',
         input: { ref: 'OrderInput' },
@@ -324,7 +324,7 @@ describe('Saga Extension', () => {
       });
       
       dsl.component('ProcessPayment', {
-        type: ComponentType.TASK,
+        type: ComponentType.ACTOR,
         description: 'Process payment',
         version: '1.0.0',
         input: { ref: 'PaymentInput' },
@@ -332,7 +332,7 @@ describe('Saga Extension', () => {
       });
       
       dsl.component('UpdateInventory', {
-        type: ComponentType.TASK,
+        type: ComponentType.ACTOR,
         description: 'Update inventory',
         version: '1.0.0',
         input: { ref: 'InventoryUpdate' },
@@ -340,7 +340,7 @@ describe('Saga Extension', () => {
       });
       
       dsl.component('CancelOrder', {
-        type: ComponentType.TASK,
+        type: ComponentType.ACTOR,
         description: 'Cancel order',
         version: '1.0.0',
         input: { ref: 'OrderCancellation' },
@@ -348,7 +348,7 @@ describe('Saga Extension', () => {
       });
       
       dsl.component('RefundPayment', {
-        type: ComponentType.TASK,
+        type: ComponentType.ACTOR,
         description: 'Refund payment',
         version: '1.0.0',
         input: { ref: 'RefundInput' },
@@ -577,7 +577,7 @@ describe('Saga Extension', () => {
       });
       
       dsl.component('CreateOrder', {
-        type: ComponentType.TASK,
+        type: ComponentType.ACTOR,
         description: 'Create order',
         version: '1.0.0',
         input: { ref: 'OrderInput' },
@@ -585,7 +585,7 @@ describe('Saga Extension', () => {
       });
       
       dsl.component('ProcessPayment', {
-        type: ComponentType.TASK,
+        type: ComponentType.ACTOR,
         description: 'Process payment',
         version: '1.0.0',
         input: { ref: 'PaymentInput' },

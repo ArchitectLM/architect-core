@@ -28,6 +28,15 @@ import {
 export type ActorImplementation = Record<string, (input: any, context: ActorContext) => Promise<any>>;
 
 /**
+ * Implementation component definition
+ */
+export interface ImplementationComponentDefinition extends ComponentDefinition {
+  type: ComponentType.IMPLEMENTATION;
+  targetComponent: string;
+  handlers: ActorImplementation;
+}
+
+/**
  * DSL Extension interface
  */
 export interface DSLExtension {
@@ -64,9 +73,22 @@ export class DSL {
   }
 
   /**
+   * Register a system component
+   */
+  system(id: string, definition: Omit<SystemDefinition, 'id' | 'type'>): SystemDefinition {
+    return this.component<SystemDefinition>(id, {
+      ...definition,
+      type: ComponentType.SYSTEM
+    });
+  }
+
+  /**
    * Register a component implementation
+   * @deprecated Use component with ComponentType.IMPLEMENTATION instead
    */
   implement<I, O>(componentId: string, implementation: (input: I, context: ActorContext) => Promise<O>): void {
+    console.warn(`Warning: dsl.implement() is deprecated. Use dsl.component() with ComponentType.IMPLEMENTATION instead.`);
+    
     // Get component type
     const component = this.components.get(componentId);
     if (!component) {
@@ -80,6 +102,32 @@ export class DSL {
     };
 
     this.implementations.set(componentId, actorImpl);
+  }
+
+  /**
+   * Create an implementation component (simplified approach)
+   * @deprecated Use component with ComponentType.IMPLEMENTATION directly
+   */
+  implementation(id: string, config: {
+    targetComponent: string;
+    description: string;
+    version: string;
+    handlers: ActorImplementation;
+  }): ImplementationComponentDefinition {
+    console.warn(`Warning: dsl.implementation() is deprecated. Use dsl.component() with ComponentType.IMPLEMENTATION instead.`);
+    
+    const impl = this.component<ImplementationComponentDefinition>(id, {
+      type: ComponentType.IMPLEMENTATION,
+      description: config.description,
+      version: config.version,
+      targetComponent: config.targetComponent,
+      handlers: config.handlers
+    });
+    
+    // Also register with the implementations registry for backward compatibility
+    this.implementations.set(config.targetComponent, config.handlers);
+    
+    return impl;
   }
 
   /**
@@ -102,6 +150,17 @@ export class DSL {
    */
   getImplementation(componentId: string): ActorImplementation | undefined {
     return this.implementations.get(componentId);
+  }
+
+  /**
+   * Get a system component by ID
+   */
+  getSystem(id: string): SystemDefinition | undefined {
+    const component = this.components.get(id);
+    if (!component || component.type !== ComponentType.SYSTEM) {
+      return undefined;
+    }
+    return component as SystemDefinition;
   }
 
   /**

@@ -5,6 +5,7 @@
  * extensions for the DSL.
  */
 import { DSL, DSLExtension } from '../core/dsl.js';
+import { ComponentType } from '../models/component.js';
 
 /**
  * Registry of available extensions
@@ -87,7 +88,7 @@ export function createExtension(
  */
 export function registerSystemExtensions(dsl: DSL, systemId: string): void {
   const system = dsl.getComponent(systemId);
-  if (!system || system.type !== 'SYSTEM') {
+  if (!system || system.type !== ComponentType.SYSTEM) {
     throw new Error(`System not found: ${systemId}`);
   }
   
@@ -101,7 +102,7 @@ export function registerSystemExtensions(dsl: DSL, systemId: string): void {
 }
 
 /**
- * Lists all available extensions
+ * Returns a list of all registered extension IDs
  * 
  * @returns Array of extension IDs
  */
@@ -110,16 +111,23 @@ export function listExtensions(): string[] {
 }
 
 /**
- * Removes an extension from the registry
+ * Removes an extension definition
  * 
  * @param id Extension ID
  */
 export function removeExtensionDefinition(id: string): void {
+  if (!extensionRegistry.has(id)) {
+    throw new Error(`Extension not found: ${id}`);
+  }
+  
   extensionRegistry.delete(id);
 }
 
-// Once implemented, these will be imported and re-exported
-// export * from './schema.extension.js';
-// export * from './command.extension.js';
-// export * from './query.extension.js';
-// export * from './workflow.extension.js'; 
+// Export extension modules
+export * from './actor.extension.js';
+export * from './process.extension.js';
+export * from './command.extension.js';
+export * from './query.extension.js';
+export * from './schema.extension.js';
+export * from './workflow.extension.js';  // Export the new workflow extension
+export * from './saga.actor.extension.js'; // Export the new saga actor extension 

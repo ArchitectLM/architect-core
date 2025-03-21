@@ -17,30 +17,39 @@ This document outlines the refactoring plan for DSL2 test suite to improve organ
 
 ```
 packages/dsl2/tests/
-├── unit/
-│   ├── components/           # Tests for component types
-│   │   ├── schema-component.test.ts
-│   │   ├── command-component.test.ts
-│   │   ├── event-component.test.ts
-│   │   ├── ... (other component types)
-│   ├── actor/                # Actor-related tests
-│   │   ├── actor-definition.test.ts
-│   │   ├── actor-implementation.test.ts
-│   │   ├── actor-messaging.test.ts
-│   │   ├── actor-lifecycle.test.ts
-│   ├── system/               # System-related tests
-│   │   ├── system-definition.test.ts
-│   ├── extensions/           # Extension unit tests
-│   │   ├── process-core.test.ts
-│   │   ├── schema-core.test.ts
-│   │   ├── ... (other extension core tests)
-├── integration/              # Integration tests
-│   ├── extensions/           # Extension integration tests
-│   │   ├── extension-interactions.test.ts
-│   ├── runtime/              # Core runtime integration tests
-│   │   ├── dsl-core2-integration.test.ts
-├── e2e/                      # End-to-end tests
+├── unit/                 # Tests for individual components in isolation
+│   ├── core/            # Core DSL functionality tests
+│   ├── extensions/      # Individual extension unit tests
+│   ├── actor/           # Actor-related unit tests
+│   ├── system/          # System-related unit tests
+│   └── components/      # Component-related unit tests
+├── integration/         # Tests for how components work together
+│   ├── extensions/      # Tests for how extensions interact
+│   └── runtime/         # Tests for runtime behavior
+└── e2e/                 # End-to-end tests
 ```
+
+## Recent Changes
+
+### March 21, 2024 - Test Reorganization
+1. Moved all extension unit tests from `/tests/extensions/` to `/tests/unit/extensions/`
+2. Renamed test files to follow hyphen-based naming convention:
+   - Example: `saga.actor.extension.test.ts` → `saga-actor-extension.test.ts`
+3. Updated import paths in all moved files to reflect new directory structure
+4. Verified integration tests are properly organized in `/tests/integration/extensions/`
+5. Removed empty `/tests/extensions/` directory
+
+### Current Test Organization
+- Unit tests for extensions are now in `/tests/unit/extensions/`
+- Integration tests remain in `/tests/integration/extensions/`
+  - `workflow-saga-integration.test.ts`
+  - `extension-interactions.test.ts`
+
+### Next Steps
+1. Review and organize remaining test files in other directories
+2. Add more integration tests for extension interactions
+3. Add e2e tests for complete workflows
+4. Improve test coverage where needed
 
 ## Unit Tests
 

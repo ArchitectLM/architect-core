@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { DSL } from '../../src/core/dsl.js';
-import { ComponentType } from '../../src/models/component.js';
+import { DSL } from '../../../src/core/dsl.js';
+import { ComponentType } from '../../../src/models/component.js';
 
 // Mock the tenancy extension module
-vi.mock('../../src/extensions/tenancy.extension.js', async () => {
-  const actual = await vi.importActual('../../src/extensions/tenancy.extension.js');
+vi.mock('../../../src/extensions/tenancy.extension.js', async () => {
+  const actual = await vi.importActual('../../../src/extensions/tenancy.extension.js');
   return {
     ...actual,
     setupTenancyExtension: vi.fn().mockImplementation((dsl, options) => {
@@ -25,7 +25,7 @@ import {
   TenancyExtensionOptions,
   TenancyIsolationModel,
   TenantIdentificationSource
-} from '../../src/extensions/tenancy.extension.js';
+} from '../../../src/extensions/tenancy.extension.js';
 
 describe('Tenancy Extension', () => {
   let dsl: DSL;

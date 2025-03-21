@@ -32,6 +32,10 @@ export interface ProcessExtensionOptions {
       retryDelay: number;
     };
   };
+
+  enablePersistence?: boolean;
+  historySize?: number;
+  autoValidateTransitions?: boolean;
 }
 
 /**
@@ -264,4 +268,29 @@ function createActorImplementation(process: ProcessDefinition, handlers: Process
       };
     }
   };
+}
+
+export interface ProcessState {
+  name: string;
+  description?: string;
+  transitions?: ProcessTransition[];
+  onEnter?: ProcessAction;
+  onExit?: ProcessAction;
+  final?: boolean;
+}
+
+export interface ProcessTransition {
+  to: string;
+  on: string;
+  guard?: ProcessGuard;
+  action?: ProcessAction;
+}
+
+export interface ProcessGuard {
+  condition: string | ((context: any) => boolean);
+}
+
+export interface ProcessAction {
+  task?: string;
+  script?: string | ((context: any) => Promise<void>);
 } 

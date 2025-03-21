@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { DSL } from '../../src/core/dsl.js';
-import { ComponentType } from '../../src/models/component.js';
+import { DSL } from '../../../src/core/dsl.js';
+import { ComponentType } from '../../../src/models/component.js';
 
 // Mock the billing extension module
-vi.mock('../../src/extensions/billing.extension.js', async () => {
-  const actual = await vi.importActual('../../src/extensions/billing.extension.js');
+vi.mock('../../../src/extensions/billing.extension.js', async () => {
+  const actual = await vi.importActual('../../../src/extensions/billing.extension.js');
   return {
     ...actual,
     setupBillingExtension: vi.fn().mockImplementation((dsl, options) => {
@@ -23,7 +23,7 @@ vi.mock('../../src/extensions/billing.extension.js', async () => {
 import { 
   setupBillingExtension, 
   BillingExtensionOptions
-} from '../../src/extensions/billing.extension.js';
+} from '../../../src/extensions/billing.extension.js';
 
 describe('Billing Extension', () => {
   let dsl: DSL;

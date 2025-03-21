@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { DSL } from '../../../src/core/dsl.js';
-import { ComponentType } from '../../../src/models/component.js';
+import { ComponentType, ProcessDefinition, ProcessState } from '../../../src/models/component.js';
 
 // Mock the process extension module
 vi.mock('../../../src/extensions/process.extension.js', async () => {
@@ -9,7 +9,7 @@ vi.mock('../../../src/extensions/process.extension.js', async () => {
     ...actual,
     setupProcessExtension: vi.fn().mockImplementation((dsl, options) => {
       // Mock implementation that adds process methods
-      dsl.enhanceComponent = (componentId, methods) => {
+      dsl.enhanceComponent = (componentId: string, methods: any) => {
         // Mock implementation of enhanceComponent for testing
       };
     })
@@ -54,7 +54,7 @@ describe('Process Extension Core', () => {
     setupProcessExtension(dsl, processOptions);
 
     // Define a process component
-    const process = dsl.component('OrderProcess', {
+    const process = dsl.component<ProcessDefinition>('OrderProcess', {
       type: ComponentType.PROCESS,
       description: 'Order processing workflow',
       version: '1.0.0',
@@ -87,7 +87,8 @@ describe('Process Extension Core', () => {
           description: 'Order has been cancelled',
           final: true
         }
-      }
+      },
+      transitions: {}
     });
 
     expect(process).toBeDefined();
@@ -106,7 +107,7 @@ describe('Process Extension Core', () => {
     setupProcessExtension(dsl, processOptions);
 
     // Define a process with nested states
-    const process = dsl.component('ComplexProcess', {
+    const process = dsl.component<ProcessDefinition>('ComplexProcess', {
       type: ComponentType.PROCESS,
       description: 'Process with nested states',
       version: '1.0.0',
@@ -140,13 +141,17 @@ describe('Process Extension Core', () => {
           description: 'Completed state',
           final: true
         }
-      }
+      },
+      transitions: {}
     });
 
     expect(process).toBeDefined();
-    expect(process.states.processing.nested).toBeDefined();
-    expect(process.states.processing.nested.initialState).toBe('step1');
-    expect(Object.keys(process.states.processing.nested.states)).toHaveLength(3);
+    const processingState = process.states.processing;
+    expect(processingState.nested).toBeDefined();
+    if (processingState.nested) {
+      expect(processingState.nested.initialState).toBe('step1');
+      expect(Object.keys(processingState.nested.states)).toHaveLength(3);
+    }
   });
 
   it('should support process states with entry and exit actions', () => {
@@ -154,7 +159,7 @@ describe('Process Extension Core', () => {
     setupProcessExtension(dsl, processOptions);
 
     // Define a process with entry and exit actions
-    const process = dsl.component('ActionProcess', {
+    const process = dsl.component<ProcessDefinition>('ActionProcess', {
       type: ComponentType.PROCESS,
       description: 'Process with actions',
       version: '1.0.0',
@@ -176,7 +181,8 @@ describe('Process Extension Core', () => {
           onEnter: { task: 'logCompletion' },
           final: true
         }
-      }
+      },
+      transitions: {}
     });
 
     expect(process).toBeDefined();

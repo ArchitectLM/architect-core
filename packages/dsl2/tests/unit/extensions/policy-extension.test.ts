@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { DSL } from '../../src/core/dsl.js';
-import { ComponentType } from '../../src/models/component.js';
+import { DSL } from '../../../src/core/dsl.js';
+import { ComponentType } from '../../../src/models/component.js';
 
-// Mock the policy extension module to test
-vi.mock('../../src/extensions/policy.extension.js', async () => {
-  const actual = await vi.importActual('../../src/extensions/policy.extension.js');
+// Mock the policy extension module
+vi.mock('../../../src/extensions/policy.extension.js', async () => {
+  const actual = await vi.importActual('../../../src/extensions/policy.extension.js');
   return {
     ...actual,
     setupPolicyExtension: vi.fn().mockImplementation((dsl, options) => {
@@ -25,7 +25,7 @@ import {
   PolicyExtensionOptions,
   PolicyEvaluationResult,
   ConditionOperator
-} from '../../src/extensions/policy.extension.js';
+} from '../../../src/extensions/policy.extension.js';
 
 describe('Policy Extension', () => {
   let dsl: DSL;
@@ -550,34 +550,29 @@ describe('Policy Extension', () => {
         properties: { id: { type: 'string' }, ownerId: { type: 'string' } }
       });
       
+      // Define a command that will be protected by the policy
+      const createResourceCommand = dsl.component('CreateResource', {
+        type: ComponentType.ACTOR,
+        description: 'Create a new resource',
+        version: '1.0.0',
+        input: { ref: 'ResourceInput' },
+        output: { ref: 'ResourceSchema' }
+      });
+
       // Define a policy
-      dsl.component('AccessPolicy', {
-        type: ComponentType.POLICY,
+      const accessPolicy = dsl.component('AccessPolicy', {
+        type: ComponentType.ACTOR,
         description: 'Access control policy',
         version: '1.0.0',
-        context: [
-          { name: 'user', ref: 'UserSchema' },
-          { name: 'resource', ref: 'ResourceSchema' }
-        ],
+        input: { ref: 'PolicyInput' },
+        output: { ref: 'PolicyResult' },
         conditions: [
           {
             name: 'isAdmin',
-            description: 'Check if user is admin',
-            expression: {
-              operator: ConditionOperator.EQUALS,
-              left: { path: 'user.role' },
-              right: { value: 'admin' }
-            }
-          }
-        ],
-        rules: [
-          {
-            name: 'adminRule',
-            description: 'Admin rule',
-            when: 'isAdmin',
-            then: [
-              { action: { ref: 'GrantAccess' } }
-            ]
+            description: 'Check if user is an admin',
+            field: 'user.role',
+            operator: ConditionOperator.EQUALS,
+            value: 'admin'
           }
         ]
       });
@@ -587,11 +582,8 @@ describe('Policy Extension', () => {
         description: 'Access control system',
         version: '1.0.0',
         components: {
-          schemas: [
-            { ref: 'UserSchema' },
-            { ref: 'ResourceSchema' }
-          ],
-          policies: [
+          actors: [
+            { ref: 'CreateResource' },
             { ref: 'AccessPolicy' }
           ]
         }
@@ -605,5 +597,73 @@ describe('Policy Extension', () => {
       expect(policies.length).toBe(1);
       expect(policies[0].id).toBe('AccessPolicy');
     });
+
+    it('should integrate policies with system definitions', () => {
+      // Define necessary components
+      dsl.component('UserSchema', {
+        type: ComponentType.SCHEMA,
+        description: 'User schema',
+        version: '1.0.0',
+        properties: { id: { type: 'string' }, role: { type: 'string' } }
+      });
+      
+      dsl.component('ResourceSchema', {
+        type: ComponentType.SCHEMA,
+        description: 'Resource schema',
+        version: '1.0.0',
+        properties: { id: { type: 'string' }, ownerId: { type: 'string' } }
+      });
+      
+      // Define a command that will be protected by the policy
+      const updateResourceCommand = dsl.component('UpdateResource', {
+        type: ComponentType.ACTOR,
+        description: 'Update an existing resource',
+        version: '1.0.0',
+        input: { ref: 'ResourceUpdate' },
+        output: { ref: 'ResourceSchema' }
+      });
+
+      // Define a policy
+      const updatePolicy = dsl.component('UpdatePolicy', {
+        type: ComponentType.ACTOR,
+        description: 'Update access policy',
+        version: '1.0.0',
+        input: { ref: 'PolicyInput' },
+        output: { ref: 'PolicyResult' },
+        conditions: [
+          {
+            name: 'hasPermission',
+            description: 'Check if user has update permission',
+            field: 'user.permissions',
+            operator: ConditionOperator.CONTAINS,
+            value: 'update'
+          }
+        ]
+      });
+      
+      // Define a system that uses the policy
+      const accessSystem = dsl.system('AccessSystem', {
+        description: 'Access control system',
+        version: '1.0.0',
+        components: {
+          actors: [
+            { ref: 'CreateResource' },
+            { ref: 'UpdateResource' },
+            { ref: 'AccessPolicy' },
+            { ref: 'UpdatePolicy' }
+          ]
+        }
+      });
+      
+      // Verify the system can access policies
+      expect(typeof (accessSystem as any).getPolicies).toBe('function');
+      
+      // Get policies from the system
+      const policies = (accessSystem as any).getPolicies();
+      expect(policies.length).toBe(2);
+      expect(policies[0].id).toBe('AccessPolicy');
+      expect(policies[1].id).toBe('UpdatePolicy');
+    });
+
   });
 }); 

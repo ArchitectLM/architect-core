@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { DSL } from '../../src/core/dsl.js';
-import { ComponentType } from '../../src/models/component.js';
+import { DSL } from '../../../src/core/dsl.js';
+import { ComponentType } from '../../../src/models/component.js';
 
 // Mock the security extension module
-vi.mock('../../src/extensions/security.extension.js', async () => {
-  const actual = await vi.importActual('../../src/extensions/security.extension.js');
+vi.mock('../../../src/extensions/security.extension.js', async () => {
+  const actual = await vi.importActual('../../../src/extensions/security.extension.js');
   return {
     ...actual,
     setupSecurityExtension: vi.fn().mockImplementation((dsl, options) => {
@@ -23,7 +23,7 @@ vi.mock('../../src/extensions/security.extension.js', async () => {
 import { 
   setupSecurityExtension, 
   SecurityExtensionOptions 
-} from '../../src/extensions/security.extension.js';
+} from '../../../src/extensions/security.extension.js';
 
 describe('Security Extension', () => {
   let dsl: DSL;

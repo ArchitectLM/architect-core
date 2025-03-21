@@ -7,14 +7,14 @@
  */
 export enum ComponentType {
   ACTOR = 'actor',
-  COMMAND = 'command',
-  EVENT = 'event',
   PROCESS = 'process',
-  QUERY = 'query',
-  SAGA = 'saga',
-  SCHEMA = 'schema',
   SYSTEM = 'system',
-  WORKFLOW = 'workflow'
+  SCHEMA = 'schema',
+  EVENT = 'event',
+  WORKFLOW = 'workflow',
+  SAGA = 'saga',
+  TEST = 'test',
+  IMPLEMENTATION = 'implementation'
 }
 
 /**
@@ -38,6 +38,13 @@ export interface ActorContext {
 }
 
 /**
+ * Reference to another component
+ */
+export interface ComponentReference {
+  ref: string;
+}
+
+/**
  * Base interface for all component definitions
  */
 export interface ComponentDefinition {
@@ -45,6 +52,61 @@ export interface ComponentDefinition {
   type: ComponentType;
   description: string;
   version: string;
+  properties?: Record<string, any>;
+  input?: Record<string, any>;
+  output?: Record<string, any>;
+  initialState?: string;
+  states?: Record<string, any>;
+  steps?: any[];
+  context?: any[];
+  correlationProperty?: string;
+  dataSchema?: { ref: string };
+  attributes?: Record<string, any>;
+  behaviors?: ComponentReference[];
+  policies?: Record<string, any>;
+  required?: string[];
+  payload?: any;
+  state?: any;
+  messageHandlers?: Record<string, any>;
+  target?: ComponentReference;
+  scenarios?: TestScenario[];
+  targetComponent?: string;
+  handlers?: Record<string, (input: any, context: any) => Promise<any>>;
+}
+
+/**
+ * Test scenario definition
+ */
+export interface TestScenario {
+  name: string;
+  given: TestStep[];
+  when: TestStep[];
+  then: TestAssertion[];
+}
+
+/**
+ * Test step definition
+ */
+export interface TestStep {
+  setup?: string;
+  send?: {
+    message: string;
+    payload: any;
+  };
+  store?: string;
+  from?: string;
+  [key: string]: any;
+}
+
+/**
+ * Test assertion definition
+ */
+export interface TestAssertion {
+  assert: string;
+  equals?: any;
+  contains?: any;
+  matches?: any;
+  [key: string]: any;
 }
 
 /**
@@ -73,26 +135,6 @@ export interface SchemaPropertyDefinition {
 }
 
 /**
- * Command component definition
- */
-export interface CommandComponentDefinition extends ComponentDefinition {
-  type: ComponentType.COMMAND;
-  input: { ref: string };
-  output: { ref: string };
-  produces?: Array<{ event: string; description: string }>;
-  extensionPoints?: Record<string, ExtensionPointDefinition>;
-}
-
-/**
- * Query component definition
- */
-export interface QueryComponentDefinition extends ComponentDefinition {
-  type: ComponentType.QUERY;
-  input: { ref: string };
-  output: { ref: string };
-}
-
-/**
  * Event component definition
  */
 export interface EventComponentDefinition extends ComponentDefinition {
@@ -101,72 +143,20 @@ export interface EventComponentDefinition extends ComponentDefinition {
 }
 
 /**
- * Workflow component definition
- */
-export interface WorkflowComponentDefinition extends ComponentDefinition {
-  type: ComponentType.WORKFLOW;
-  initialState: string;
-  transitions: WorkflowTransition[];
-}
-
-/**
- * Workflow transition definition
- */
-export interface WorkflowTransition {
-  from: string;
-  to: string;
-  on: string;
-}
-
-/**
  * System definition
  */
 export interface SystemDefinition extends ComponentDefinition {
   type: ComponentType.SYSTEM;
   components: {
-    schemas?: Array<{ ref: string }>;
-    actors?: Array<{ ref: string }>;
-    events?: Array<{ ref: string }>;
-    processes?: Array<{ ref: string }>;
-    sagas?: Array<{ ref: string }>;
+    schemas?: ComponentReference[];
+    events?: ComponentReference[];
+    actors?: ComponentReference[];
+    processes?: ComponentReference[];
+    systems?: ComponentReference[];
+    workflows?: ComponentReference[];
+    sagas?: ComponentReference[];
   };
-  processes?: Array<ProcessDefinition>;
-  tenancy?: {
-    mode: 'single' | 'multi';
-    tenantIdentifier?: string;
-    tenantResolution?: string;
-  };
-  security?: {
-    authentication?: {
-      providers: string[];
-      jwtConfig?: Record<string, any>;
-    };
-    authorization?: {
-      type: string;
-      defaultRole?: string;
-    };
-  };
-  observability?: {
-    metrics?: {
-      enabled: boolean;
-      providers?: string[];
-    };
-    logging?: {
-      level: string;
-      format: string;
-      destination: string;
-    };
-  };
-}
-
-/**
- * Workflow definition within a system
- */
-export interface WorkflowDefinition {
-  name: string;
-  description: string;
-  initialState: string;
-  transitions: WorkflowTransition[];
+  workflows?: Array<any>;
 }
 
 /**
@@ -275,13 +265,9 @@ export interface SystemComponentReference {
 
 export interface SystemComponents {
   schemas?: SystemComponentReference[];
-  commands?: SystemComponentReference[];
-  queries?: SystemComponentReference[];
   events?: SystemComponentReference[];
-  workflows?: SystemComponentReference[];
   actors?: SystemComponentReference[];
   processes?: SystemComponentReference[];
-  sagas?: SystemComponentReference[];
 }
 
 export interface ProcessActionBase {
@@ -302,6 +288,7 @@ export interface ProcessTransition {
   to: string;
   condition?: string;
   on?: string;
+  action?: ProcessAction;
 }
 
 export interface ProcessState {
@@ -309,12 +296,23 @@ export interface ProcessState {
   actions?: Array<ActorMessageAction | ProcessActionBase>;
   transitions?: Array<ProcessTransition>;
   final?: boolean;
+  nested?: {
+    initialState: string;
+    states: Record<string, ProcessState>;
+  };
+  onEnter?: ProcessAction;
+  onExit?: ProcessAction;
+}
+
+export interface ProcessAction {
+  task?: string;
+  script?: string | ((context: any) => Promise<void>);
 }
 
 export interface ProcessDefinition extends ComponentDefinition {
   type: ComponentType.PROCESS;
   states: Record<string, ProcessState>;
-  transitions: Record<string, any>;
+  transitions: Record<string, ProcessTransition[]>;
 }
 
 /**
