@@ -1,584 +1,597 @@
-import { Runtime } from '../models/runtime.js';
-import { ProcessDefinition, TaskDefinition, ProcessInstance, TaskExecution, ProcessMetrics, TaskMetrics, EventMetrics, HealthCheckResult } from '../models/index.js';
-import { EventBus, EventStorage } from '../models/event.js';
-import { ExtensionSystem } from '../models/extension.js';
-import { createTaskDependenciesPlugin, TaskDependenciesPlugin } from '../plugins/task-dependencies.js';
-import { createRetryPlugin, RetryPlugin, RetryPluginOptions, TaskRetryOptions, RetryStats, BackoffStrategy } from '../plugins/retry.js';
-import { createProcessRecoveryPlugin, ProcessRecoveryPlugin } from '../plugins/process-recovery.js';
-import { createEventPersistencePlugin, EventPersistencePlugin } from '../plugins/event-persistence.js';
-import { createProcessManagementPlugin, ProcessManagementPlugin } from '../plugins/process-management.js';
-import { createTaskManagementPlugin, TaskManagementPlugin } from '../plugins/task-management.js';
-import { createTransactionPluginInstance } from '../factories.js';
-import { TransactionPlugin } from '../plugins/transaction-management.js';
+import { v4 as uuidv4 } from 'uuid';
+import {
+  Runtime,
+  RuntimeOptions,
+  RuntimeMetrics,
+  SystemHealth,
+} from '../models/runtime';
+import {
+  DomainEvent,
+  Identifier,
+  Result,
+  DomainError
+} from '../models/core-types';
+import {
+  EventBus,
+  EventStorage,
+  EventSource
+} from '../models/event-system';
+import {
+  Extension,
+  ExtensionSystem,
+  ExtensionPointName,
+  ExtensionPointNames
+} from '../models/extension-system';
+import {
+  TaskRegistry,
+  TaskExecutor,
+  TaskScheduler
+} from '../models/task-system';
+import {
+  ProcessRegistry,
+  ProcessManager
+} from '../models/process-system';
+import {
+  PluginRegistry
+} from '../models/plugin-system';
 
 /**
- * Reactive implementation of the Runtime interface that delegates to plugins for all functionality
+ * Runtime implementation that follows the latest interface
  */
-export class ReactiveRuntime implements Runtime {
-  // Core services
-  private extensionSystem: ExtensionSystem;
-  private eventBus: EventBus;
+export class RuntimeInstance implements Runtime {
+  /** Unique runtime identifier */
+  public readonly id: Identifier;
   
-  // Plugins
-  private processManagement: ProcessManagementPlugin;
-  private taskManagement: TaskManagementPlugin;
-  private taskDependencies: TaskDependenciesPlugin;
-  private retry: RetryPlugin;
-  private processRecovery: ProcessRecoveryPlugin;
-  private eventPersistence?: EventPersistencePlugin;
-  private transactionPlugin?: TransactionPlugin;
+  /** Runtime version - using private field with getter */
+  private _version: string;
   
-  // Process and task definitions
-  private processDefinitions: Record<string, ProcessDefinition>;
-  private taskDefinitions: Record<string, TaskDefinition>;
+  /** Runtime namespace - using private field with getter */
+  private _namespace: string;
   
-  // Process and task instances
-  private processes: Map<string, ProcessInstance> = new Map();
-  private taskExecutions: Map<string, TaskExecution> = new Map();
+  /** Event bus for pub/sub communication */
+  public readonly eventBus: EventBus;
   
-  // Metrics
-  private taskMetrics: Map<string, TaskMetrics> = new Map();
-  private processMetrics: Map<string, ProcessMetrics> = new Map();
-
+  /** Extension system for plugins */
+  public readonly extensionSystem: ExtensionSystem;
+  
+  /** Plugin registry for managing plugins */
+  public readonly pluginRegistry: PluginRegistry;
+  
+  /** Task registry for managing task definitions */
+  public readonly taskRegistry: TaskRegistry;
+  
+  /** Task executor for running tasks */
+  public readonly taskExecutor: TaskExecutor;
+  
+  /** Task scheduler for deferred execution */
+  public readonly taskScheduler: TaskScheduler;
+  
+  /** Process registry for managing process definitions */
+  public readonly processRegistry: ProcessRegistry;
+  
+  /** Process manager for process instances */
+  public readonly processManager: ProcessManager;
+  
+  /** Event storage for persistence */
+  public readonly eventStorage?: EventStorage;
+  
+  /** Event source for replay */
+  public readonly eventSource?: EventSource;
+  
+  /** Runtime state */
+  private state: 'initializing' | 'running' | 'stopped' | 'error' = 'initializing';
+  
+  /** Start time */
+  private startTime: number = 0;
+  
+  /** Getter for version */
+  public get version(): string {
+    return this._version;
+  }
+  
+  /** Getter for namespace */
+  public get namespace(): string {
+    return this._namespace;
+  }
+  
   /**
-   * Create a new ReactiveRuntime instance
+   * Create a new Runtime instance
    */
-  constructor(
-    processDefinitions: Record<string, ProcessDefinition>,
-    taskDefinitions: Record<string, TaskDefinition>,
-    options: { 
-      extensionSystem: ExtensionSystem; 
-      eventBus: EventBus;
-      eventStorage?: EventStorage;
-    }
-  ) {
-    this.extensionSystem = options.extensionSystem;
+  constructor(options: {
+    eventBus: EventBus;
+    extensionSystem: ExtensionSystem;
+    pluginRegistry: PluginRegistry;
+    taskRegistry: TaskRegistry;
+    taskExecutor: TaskExecutor;
+    taskScheduler: TaskScheduler;
+    processRegistry: ProcessRegistry;
+    processManager: ProcessManager;
+    eventStorage?: EventStorage;
+    eventSource?: EventSource;
+  }) {
+    this.id = uuidv4();
+    this._version = '1.0.0'; // Will be overridden in initialize
+    this._namespace = 'default'; // Will be overridden in initialize
+    
     this.eventBus = options.eventBus;
-    this.processDefinitions = processDefinitions;
-    this.taskDefinitions = taskDefinitions;
-    
-    // Register extension points for task execution
-    this.extensionSystem.registerExtensionPoint({
-      name: 'beforeTaskExecution',
-      description: 'Called before a task is executed',
-      handlers: []
-    });
-    
-    this.extensionSystem.registerExtensionPoint({
-      name: 'afterTaskCompletion',
-      description: 'Called after a task is completed',
-      handlers: []
-    });
-    
-    // Initialize plugins
-    this.processManagement = createProcessManagementPlugin(
-      this.eventBus, 
-      this.extensionSystem,
-      this.processDefinitions
-    );
-    
-    this.taskManagement = createTaskManagementPlugin(
-      this.eventBus,
-      this.extensionSystem,
-      this.taskDefinitions
-    );
-    
-    this.taskDependencies = createTaskDependenciesPlugin(
-      this.eventBus, 
-      this.extensionSystem
-    );
-    
-    // Initialize retry plugin with default options
-    const retryOptions: RetryPluginOptions = {
-      maxRetries: 3,
-      retryableErrors: [Error],
-      backoffStrategy: BackoffStrategy.EXPONENTIAL,
-      initialDelay: 100,
-      maxDelay: 30000
-    };
-    this.retry = createRetryPlugin(
-      this.eventBus, 
-      this.extensionSystem, 
-      retryOptions
-    );
-    
-    this.processRecovery = createProcessRecoveryPlugin(
-      this.eventBus,
-      this.extensionSystem
-    );
-    
-    // Initialize optional plugins if dependencies are provided
-    if (options.eventStorage) {
-      this.eventPersistence = createEventPersistencePlugin(
-        this.eventBus, 
-        this.extensionSystem, 
-        { storage: options.eventStorage }
+    this.extensionSystem = options.extensionSystem;
+    this.pluginRegistry = options.pluginRegistry;
+    this.taskRegistry = options.taskRegistry;
+    this.taskExecutor = options.taskExecutor;
+    this.taskScheduler = options.taskScheduler;
+    this.processRegistry = options.processRegistry;
+    this.processManager = options.processManager;
+    this.eventStorage = options.eventStorage;
+    this.eventSource = options.eventSource;
+  }
+  
+  /**
+   * Initialize the runtime
+   * @param options Runtime configuration options
+   */
+  public async initialize(options: RuntimeOptions): Promise<Result<void>> {
+    try {
+      // Update runtime properties from options
+      this._version = options.version;
+      this._namespace = options.namespace || 'default';
+      
+      // Trigger the system:init extension point
+      const initResult = await this.extensionSystem.executeExtensionPoint(
+        ExtensionPointNames.SYSTEM_INIT,
+        {
+          version: this._version,
+          config: {
+            ...options,
+            runtimeId: this.id
+          }
+        }
       );
-    }
-    
-    this.transactionPlugin = createTransactionPluginInstance(this.eventBus);
-    
-    // Register process versions
-    Object.values(this.processDefinitions).forEach(definition => {
-      this.processRecovery.registerProcessVersion(definition);
-    });
-    
-    // Initialize all plugins
-    this.processManagement.initialize();
-    this.taskManagement.initialize();
-    if (this.taskDependencies) this.taskDependencies.initialize();
-    if (this.retry) this.retry.initialize();
-    if (this.processRecovery) this.processRecovery.initialize();
-    if (this.eventPersistence) this.eventPersistence.initialize();
-    if (this.transactionPlugin) this.transactionPlugin.initialize();
-    
-    // Set up event listeners for metrics
-    this.setupMetricsListeners();
-  }
-
-  //====================
-  // PROCESS MANAGEMENT
-  //====================
-  
-  async createProcess(processType: string, data: any, options: { version?: string } = {}): Promise<ProcessInstance> {
-    try {
-      const process = await this.processManagement.createProcess(processType, data, options);
-      this.processes.set(process.id, process);
-      this.updateProcessMetrics(processType);
-      return process;
-    } catch (error) {
-      this.eventBus.publish('runtime.error', {
-        operation: 'createProcess',
-        processType,
-        error
-      });
-      throw error;
-    }
-  }
-
-  async getProcess(processId: string): Promise<ProcessInstance | undefined> {
-    return this.processes.get(processId);
-  }
-
-  async transitionProcess(processId: string, event: string): Promise<ProcessInstance> {
-    const process = this.processes.get(processId);
-    if (!process) {
-      throw new Error(`Process ${processId} not found`);
-    }
-    
-    try {
-      const updatedProcess = await this.processManagement.transitionProcess(process, event);
-      this.processes.set(updatedProcess.id, updatedProcess);
-      this.updateProcessMetrics(updatedProcess.type);
-      return updatedProcess;
-    } catch (error) {
-      this.eventBus.publish('runtime.error', {
-        operation: 'transitionProcess',
-        processId,
-        event,
-        error
-      });
-      throw error;
-    }
-  }
-
-  async saveProcessCheckpoint(processId: string, checkpointId: string): Promise<ProcessInstance> {
-    const process = this.processes.get(processId);
-    if (!process) {
-      throw new Error(`Process ${processId} not found`);
-    }
-    
-    try {
-      const savedProcess = await this.processRecovery.saveCheckpoint(process, checkpointId);
-      return savedProcess;
-    } catch (error) {
-      this.eventBus.publish('runtime.error', {
-        operation: 'saveProcessCheckpoint',
-        processId,
-        checkpointId,
-        error
-      });
-      throw error;
-    }
-  }
-
-  async restoreProcessFromCheckpoint(processId: string, checkpointId: string): Promise<ProcessInstance> {
-    try {
-      const restoredProcess = await this.processRecovery.restoreFromCheckpoint(processId, checkpointId);
-      if (restoredProcess) {
-        this.processes.set(restoredProcess.id, restoredProcess);
-        return restoredProcess;
+      
+      if (!initResult.success) {
+        this.state = 'error';
+        return initResult;
       }
-      throw new Error(`Could not restore process ${processId} from checkpoint ${checkpointId}`);
+      
+      // Publish initialization event
+      const initEvent: DomainEvent<{ runtimeId: string }> = {
+        id: uuidv4(),
+        type: 'runtime.initialized',
+        timestamp: Date.now(),
+        payload: {
+          runtimeId: this.id
+        },
+        metadata: {
+          version: this._version,
+          namespace: this._namespace
+        }
+      };
+      
+      await this.eventBus.publish(initEvent);
+      
+      this.state = 'initializing';
+      return { success: true, value: undefined };
     } catch (error) {
-      this.eventBus.publish('runtime.error', {
-        operation: 'restoreProcessFromCheckpoint',
-        processId,
-        checkpointId,
-        error
-      });
-      throw error;
+      this.state = 'error';
+      
+      return {
+        success: false,
+        error: error instanceof Error
+          ? error
+          : new Error(`Failed to initialize runtime: ${String(error)}`)
+      };
     }
   }
-
-  //==================
-  // TASK MANAGEMENT
-  //==================
   
-  async executeTask(taskType: string, input: any): Promise<TaskExecution> {
+  /**
+   * Start the runtime
+   */
+  public async start(): Promise<Result<void>> {
+    if (this.state !== 'initializing') {
+      return {
+        success: false,
+        error: new DomainError(
+          `Cannot start runtime in state: ${this.state}`,
+          { currentState: this.state }
+        )
+      };
+    }
+    
     try {
-      const execution = await this.taskManagement.executeTask(taskType, input);
-      this.taskExecutions.set(execution.id, execution);
-      this.updateTaskMetrics(taskType);
-      return execution;
+      // Start the runtime components
+      this.startTime = Date.now();
+      this.state = 'running';
+      
+      // Publish start event
+      const startEvent: DomainEvent<{ runtimeId: string }> = {
+        id: uuidv4(),
+        type: 'runtime.started',
+        timestamp: this.startTime,
+        payload: {
+          runtimeId: this.id
+        },
+        metadata: {
+          version: this._version,
+          namespace: this._namespace
+        }
+      };
+      
+      await this.eventBus.publish(startEvent);
+      
+      return { success: true, value: undefined };
     } catch (error) {
-      this.eventBus.publish('runtime.error', {
-        operation: 'executeTask',
-        taskType,
-        error
-      });
-      throw error;
+      this.state = 'error';
+      
+      return {
+        success: false,
+        error: error instanceof Error
+          ? error
+          : new Error(`Failed to start runtime: ${String(error)}`)
+      };
     }
   }
-
-  async executeTaskWithDependencies(taskType: string, input: any, dependencies: string[]): Promise<TaskExecution> {
+  
+  /**
+   * Stop the runtime
+   */
+  public async stop(): Promise<Result<void>> {
+    if (this.state !== 'running') {
+      return {
+        success: false,
+        error: new DomainError(
+          `Cannot stop runtime in state: ${this.state}`,
+          { currentState: this.state }
+        )
+      };
+    }
+    
     try {
-      const result = await this.taskDependencies.executeWithDependencies(taskType, input, dependencies);
-      this.updateTaskMetrics(taskType);
+      // Stop the runtime components
+      this.state = 'stopped';
+      
+      // Trigger the system:shutdown extension point
+      const shutdownResult = await this.extensionSystem.executeExtensionPoint(
+        ExtensionPointNames.SYSTEM_SHUTDOWN,
+        {
+          reason: 'Explicit shutdown requested'
+        }
+      );
+      
+      if (!shutdownResult.success) {
+        this.state = 'error';
+        return shutdownResult;
+      }
+      
+      // Publish stop event
+      const stopEvent: DomainEvent<{ runtimeId: string }> = {
+        id: uuidv4(),
+        type: 'runtime.stopped',
+        timestamp: Date.now(),
+        payload: {
+          runtimeId: this.id
+        },
+        metadata: {
+          version: this._version,
+          namespace: this._namespace,
+          uptime: Date.now() - this.startTime
+        }
+      };
+      
+      await this.eventBus.publish(stopEvent);
+      
+      return { success: true, value: undefined };
+    } catch (error) {
+      this.state = 'error';
+      
+      return {
+        success: false,
+        error: error instanceof Error
+          ? error
+          : new Error(`Failed to stop runtime: ${String(error)}`)
+      };
+    }
+  }
+  
+  /**
+   * Reset the runtime state
+   */
+  public async reset(): Promise<Result<void>> {
+    try {
+      // Reset all the components
+      this.state = 'initializing';
+      
+      // Clear event subscriptions
+      this.eventBus.clearAllSubscriptions();
+      
+      // Reset task executor
+      // This is a simplification, actual implementation would depend on TaskExecutor interface
+      
+      // Publish reset event
+      const resetEvent: DomainEvent<{ runtimeId: string }> = {
+        id: uuidv4(),
+        type: 'runtime.reset',
+        timestamp: Date.now(),
+        payload: {
+          runtimeId: this.id
+        },
+        metadata: {
+          version: this._version,
+          namespace: this._namespace
+        }
+      };
+      
+      await this.eventBus.publish(resetEvent);
+      
+      return { success: true, value: undefined };
+    } catch (error) {
+      this.state = 'error';
+      
+      return {
+        success: false,
+        error: error instanceof Error
+          ? error
+          : new Error(`Failed to reset runtime: ${String(error)}`)
+      };
+    }
+  }
+  
+  /**
+   * Get runtime health status
+   */
+  public async getHealth(): Promise<Result<SystemHealth>> {
+    try {
+      const now = Date.now();
+      
+      // This is a basic implementation, real one would collect health 
+      // from all subcomponents
+      const health: SystemHealth = {
+        status: this.state === 'running' ? 'healthy' : 'degraded',
+        components: {
+          eventBus: { status: 'healthy', lastChecked: now },
+          extensionSystem: { status: 'healthy', lastChecked: now },
+          taskExecutor: { status: 'healthy', lastChecked: now },
+          processManager: { status: 'healthy', lastChecked: now }
+        },
+        timestamp: now
+      };
+      
+      return { success: true, value: health };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error
+          ? error
+          : new Error(`Failed to get health status: ${String(error)}`)
+      };
+    }
+  }
+  
+  /**
+   * Get runtime metrics
+   */
+  public async getMetrics(): Promise<Result<RuntimeMetrics>> {
+    try {
+      // This is a basic implementation, real one would collect metrics
+      // from all subcomponents
+      const metrics: RuntimeMetrics = {
+        tasks: {
+          total: 0,
+          running: 0,
+          completed: 0,
+          failed: 0,
+          scheduled: 0
+        },
+        processes: {
+          total: 0,
+          active: 0,
+          completed: 0,
+          stateDistribution: {}
+        },
+        events: {
+          total: 0,
+          byType: {},
+          rate: 0
+        },
+        resources: {},
+        timestamp: Date.now()
+      };
+      
+      return { success: true, value: metrics };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error
+          ? error
+          : new Error(`Failed to get metrics: ${String(error)}`)
+      };
+    }
+  }
+  
+  /**
+   * Run a health check on all components
+   */
+  public async checkHealth(): Promise<Result<void>> {
+    try {
+      // Check health of all components
+      // This is a simplified implementation
+      
+      return { success: true, value: undefined };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error
+          ? error
+          : new Error(`Health check failed: ${String(error)}`)
+      };
+    }
+  }
+  
+  /**
+   * Execute a task with the given type and input
+   * @param taskType The type of task to execute
+   * @param input The input data for the task
+   * @returns A promise that resolves with the task execution result
+   */
+  public async executeTask(taskType: string, input: any): Promise<Result<any>> {
+    if (this.state !== 'running') {
+      return {
+        success: false,
+        error: new DomainError(
+          `Cannot execute task in state: ${this.state}`,
+          { currentState: this.state }
+        )
+      };
+    }
+
+    try {
+      // Get task definition
+      const taskDefResult = await this.taskRegistry.getTaskDefinition(taskType);
+      if (!taskDefResult.success) {
+        return {
+          success: false,
+          error: new DomainError(
+            `Task definition not found: ${taskType}`,
+            { taskType }
+          )
+        };
+      }
+
+      // Execute task
+      const result = await this.taskExecutor.executeTask(taskType, input);
+
+      // Publish task execution event
+      const taskEvent: DomainEvent<{ taskType: string; input: any; result: any }> = {
+        id: uuidv4(),
+        type: 'task.executed',
+        timestamp: Date.now(),
+        payload: {
+          taskType,
+          input,
+          result: result.success ? result.value : result.error
+        },
+        metadata: {
+          version: this._version,
+          namespace: this._namespace,
+          success: result.success
+        }
+      };
+
+      await this.eventBus.publish(taskEvent);
+
       return result;
     } catch (error) {
-      this.eventBus.publish('runtime.error', {
-        operation: 'executeTaskWithDependencies',
-        taskType,
-        dependencies,
-        error
-      });
-      throw error;
+      return {
+        success: false,
+        error: error instanceof Error
+          ? error
+          : new Error(`Failed to execute task: ${String(error)}`)
+      };
     }
   }
 
-  async scheduleTask(taskType: string, input: any, scheduledTime: number): Promise<string> {
+  /**
+   * Execute a task with dependencies
+   * @param taskType The type of task to execute
+   * @param input The input data for the task
+   * @param dependencies Array of task types that must be executed before this task
+   * @returns A promise that resolves with the task execution result
+   */
+  public async executeTaskWithDependencies(
+    taskType: string,
+    input: any,
+    dependencies: string[]
+  ): Promise<Result<any>> {
+    if (this.state !== 'running') {
+      return {
+        success: false,
+        error: new DomainError(
+          `Cannot execute task in state: ${this.state}`,
+          { currentState: this.state }
+        )
+      };
+    }
+
     try {
-      return await this.taskManagement.scheduleTask(taskType, input, scheduledTime);
-    } catch (error) {
-      this.eventBus.publish('runtime.error', {
-        operation: 'scheduleTask',
-        taskType,
-        scheduledTime,
-        error
-      });
-      throw error;
-    }
-  }
+      // Get task definition
+      const taskDefResult = await this.taskRegistry.getTaskDefinition(taskType);
+      if (!taskDefResult.success) {
+        return {
+          success: false,
+          error: new DomainError(
+            `Task definition not found: ${taskType}`,
+            { taskType }
+          )
+        };
+      }
 
-  async cancelTask(taskId: string): Promise<boolean> {
-    try {
-      return await this.taskManagement.cancelTask(taskId);
-    } catch (error) {
-      this.eventBus.publish('runtime.error', {
-        operation: 'cancelTask',
-        taskId,
-        error
-      });
-      throw error;
-    }
-  }
-
-  //==================
-  // EVENT MANAGEMENT
-  //==================
-  
-  subscribe(eventType: string, handler: (event: any) => void): () => void {
-    return this.eventBus.subscribe(eventType, handler);
-  }
-
-  unsubscribe(eventType: string, handler: (event: any) => void): void {
-    this.eventBus.unsubscribe(eventType, handler);
-  }
-
-  publish(eventType: string, payload: any): void {
-    this.eventBus.publish(eventType, payload);
-  }
-
-  async persistEvent(event: any): Promise<void> {
-    if (!this.eventPersistence) {
-      throw new Error('Event persistence is not enabled');
-    }
-    
-    try {
-      await this.eventPersistence.persistEvent(event);
-    } catch (error) {
-      this.eventBus.publish('runtime.error', {
-        operation: 'persistEvent',
-        error
-      });
-      throw error;
-    }
-  }
-
-  async replayEvents(fromTimestamp: number, toTimestamp: number, eventTypes?: string[]): Promise<void> {
-    if (!this.eventPersistence) {
-      throw new Error('Event persistence is not enabled');
-    }
-    
-    try {
-      await this.eventPersistence.replayEvents(fromTimestamp, toTimestamp, eventTypes);
-    } catch (error) {
-      this.eventBus.publish('runtime.error', {
-        operation: 'replayEvents',
-        fromTimestamp,
-        toTimestamp,
-        eventTypes,
-        error
-      });
-      throw error;
-    }
-  }
-
-  async correlateEvents(correlationId: string): Promise<any[]> {
-    if (!this.eventPersistence) {
-      throw new Error('Event persistence is not enabled');
-    }
-    
-    try {
-      return await this.eventPersistence.correlateEvents(correlationId);
-    } catch (error) {
-      this.eventBus.publish('runtime.error', {
-        operation: 'correlateEvents',
-        correlationId,
-        error
-      });
-      throw error;
-    }
-  }
-
-  //==================
-  // TRANSACTION MANAGEMENT
-  //==================
-  
-  beginTransaction(): string {
-    if (!this.transactionPlugin) {
-      throw new Error('Transaction management is not enabled');
-    }
-    
-    try {
-      const transaction = this.transactionPlugin.beginTransaction();
-      return transaction.id;
-    } catch (error) {
-      this.eventBus.publish('runtime.error', {
-        operation: 'beginTransaction',
-        error
-      });
-      throw error;
-    }
-  }
-  
-  commitTransaction(transactionId: string): void {
-    if (!this.transactionPlugin) {
-      throw new Error('Transaction management is not enabled');
-    }
-    
-    try {
-      this.transactionPlugin.commitTransaction(transactionId);
-    } catch (error) {
-      this.eventBus.publish('runtime.error', {
-        operation: 'commitTransaction',
-        transactionId,
-        error
-      });
-      throw error;
-    }
-  }
-  
-  rollbackTransaction(transactionId: string): void {
-    if (!this.transactionPlugin) {
-      throw new Error('Transaction management is not enabled');
-    }
-    
-    try {
-      this.transactionPlugin.rollbackTransaction(transactionId);
-    } catch (error) {
-      this.eventBus.publish('runtime.error', {
-        operation: 'rollbackTransaction',
-        transactionId,
-        error
-      });
-      throw error;
-    }
-  }
-
-  //==================
-  // RETRY MANAGEMENT
-  //==================
-  
-  setTaskRetryOptions(taskId: string, options: TaskRetryOptions): void {
-    this.retry.setTaskRetryOptions(taskId, options);
-  }
-
-  getRetryStats(taskId: string): RetryStats {
-    return this.retry.getRetryStats(taskId);
-  }
-
-  //==================
-  // METRICS & HEALTH
-  //==================
-
-  async getTaskMetrics(taskId?: string): Promise<TaskMetrics[]> {
-    if (taskId) {
-      const metrics = this.taskMetrics.get(taskId);
-      return metrics ? [metrics] : [];
-    }
-    return Array.from(this.taskMetrics.values());
-  }
-
-  async getProcessMetrics(processType?: string): Promise<ProcessMetrics[]> {
-    if (processType) {
-      const metrics = this.processMetrics.get(processType);
-      return metrics ? [metrics] : [];
-    }
-    return Array.from(this.processMetrics.values());
-  }
-
-  async getEventMetrics(eventType?: string): Promise<EventMetrics[]> {
-    return this.eventBus.getEventMetrics(eventType);
-  }
-
-  async getHealthStatus(): Promise<HealthCheckResult> {
-    // Get counts of processes and tasks
-    const processes = this.processes.size;
-    const tasks = this.taskExecutions.size;
-    
-    // Get plugin health status
-    const pluginStatus: Record<string, boolean> = {
-      'process-management': true,
-      'task-management': true,
-      'task-dependencies': this.taskDependencies !== undefined,
-      'retry': this.retry !== undefined,
-      'process-recovery': this.processRecovery !== undefined,
-      'event-persistence': this.eventPersistence !== undefined,
-      'transaction-management': this.transactionPlugin !== undefined
-    };
-    
-    // Check event bus health
-    const eventBusConnected = true; // In a real implementation, this would check the event bus connection
-    
-    return {
-      status: 'healthy',
-      timestamp: Date.now(),
-      components: {
-        eventBus: {
-          status: eventBusConnected ? 'connected' : 'disconnected'
-        },
-        plugins: pluginStatus,
-        runtime: {
-          processes,
-          tasks
+      // Execute dependencies first
+      const dependencyResults: Record<string, any> = {};
+      for (const depTaskType of dependencies) {
+        const depResult = await this.executeTask(depTaskType, input);
+        if (!depResult.success) {
+          return depResult;
         }
+        dependencyResults[depTaskType] = depResult.value;
       }
-    };
-  }
 
-  //==================
-  // PRIVATE METHODS
-  //==================
-  
-  private updateProcessMetrics(processType: string): void {
-    // Count processes by type
-    const count = Array.from(this.processes.values())
-      .filter(p => p.type === processType)
-      .length;
-    
-    // Group processes by state
-    const stateDistribution: Record<string, number> = {};
-    for (const process of this.processes.values()) {
-      if (process.type !== processType) continue;
-      stateDistribution[process.state] = (stateDistribution[process.state] || 0) + 1;
+      // Execute the task with dependency results
+      const taskInput = {
+        ...input,
+        previousResults: dependencyResults
+      };
+
+      const result = await this.taskExecutor.executeTask(taskType, taskInput);
+
+      // Publish task execution event
+      const taskEvent: DomainEvent<{
+        taskType: string;
+        input: any;
+        dependencies: string[];
+        result: any;
+      }> = {
+        id: uuidv4(),
+        type: 'task.executed',
+        timestamp: Date.now(),
+        payload: {
+          taskType,
+          input: taskInput,
+          dependencies,
+          result: result.success ? result.value : result.error
+        },
+        metadata: {
+          version: this._version,
+          namespace: this._namespace,
+          success: result.success
+        }
+      };
+
+      await this.eventBus.publish(taskEvent);
+
+      return result;
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error
+          ? error
+          : new Error(`Failed to execute task with dependencies: ${String(error)}`)
+      };
     }
-    
-    // Update metrics
-    this.processMetrics.set(processType, {
-      processType,
-      count,
-      stateDistribution,
-      lastUpdated: Date.now()
-    });
-  }
-
-  private updateTaskMetrics(taskType: string): void {
-    // Get executions of this task type
-    const executions = Array.from(this.taskExecutions.values())
-      .filter(t => t.type === taskType);
-    
-    // Count by status
-    const statusDistribution: Record<string, number> = {};
-    for (const execution of executions) {
-      statusDistribution[execution.status] = (statusDistribution[execution.status] || 0) + 1;
-    }
-    
-    // Calculate average execution time
-    const completedExecutions = executions.filter(e => e.status === 'completed' && e.startTime && e.endTime);
-    const averageExecutionTime = completedExecutions.length > 0
-      ? completedExecutions.reduce((sum, e) => sum + (e.endTime! - e.startTime!), 0) / completedExecutions.length
-      : 0;
-    
-    // Update metrics
-    this.taskMetrics.set(taskType, {
-      taskType,
-      count: executions.length,
-      statusDistribution,
-      averageExecutionTime,
-      lastUpdated: Date.now()
-    });
-  }
-
-  private setupMetricsListeners(): void {
-    // Process events
-    this.eventBus.subscribe('process.created', () => {
-      // Update process metrics on creation
-      const event = arguments[0];
-      if (event && event.processType) {
-        this.updateProcessMetrics(event.processType);
-      }
-    });
-    
-    this.eventBus.subscribe('process.transitioned', () => {
-      // Update process metrics on transition
-      const event = arguments[0];
-      if (event && event.processType) {
-        this.updateProcessMetrics(event.processType);
-      }
-    });
-    
-    // Task events
-    this.eventBus.subscribe('task.completed', () => {
-      // Update task metrics on completion
-      const event = arguments[0];
-      if (event && event.taskType) {
-        this.updateTaskMetrics(event.taskType);
-      }
-    });
-    
-    this.eventBus.subscribe('task.failed', () => {
-      // Update task metrics on failure
-      const event = arguments[0];
-      if (event && event.taskType) {
-        this.updateTaskMetrics(event.taskType);
-      }
-    });
   }
 }
 
 /**
- * Factory function to create a ReactiveRuntime instance
+ * Factory function to create a new Runtime
  */
-export function createReactiveRuntime(
-  processDefinitions: Record<string, ProcessDefinition>,
-  taskDefinitions: Record<string, TaskDefinition>,
-  options: { 
-    extensionSystem: ExtensionSystem; 
-    eventBus: EventBus;
-    eventStorage?: EventStorage;
-  }
-): Runtime {
-  return new ReactiveRuntime(processDefinitions, taskDefinitions, options);
+export function createRuntime(options: {
+  eventBus: EventBus;
+  extensionSystem: ExtensionSystem;
+  pluginRegistry: PluginRegistry;
+  taskRegistry: TaskRegistry;
+  taskExecutor: TaskExecutor;
+  taskScheduler: TaskScheduler;
+  processRegistry: ProcessRegistry;
+  processManager: ProcessManager;
+  eventStorage?: EventStorage;
+  eventSource?: EventSource;
+}): Runtime {
+  return new RuntimeInstance(options);
 } 

@@ -1,4 +1,4 @@
-import { EventBus } from '../models/event.js';
+import { EventBus } from '../models/event-system';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface DomainEvent {
@@ -147,7 +147,12 @@ export class EventSourcingPluginImpl implements EventSourcingPlugin {
 
     // Publish events to the event bus
     for (const event of uncommittedEvents) {
-      this.eventBus.publish(`event.${event.type}`, event);
+      this.eventBus.publish({
+        id: uuidv4(),
+        type: event.type,
+        timestamp: event.timestamp,
+        payload: event
+      });
     }
 
     // Clear uncommitted events
@@ -194,10 +199,15 @@ export class EventSourcingPluginImpl implements EventSourcingPlugin {
 
     const handler = this.commandHandlers.get(commandType);
     if (!handler) {
-      this.eventBus.publish('command.rejected', {
-        commandType,
-        aggregateId: command.aggregateId,
-        reason: `No handler registered for command type ${commandType}`
+      this.eventBus.publish({
+        id: uuidv4(),
+        type: 'command.rejected',
+        timestamp: Date.now(),
+        payload: {
+          commandType,
+          aggregateId: command.aggregateId,
+          reason: `No handler registered for command type ${commandType}`
+        }
       });
       return;
     }
@@ -210,10 +220,15 @@ export class EventSourcingPluginImpl implements EventSourcingPlugin {
       await this.saveAggregate(aggregate);
     } catch (error) {
       // Handle command errors
-      this.eventBus.publish('command.rejected', {
-        commandType,
-        aggregateId: command.aggregateId,
-        reason: error instanceof Error ? error.message : String(error)
+      this.eventBus.publish({
+        id: uuidv4(),
+        type: 'command.rejected',
+        timestamp: Date.now(),
+        payload: {
+          commandType,
+          aggregateId: command.aggregateId,
+          reason: error instanceof Error ? error.message : String(error)
+        }
       });
     }
   }

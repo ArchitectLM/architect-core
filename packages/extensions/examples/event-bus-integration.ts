@@ -3,7 +3,7 @@
  * @module @architectlm/extensions/examples
  */
 
-import { ReactiveEventBus } from "../../core/src/implementations/event-bus.js";
+import { EventBusImpl } from "../../core2/src/implementations/event-bus.js";
 import { Event } from "../src/models.js";
 import {
   createExtensionSystem,
@@ -124,7 +124,7 @@ function example() {
   });
   
   // Create a standard event bus
-  const standardEventBus = new ReactiveEventBus();
+  const standardEventBus = new EventBusImpl();
   
   // Create an extended event bus with our integration
   const extendedEventBus = createExtendedEventBus(

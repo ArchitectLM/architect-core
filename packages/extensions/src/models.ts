@@ -60,6 +60,11 @@ export interface ExtensionPoint {
   description: string;
 
   /**
+   * Array of handler functions for this extension point
+   */
+  handlers: ExtensionHookHandler[];
+
+  /**
    * Optional metadata for the extension point
    */
   metadata?: Record<string, unknown>;

@@ -1,7 +1,7 @@
-import { EventBus } from '../models/event.js';
-import { ExtensionSystem } from '../models/extension.js';
-import { Extension } from '../models/extension.js';
-import { ProcessDefinition, ProcessInstance, ProcessTransition } from '../models/index.js';
+import { EventBus } from '../models/event';
+import { ExtensionSystem } from '../models/extension';
+import { Extension } from '../models/extension';
+import { ProcessDefinition, ProcessInstance, ProcessTransition } from '../models/index';
 
 /**
  * ProcessManagementPlugin provides capabilities for managing process definitions and instances

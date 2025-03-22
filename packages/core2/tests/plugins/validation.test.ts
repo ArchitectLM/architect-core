@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Runtime } from '../../src/models/runtime.js';
-import { createRuntime } from '../../src/implementations/runtime.js';
-import { createExtensionSystem } from '../../src/implementations/extension-system.js';
-import { createEventBus } from '../../src/implementations/event-bus.js';
-import { ProcessDefinition, TaskDefinition } from '../../src/models/index.js';
-import { createValidationPlugin, ValidationPlugin } from '../../src/plugins/validation.js';
+import { Runtime } from '../../src/models/runtime';
+import { createRuntime } from '../../src/implementations/runtime';
+import { createExtensionSystem } from '../../src/implementations/extension-system';
+import { createEventBus } from '../../src/implementations/event-bus';
+import { ProcessDefinition, TaskDefinition } from '../../src/models/index';
+import { createValidationPlugin, ValidationPlugin } from '../../src/plugins/validation';
 
 describe('Validation Plugin', () => {
   let runtime: Runtime;

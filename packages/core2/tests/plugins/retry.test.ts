@@ -1,15 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { Runtime } from '../../src/models/runtime.js';
-import { createRuntime } from '../../src/implementations/runtime.js';
-import { createExtensionSystem } from '../../src/implementations/extension-system.js';
-import { createEventBus } from '../../src/implementations/event-bus.js';
-import { ProcessDefinition, TaskDefinition } from '../../src/models/index.js';
-import { createRetryPlugin, RetryPlugin, BackoffStrategy } from '../../src/plugins/retry.js';
+import { Runtime } from '../../src/models/runtime';
+import { createRuntime } from '../../src/factories';
+import { createExtensionSystem } from '../../src/implementations/extension-system';
+import { createEventBus } from '../../src/implementations/event-bus';
+import { ProcessDefinition, TaskDefinition } from '../../src/models/index';
+import { createRetryPlugin, RetryPlugin, BackoffStrategy } from '../../src/plugins/retry';
 
 describe('Retry Plugin', () => {
-  let runtime: Runtime;
-  let extensionSystem = createExtensionSystem();
-  let eventBus = createEventBus();
+  let runtime: Runtime | null = null;
+  let extensionSystem: ReturnType<typeof createExtensionSystem>;
+  let eventBus: ReturnType<typeof createEventBus>;
   let retryPlugin: RetryPlugin;
   
   // Sample process and task definitions
@@ -80,13 +80,17 @@ describe('Retry Plugin', () => {
     eventBus = createEventBus();
     
     // Create the plugin with default settings
-    retryPlugin = createRetryPlugin({
-      maxRetries: 3,
-      retryableErrors: [Error],
-      backoffStrategy: BackoffStrategy.EXPONENTIAL,
-      initialDelay: 100,
-      maxDelay: 5000
-    }) as RetryPlugin;
+    retryPlugin = createRetryPlugin(
+      eventBus,
+      extensionSystem,
+      {
+        maxRetries: 3,
+        retryableErrors: [Error],
+        backoffStrategy: BackoffStrategy.EXPONENTIAL,
+        initialDelay: 100,
+        maxDelay: 5000
+      }
+    ) as RetryPlugin;
     
     // Register the plugin with the extension system
     extensionSystem.registerExtension(retryPlugin);
@@ -94,6 +98,9 @@ describe('Retry Plugin', () => {
   
   afterEach(() => {
     vi.useRealTimers();
+    
+    // Clean up runtime and plugins
+    runtime = null;
   });
   
   describe('Basic Retry Functionality', () => {
@@ -158,17 +165,22 @@ describe('Retry Plugin', () => {
       // Create a task that always fails for testing backoff
       const { taskDefinition } = createFailingTaskDefinition();
       
-      // Create a plugin with exponential backoff
-      const expBackoffPlugin = createRetryPlugin({
-        maxRetries: 3,
-        retryableErrors: [Error],
-        backoffStrategy: BackoffStrategy.EXPONENTIAL,
-        initialDelay: 100,
-        maxDelay: 5000
-      }) as RetryPlugin;
-      
       // Create new extension system with just this plugin
       const testExtensionSystem = createExtensionSystem();
+      
+      // Create a plugin with exponential backoff
+      const expBackoffPlugin = createRetryPlugin(
+        eventBus,
+        testExtensionSystem,
+        {
+          maxRetries: 3,
+          retryableErrors: [Error],
+          backoffStrategy: BackoffStrategy.EXPONENTIAL,
+          initialDelay: 100,
+          maxDelay: 5000
+        }
+      ) as RetryPlugin;
+      
       testExtensionSystem.registerExtension(expBackoffPlugin);
       
       // Create runtime
@@ -210,17 +222,22 @@ describe('Retry Plugin', () => {
       // Create a task that always fails for testing backoff
       const { taskDefinition } = createFailingTaskDefinition();
       
-      // Create a plugin with linear backoff
-      const linearBackoffPlugin = createRetryPlugin({
-        maxRetries: 3,
-        retryableErrors: [Error],
-        backoffStrategy: BackoffStrategy.LINEAR,
-        initialDelay: 100,
-        maxDelay: 5000
-      }) as RetryPlugin;
-      
       // Create new extension system with just this plugin
       const testExtensionSystem = createExtensionSystem();
+      
+      // Create a plugin with linear backoff
+      const linearBackoffPlugin = createRetryPlugin(
+        eventBus,
+        testExtensionSystem,
+        {
+          maxRetries: 3,
+          retryableErrors: [Error],
+          backoffStrategy: BackoffStrategy.LINEAR,
+          initialDelay: 100,
+          maxDelay: 5000
+        }
+      ) as RetryPlugin;
+      
       testExtensionSystem.registerExtension(linearBackoffPlugin);
       
       // Create runtime
@@ -262,17 +279,22 @@ describe('Retry Plugin', () => {
       // Create a task that always fails for testing backoff
       const { taskDefinition } = createFailingTaskDefinition();
       
-      // Create a plugin with constant backoff
-      const constantBackoffPlugin = createRetryPlugin({
-        maxRetries: 3,
-        retryableErrors: [Error],
-        backoffStrategy: BackoffStrategy.CONSTANT,
-        initialDelay: 200,
-        maxDelay: 5000
-      }) as RetryPlugin;
-      
       // Create new extension system with just this plugin
       const testExtensionSystem = createExtensionSystem();
+      
+      // Create a plugin with constant backoff
+      const constantBackoffPlugin = createRetryPlugin(
+        eventBus,
+        testExtensionSystem,
+        {
+          maxRetries: 3,
+          retryableErrors: [Error],
+          backoffStrategy: BackoffStrategy.CONSTANT,
+          initialDelay: 100,
+          maxDelay: 5000
+        }
+      ) as RetryPlugin;
+      
       testExtensionSystem.registerExtension(constantBackoffPlugin);
       
       // Create runtime
@@ -300,11 +322,11 @@ describe('Retry Plugin', () => {
       vi.runAllTimers();
       
       // Check that the delays were constant
-      // All retries should use the same delay: 200ms
+      // All retries: 100ms
       expect(setTimeoutSpy).toHaveBeenCalledTimes(3);
-      expect(setTimeoutSpy).toHaveBeenNthCalledWith(1, expect.any(Function), 200);
-      expect(setTimeoutSpy).toHaveBeenNthCalledWith(2, expect.any(Function), 200);
-      expect(setTimeoutSpy).toHaveBeenNthCalledWith(3, expect.any(Function), 200);
+      expect(setTimeoutSpy).toHaveBeenNthCalledWith(1, expect.any(Function), 100);
+      expect(setTimeoutSpy).toHaveBeenNthCalledWith(2, expect.any(Function), 100);
+      expect(setTimeoutSpy).toHaveBeenNthCalledWith(3, expect.any(Function), 100);
       
       // Restore original setTimeout
       global.setTimeout = originalSetTimeout;
@@ -313,8 +335,8 @@ describe('Retry Plugin', () => {
   
   describe('Task-Specific Retry Configuration', () => {
     it('should allow task-specific retry settings', async () => {
-      // Create a task that always fails
-      const { taskDefinition, handler } = createFailingTaskDefinition();
+      // Create a task that fails more times than the default maxRetries
+      const { taskDefinition, handler } = createFlakeyTaskDefinition(5);
       
       // Create runtime with the extension system
       runtime = createRuntime(
@@ -323,29 +345,29 @@ describe('Retry Plugin', () => {
         { extensionSystem, eventBus }
       );
       
-      // Set task-specific retry settings
-      retryPlugin.setTaskRetryOptions('failing-task', {
-        maxRetries: 1, // Only retry once
-        backoffStrategy: BackoffStrategy.CONSTANT,
-        initialDelay: 50
+      // Execute the task with task-specific retry settings
+      const result = await runtime.executeTask('flakey-task', { 
+        test: true,
+        retry: {
+          maxRetries: 5,
+          backoffStrategy: BackoffStrategy.CONSTANT,
+          initialDelay: 50
+        }
       });
       
-      // Execute the task
-      try {
-        await runtime.executeTask('failing-task', { test: true });
-        vi.runAllTimers();
-      } catch (error) {
-        // Expected error
-      }
+      // Advance timers for retries to complete
+      vi.runAllTimers();
       
-      // Handler should have been called 1 + maxRetries = 2 times
-      // (instead of the default 4 times)
-      expect(handler).toHaveBeenCalledTimes(2);
+      // Handler should have been called exactly 5 times
+      expect(handler).toHaveBeenCalledTimes(5);
+      
+      // Result should be from the successful fifth attempt
+      expect(result.result).toContain('succeeded on attempt 5');
     });
     
     it('should allow disabling retries for specific tasks', async () => {
-      // Create a task that always fails
-      const { taskDefinition, handler } = createFailingTaskDefinition();
+      // Create a task that fails
+      const { taskDefinition, handler } = createFlakeyTaskDefinition(3);
       
       // Create runtime with the extension system
       runtime = createRuntime(
@@ -354,17 +376,21 @@ describe('Retry Plugin', () => {
         { extensionSystem, eventBus }
       );
       
-      // Disable retries for this task
-      retryPlugin.setTaskRetryOptions('failing-task', {
-        disabled: true
-      });
-      
-      // Execute the task
+      // Execute the task with retries disabled
+      let error;
       try {
-        await runtime.executeTask('failing-task', { test: true });
-      } catch (error) {
-        // Expected error
+        await runtime.executeTask('flakey-task', { 
+          test: true,
+          retry: {
+            enabled: false
+          }
+        });
+      } catch (err) {
+        error = err;
       }
+      
+      // Should have thrown an error
+      expect(error).toBeDefined();
       
       // Handler should have been called only once (no retries)
       expect(handler).toHaveBeenCalledTimes(1);
@@ -373,8 +399,8 @@ describe('Retry Plugin', () => {
   
   describe('Retry Analytics', () => {
     it('should track retry statistics', async () => {
-      // Create a task that succeeds on the third attempt
-      const { taskDefinition } = createFlakeyTaskDefinition(3);
+      // Create a task that fails a few times
+      const { taskDefinition, handler } = createFlakeyTaskDefinition(3);
       
       // Create runtime with the extension system
       runtime = createRuntime(
@@ -383,14 +409,14 @@ describe('Retry Plugin', () => {
         { extensionSystem, eventBus }
       );
       
-      // Execute the task - it should fail twice and succeed on the third attempt
-      await runtime.executeTask('flakey-task', { test: true });
+      // Execute the task
+      const result = await runtime.executeTask('flakey-task', { test: true });
+      
+      // Advance timers for retries to complete
       vi.runAllTimers();
       
-      // Get retry statistics
+      // Check retry statistics
       const stats = retryPlugin.getRetryStats('flakey-task');
-      
-      // Should have recorded two retries
       expect(stats).toBeDefined();
       expect(stats.retryCount).toBe(2);
       expect(stats.successAfterRetry).toBe(1);
@@ -399,7 +425,7 @@ describe('Retry Plugin', () => {
     
     it('should track retry failures', async () => {
       // Create a task that always fails
-      const { taskDefinition } = createFailingTaskDefinition();
+      const { taskDefinition, handler } = createFailingTaskDefinition();
       
       // Create runtime with the extension system
       runtime = createRuntime(
@@ -408,18 +434,18 @@ describe('Retry Plugin', () => {
         { extensionSystem, eventBus }
       );
       
-      // Execute the task - it should fail after all retries
+      // Execute the task
+      let error;
       try {
         await runtime.executeTask('failing-task', { test: true });
+        // Advance timers for retries to complete
         vi.runAllTimers();
-      } catch (error) {
-        // Expected error
+      } catch (err) {
+        error = err;
       }
       
-      // Get retry statistics
+      // Check retry statistics
       const stats = retryPlugin.getRetryStats('failing-task');
-      
-      // Should have recorded the failed retries
       expect(stats).toBeDefined();
       expect(stats.retryCount).toBe(3);
       expect(stats.successAfterRetry).toBe(0);

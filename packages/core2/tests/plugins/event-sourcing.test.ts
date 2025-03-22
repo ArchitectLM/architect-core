@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { EventBus } from '../../src/models/event.js';
+import { EventBus } from '../../src/models/event';
 import { 
   EventSourcingPlugin, 
   EventStore, 
@@ -8,7 +8,7 @@ import {
   Command,
   DomainEvent,
   createEventSourcingPlugin
-} from '../../src/plugins/event-sourcing.js';
+} from '../../src/plugins/event-sourcing';
 
 // Test aggregate implementation
 class TestAggregate implements AggregateRoot {

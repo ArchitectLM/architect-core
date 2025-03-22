@@ -1,33 +1,33 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { EventBus } from '../../src/models/event.js';
-import { Runtime } from '../../src/models/runtime.js';
-import { createRuntime } from '../../src/implementations/runtime.js';
-import { ExtensionSystem } from '../../src/models/extension.js';
+import { EventBus } from '../../src/models/event';
+import { Runtime } from '../../src/models/runtime';
+import { createRuntime } from '../../src/implementations/runtime';
+import { ExtensionSystem } from '../../src/models/extension';
 import { 
   EventSourcingPlugin, 
   createEventSourcingPlugin,
   EventStore,
   AggregateRoot,
   DomainEvent
-} from '../../src/plugins/event-sourcing.js';
+} from '../../src/plugins/event-sourcing';
 import { 
   OutboxPattern, 
   createOutboxPattern,
   OutboxRepository,
   OutboxEntry
-} from '../../src/plugins/outbox-pattern.js';
+} from '../../src/plugins/outbox-pattern';
 import { 
   ContentBasedRouter, 
   createContentBasedRouter,
   RouteDefinition
-} from '../../src/plugins/content-based-routing.js';
-import { RuntimeImpl } from '../../src/implementations/runtime.new.js';
-import { ProcessDefinition, TaskDefinition } from '../../src/models/index.js';
-import { EventStorage } from '../../src/models/event.js';
-import { TaskDependenciesPlugin, createTaskDependenciesPlugin } from '../../src/plugins/task-dependencies.js';
-import { RetryPlugin, createRetryPlugin, RetryPluginOptions, BackoffStrategy } from '../../src/plugins/retry.js';
-import { ProcessRecoveryPlugin, createProcessRecoveryPlugin } from '../../src/plugins/process-recovery.js';
-import { EventPersistencePlugin, createEventPersistencePlugin } from '../../src/plugins/event-persistence.js';
+} from '../../src/plugins/content-based-routing';
+import { RuntimeInstance } from '../../src/implementations/runtime';
+import { ProcessDefinition, TaskDefinition } from '../../src/models/index';
+import { EventStorage } from '../../src/models/event';
+import { TaskDependenciesPlugin, createTaskDependenciesPlugin } from '../../src/plugins/task-dependencies';
+import { RetryPlugin, createRetryPlugin, RetryPluginOptions, BackoffStrategy } from '../../src/plugins/retry';
+import { ProcessRecoveryPlugin, createProcessRecoveryPlugin } from '../../src/plugins/process-recovery';
+import { EventPersistencePlugin, createEventPersistencePlugin } from '../../src/plugins/event-persistence';
 
 // Test aggregate implementation
 class TestAggregate implements AggregateRoot {
@@ -189,7 +189,7 @@ describe('Runtime Plugin Integration', () => {
     // Create runtime with empty definitions for testing
     runtime = createRuntime({}, {}, { extensionSystem, eventBus });
 
-    runtime = new RuntimeImpl(processDefinitions, taskDefinitions, {
+    runtime = new RuntimeInstance(processDefinitions, taskDefinitions, {
       extensionSystem,
       eventBus,
       eventStorage

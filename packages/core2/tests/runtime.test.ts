@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { Runtime } from '../src/models/runtime.js';
-import { ProcessDefinition, ProcessInstance, TaskExecution, Event, EventBus, ExtensionSystem } from '../src/models/index.js';
-import { createReactiveRuntime, createEventBusInstance, createExtensionSystemInstance } from '../src/factories.js';
-import { InMemoryEventStorage } from '../src/implementations/event-storage.js';
+import { Runtime } from '../src/models/runtime';
+import { ProcessDefinition, ProcessInstance, TaskExecution, Event, EventBus, ExtensionSystem } from '../src/models/index';
+import { createRuntime, createEventBusInstance, createExtensionSystemInstance } from '../src/factories';
+import { InMemoryEventStorage } from '../src/implementations/event-storage';
 
 describe('Reactive Runtime', () => {
   let runtime: Runtime;
@@ -15,7 +15,7 @@ describe('Reactive Runtime', () => {
     eventBus = createEventBusInstance();
     eventStorage = new InMemoryEventStorage();
     
-    runtime = createReactiveRuntime({}, {}, {
+    runtime = createRuntime({}, {}, {
       extensionSystem,
       eventBus,
       eventStorage
@@ -33,6 +33,15 @@ describe('Reactive Runtime', () => {
         { from: 'running', to: 'completed', on: 'complete' }
       ]
     };
+
+    beforeEach(() => {
+      // Register the process definition
+      runtime = createRuntime({ [validDefinition.id]: validDefinition }, {}, {
+        extensionSystem,
+        eventBus,
+        eventStorage
+      });
+    });
 
     it('should create a process instance', async () => {
       const process = await runtime.createProcess(validDefinition.id, {});

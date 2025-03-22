@@ -1,8 +1,8 @@
-import { EventBus } from '../models/event.js';
-import { ExtensionSystem } from '../models/extension.js';
-import { Extension } from '../models/extension.js';
-import { TaskDefinition, TaskExecution, TaskContext, CancellationToken } from '../models/index.js';
-import { CancellationTokenImpl } from '../implementations/cancellation-token.js';
+import { EventBus } from '../models/event';
+import { ExtensionSystem } from '../models/extension';
+import { Extension } from '../models/extension';
+import { TaskDefinition, TaskExecution, TaskContext, CancellationToken } from '../models/index';
+import { CancellationTokenImpl } from '../implementations/cancellation-token';
 
 /**
  * TaskManagementPlugin provides capabilities for managing task definitions and executions
@@ -66,11 +66,11 @@ export class TaskManagementPluginImpl implements TaskManagementPlugin {
       name: 'task-management',
       description: 'Provides task definition and execution management',
       hooks: {
-        'beforeTaskExecution': async (context) => {
+        'task:beforeExecution': async (context) => {
           // We could add validation or enrichment here
           return context;
         },
-        'afterTaskCompletion': async (context) => {
+        'task:afterCompletion': async (context) => {
           // Emit task completed event
           this.eventBus.publish('task.completed', {
             taskId: context.taskId,
@@ -108,75 +108,83 @@ export class TaskManagementPluginImpl implements TaskManagementPlugin {
       throw new Error(`Unknown task type: ${taskType}`);
     }
 
-    // Create task execution with unique ID
     const taskExecution: TaskExecution = {
-      id: `${taskType}-${Date.now()}`,
+      id: `task-${Date.now()}`,
       type: taskType,
       status: 'running',
-      input,
       startTime: Date.now(),
-      metadata: input.metadata || {}
+      input
     };
 
-    // Create cancellation token if task is cancellable
     const cancellationToken = new CancellationTokenImpl();
-    
-    // Store running task
-    this.runningTasks.set(taskExecution.id, {
-      execution: taskExecution,
-      cancellationToken
-    });
+    this.runningTasks.set(taskExecution.id, { execution: taskExecution, cancellationToken });
 
     try {
-      // Execute beforeExecute extension point
-      const executeContext = await this.extensionSystem.executeExtensionPoint('beforeTaskExecution', {
+      // Execute beforeExecution extension point
+      const executeContext = await this.extensionSystem.executeExtensionPoint('task:beforeExecution', {
         taskId: taskExecution.id,
         taskType,
-        input,
-        cancellationToken,
+        data: input,
+        state: {},
         startTime: taskExecution.startTime,
-        metadata: input.metadata || taskExecution.metadata
+        metadata: {
+          execution: taskExecution,
+          ...input.metadata
+        }
       });
+
+      if (executeContext.skipExecution) {
+        taskExecution.status = 'cancelled';
+        taskExecution.endTime = Date.now();
+        return taskExecution;
+      }
 
       // Execute task handler
       taskExecution.result = await this.executeTaskHandler(
-        definition, 
-        taskExecution, 
-        executeContext.input || input, 
+        definition,
+        taskExecution,
+        executeContext.data || input,
         cancellationToken
       );
       
-      // Update task status
       taskExecution.status = 'completed';
       taskExecution.endTime = Date.now();
       
       // Execute afterExecute extension point
-      await this.extensionSystem.executeExtensionPoint('afterTaskCompletion', {
+      await this.extensionSystem.executeExtensionPoint('task:afterCompletion', {
         taskId: taskExecution.id,
         taskType,
-        input: executeContext.input || input,
+        data: executeContext.data || input,
+        state: {},
         result: taskExecution.result,
         startTime: taskExecution.startTime,
         endTime: taskExecution.endTime,
-        metadata: input.metadata
+        metadata: {
+          execution: taskExecution,
+          ...input.metadata
+        }
       });
 
       return taskExecution;
     } catch (error) {
       // Update task status to failed
       taskExecution.status = 'failed';
-      taskExecution.error = error;
+      taskExecution.error = error as Error;
       taskExecution.endTime = Date.now();
       
       // Execute onError extension point
-      await this.extensionSystem.executeExtensionPoint('afterTaskCompletion', {
+      await this.extensionSystem.executeExtensionPoint('task:afterCompletion', {
         taskId: taskExecution.id,
         taskType,
-        input,
-        error,
+        data: input,
+        state: {},
+        error: error as Error,
         startTime: taskExecution.startTime,
         endTime: taskExecution.endTime,
-        metadata: input.metadata
+        metadata: {
+          execution: taskExecution,
+          ...input.metadata
+        }
       });
 
       throw error;

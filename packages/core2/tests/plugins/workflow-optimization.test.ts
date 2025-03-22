@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { Runtime } from '../../src/models/runtime.js';
-import { createRuntime } from '../../src/implementations/runtime.js';
-import { createExtensionSystem } from '../../src/implementations/extension-system.js';
-import { createEventBus } from '../../src/implementations/event-bus.js';
-import { ProcessDefinition, TaskDefinition } from '../../src/models/index.js';
+import { Runtime } from '../../src/models/runtime';
+import { createRuntime } from '../../src/implementations/runtime';
+import { createExtensionSystem } from '../../src/implementations/extension-system';
+import { createEventBus } from '../../src/implementations/event-bus';
+import { ProcessDefinition, TaskDefinition } from '../../src/models/index';
 import { 
   createWorkflowOptimizationPlugin, 
   WorkflowOptimizationPlugin,
@@ -11,7 +11,7 @@ import {
   OptimizationType,
   WorkflowMetrics,
   OptimizationSuggestion
-} from '../../src/plugins/workflow-optimization.js';
+} from '../../src/plugins/workflow-optimization';
 
 describe('Workflow Optimization Plugin', () => {
   let runtime: Runtime;
@@ -372,14 +372,14 @@ describe('Workflow Optimization Plugin', () => {
   describe('Plugin Integration', () => {
     it('should emit optimization events through event bus', async () => {
       // Spy on event bus
-      const emitSpy = vi.spyOn(eventBus, 'emit');
+      const publishSpy = vi.spyOn(eventBus, 'publish');
       
       // Execute tasks to trigger optimization
       await runtime.executeTask(dataPreparationTask.id, { data: 'test' });
       await runtime.executeTask(validationTask.id, { data: 'test' });
       
       // Check for optimization events
-      expect(emitSpy).toHaveBeenCalledWith(
+      expect(publishSpy).toHaveBeenCalledWith(
         'workflow:optimization',
         expect.objectContaining({
           type: expect.any(String),
@@ -393,8 +393,8 @@ describe('Workflow Optimization Plugin', () => {
       // Spy on the plugin's event handler
       const handleWorkflowEventSpy = vi.spyOn(workflowOptimizationPlugin, 'handleWorkflowEvent');
       
-      // Emit a workflow event
-      eventBus.emit('workflow:event', {
+      // Publish a workflow event
+      eventBus.publish('workflow:event', {
         type: 'task_completed',
         taskId: dataPreparationTask.id,
         duration: 100,

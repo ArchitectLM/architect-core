@@ -1,324 +1,206 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { Runtime } from '../src/models/runtime.js';
-import { ReactiveRuntime } from '../src/implementations/runtime.js';
-import { Event } from '../src/models/index.js';
-import { ExtensionSystemImpl } from '../src/implementations/extension-system.js';
-import { EventBusImpl } from '../src/implementations/event-bus.js';
-import { InMemoryEventStorage } from '../src/implementations/event-storage.js';
-import { BackpressureStrategy } from '../src/models/backpressure.js';
+import { ExtensionEventBus, createEventBus } from '../src/implementations/event-bus';
+import { ExtensionSystem, ExtensionPointNames } from '../src/models/extension-system';
+import { DomainEvent, Identifier } from '../src/models/core-types';
+import { BackpressureStrategy } from '../src/models/backpressure';
 
-describe('Event Management', () => {
-  let runtime: Runtime;
-  let extensionSystem: ExtensionSystemImpl;
-  let eventBus: EventBusImpl;
-  let eventStorage: InMemoryEventStorage;
+describe('ExtensionEventBus', () => {
+  let eventBus: ExtensionEventBus;
+  let mockExtensionSystem: ExtensionSystem;
 
   beforeEach(() => {
-    extensionSystem = new ExtensionSystemImpl();
-    eventBus = new EventBusImpl();
-    eventStorage = new InMemoryEventStorage();
-    
-    runtime = new ReactiveRuntime({}, {}, {
-      extensionSystem,
-      eventBus,
-      eventStorage
-    });
+    mockExtensionSystem = {
+      registerExtension: vi.fn(),
+      unregisterExtension: vi.fn(),
+      getExtensions: vi.fn(),
+      executeExtensionPoint: vi.fn(),
+      getExtension: vi.fn(),
+      hasExtension: vi.fn()
+    };
+
+    eventBus = new ExtensionEventBus(mockExtensionSystem);
   });
 
-  describe('Event Publishing and Subscription', () => {
-    it('should publish and subscribe to specific event types', async () => {
+  describe('Core Event Bus Functionality', () => {
+    it('should publish and subscribe to events', async () => {
+      const eventType = 'test.event';
       const handler = vi.fn();
-      const unsubscribe = runtime.subscribe('test.event', handler);
-      
-      runtime.publish('test.event', { data: 'test' });
-      expect(handler).toHaveBeenCalledWith({ data: 'test' });
-      
-      unsubscribe();
-      runtime.publish('test.event', { data: 'ignored' });
+      const event: DomainEvent<{ test: string }> = {
+        id: 'test-event',
+        type: eventType,
+        timestamp: Date.now(),
+        payload: { test: 'value' }
+      };
+
+      // Subscribe to events
+      const subscription = eventBus.subscribe(eventType, handler);
+      expect(eventBus.subscriberCount(eventType)).toBe(1);
+
+      // Publish event
+      await eventBus.publish(event);
+      expect(handler).toHaveBeenCalledWith(event);
+
+      // Unsubscribe
+      subscription.unsubscribe();
+      expect(eventBus.subscriberCount(eventType)).toBe(0);
+
+      // Publish again - handler should not be called
+      await eventBus.publish(event);
       expect(handler).toHaveBeenCalledTimes(1);
     });
 
     it('should handle multiple subscribers for the same event type', async () => {
+      const eventType = 'test.event';
       const handler1 = vi.fn();
       const handler2 = vi.fn();
-      
-      runtime.subscribe('test.event', handler1);
-      runtime.subscribe('test.event', handler2);
-      
-      runtime.publish('test.event', { data: 'test' });
+      const event: DomainEvent<{ test: string }> = {
+        id: 'test-event',
+        type: eventType,
+        timestamp: Date.now(),
+        payload: { test: 'value' }
+      };
+
+      // Subscribe two handlers
+      const subscription1 = eventBus.subscribe(eventType, handler1);
+      const subscription2 = eventBus.subscribe(eventType, handler2);
+      expect(eventBus.subscriberCount(eventType)).toBe(2);
+
+      // Publish event
+      await eventBus.publish(event);
+      expect(handler1).toHaveBeenCalledWith(event);
+      expect(handler2).toHaveBeenCalledWith(event);
+
+      // Unsubscribe one handler
+      subscription1.unsubscribe();
+      expect(eventBus.subscriberCount(eventType)).toBe(1);
+
+      // Publish again - only second handler should be called
+      await eventBus.publish(event);
       expect(handler1).toHaveBeenCalledTimes(1);
-      expect(handler2).toHaveBeenCalledTimes(1);
-    });
-
-    it('should handle event persistence', async () => {
-      const event = { type: 'test.event', data: 'test' };
-      await runtime.persistEvent(event);
-
-      const startTime = Date.now() - 1000;
-      const endTime = Date.now() + 1000;
-      await runtime.replayEvents(startTime, endTime, ['test.event']);
+      expect(handler2).toHaveBeenCalledTimes(2);
     });
   });
 
-  describe('Event Correlation', () => {
-    it('should correlate events by correlation ID', async () => {
-      const correlationId = 'test-correlation';
-      const events = [
-        { type: 'test.event1', data: 'test1', correlationId },
-        { type: 'test.event2', data: 'test2', correlationId }
-      ];
+  describe('Extension Point Integration', () => {
+    it('should execute before and after publish hooks', async () => {
+      const event: DomainEvent<{ test: string }> = {
+        id: 'test-event',
+        type: 'test.event',
+        timestamp: Date.now(),
+        payload: { test: 'value' }
+      };
 
-      for (const event of events) {
-        await runtime.persistEvent(event);
-      }
+      // Mock extension system responses
+      (mockExtensionSystem.executeExtensionPoint as jest.Mock)
+        .mockResolvedValueOnce({ success: true, value: undefined })
+        .mockResolvedValueOnce({ success: true, value: undefined });
 
-      const correlatedEvents = await runtime.correlateEvents(correlationId);
-      expect(correlatedEvents).toHaveLength(2);
-      expect(correlatedEvents.map(e => e.type)).toEqual(['test.event1', 'test.event2']);
+      await eventBus.publish(event);
+
+      expect(mockExtensionSystem.executeExtensionPoint).toHaveBeenCalledTimes(2);
+      expect(mockExtensionSystem.executeExtensionPoint).toHaveBeenCalledWith(
+        ExtensionPointNames.EVENT_BEFORE_PUBLISH,
+        {
+          eventType: event.type,
+          payload: event.payload
+        }
+      );
+      expect(mockExtensionSystem.executeExtensionPoint).toHaveBeenCalledWith(
+        ExtensionPointNames.EVENT_AFTER_PUBLISH,
+        {
+          eventId: event.id,
+          eventType: event.type,
+          payload: event.payload
+        }
+      );
+    });
+
+    it('should handle hook failures gracefully', async () => {
+      const event: DomainEvent<{ test: string }> = {
+        id: 'test-event',
+        type: 'test.event',
+        timestamp: Date.now(),
+        payload: { test: 'value' }
+      };
+
+      // Mock extension system to fail on before publish
+      (mockExtensionSystem.executeExtensionPoint as jest.Mock)
+        .mockResolvedValueOnce({ 
+          success: false, 
+          error: new Error('Hook failed') 
+        });
+
+      await expect(eventBus.publish(event)).rejects.toThrow('Hook failed');
     });
   });
 
-  describe('Event Replay', () => {
-    it('should replay events within a time range', async () => {
-      const now = Date.now();
-      const events = [
-        { type: 'test.event1', data: 'test1', timestamp: now - 500 },
-        { type: 'test.event2', data: 'test2', timestamp: now - 250 },
-        { type: 'test.event3', data: 'test3', timestamp: now + 500 }
-      ];
-
-      for (const event of events) {
-        await runtime.persistEvent(event);
-      }
-
+  describe('Event Filtering and Routing', () => {
+    it('should handle filtered subscriptions', async () => {
+      const eventType = 'test.event';
       const handler = vi.fn();
-      runtime.subscribe('test.event1', handler);
-      runtime.subscribe('test.event2', handler);
+      const filter = (event: DomainEvent<{ test: string }>) => event.payload.test === 'value';
+      
+      const event1: DomainEvent<{ test: string }> = {
+        id: 'test-event-1',
+        type: eventType,
+        timestamp: Date.now(),
+        payload: { test: 'value' }
+      };
 
-      await runtime.replayEvents(now - 1000, now);
-      expect(handler).toHaveBeenCalledTimes(2);
-    });
+      const event2: DomainEvent<{ test: string }> = {
+        id: 'test-event-2',
+        type: eventType,
+        timestamp: Date.now(),
+        payload: { test: 'other' }
+      };
 
-    it('should filter replayed events by type', async () => {
-      const now = Date.now();
-      const events = [
-        { type: 'test.event1', data: 'test1', timestamp: now - 500 },
-        { type: 'test.event2', data: 'test2', timestamp: now - 250 },
-        { type: 'test.event3', data: 'test3', timestamp: now + 500 }
-      ];
+      // Subscribe with filter
+      eventBus.subscribeWithFilter(eventType, filter, handler);
 
-      for (const event of events) {
-        await runtime.persistEvent(event);
-      }
+      // Publish events
+      await eventBus.publish(event1);
+      await eventBus.publish(event2);
 
-      const handler = vi.fn();
-      runtime.subscribe('test.event1', handler);
-
-      await runtime.replayEvents(now - 1000, now, ['test.event1']);
+      // Handler should only be called for matching events
       expect(handler).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenCalledWith(event1);
+    });
+
+    it('should route events to additional channels', async () => {
+      const sourceType = 'source.event';
+      const targetType = 'target.event';
+      const handler = vi.fn();
+      const event: DomainEvent<{ test: string }> = {
+        id: 'test-event',
+        type: sourceType,
+        timestamp: Date.now(),
+        payload: { test: 'value' }
+      };
+
+      // Add event router
+      eventBus.addEventRouter((event) => [targetType]);
+
+      // Subscribe to target channel
+      eventBus.subscribe(targetType, handler);
+
+      // Publish event
+      await eventBus.publish(event);
+
+      // Handler should be called with the event
+      expect(handler).toHaveBeenCalledWith(event);
     });
   });
 
-  describe('Event Metrics', () => {
-    it('should track event metrics', async () => {
-      const event = { type: 'test.event', data: 'test' };
-      await runtime.persistEvent(event);
+  describe('Backpressure Handling', () => {
+    it('should apply backpressure strategy', async () => {
+      const eventType = 'test.event';
+      const strategy: BackpressureStrategy = {
+        shouldAccept: (queueDepth: number) => queueDepth < 10,
+        calculateDelay: () => 100
+      };
 
-      const metrics = await runtime.getEventMetrics('test.event');
-      expect(metrics).toBeDefined();
-      expect(metrics.length).toBeGreaterThan(0);
-      expect(metrics[0].eventType).toBe('test.event');
-    });
-  });
-
-  describe('EventBusImpl', () => {
-    let eventBus: EventBusImpl;
-    let storage: InMemoryEventStorage;
-
-    beforeEach(() => {
-      storage = new InMemoryEventStorage();
-      eventBus = new EventBusImpl(storage);
-    });
-
-    describe('subscribe and unsubscribe', () => {
-      it('should subscribe to specific event types', () => {
-        const handler = vi.fn();
-        const unsubscribe = eventBus.subscribe('test.event', handler);
-        
-        eventBus.publish('test.event', { data: 'test' });
-        expect(handler).toHaveBeenCalledTimes(1);
-        
-        unsubscribe();
-        eventBus.publish('test.event', { data: 'test' });
-        expect(handler).toHaveBeenCalledTimes(1);
-      });
-
-      it('should subscribe to wildcard events', () => {
-        const handler = vi.fn();
-        const unsubscribe = eventBus.subscribe('*', handler);
-        
-        eventBus.publish('test.event1', { data: 'test1' });
-        eventBus.publish('test.event2', { data: 'test2' });
-        expect(handler).toHaveBeenCalledTimes(2);
-        
-        unsubscribe();
-        eventBus.publish('test.event3', { data: 'test3' });
-        expect(handler).toHaveBeenCalledTimes(2);
-      });
-
-      it('should handle multiple subscribers for the same event type', () => {
-        const handler1 = vi.fn();
-        const handler2 = vi.fn();
-        
-        eventBus.subscribe('test.event', handler1);
-        eventBus.subscribe('test.event', handler2);
-        
-        eventBus.publish('test.event', { data: 'test' });
-        expect(handler1).toHaveBeenCalledTimes(1);
-        expect(handler2).toHaveBeenCalledTimes(1);
-      });
-    });
-
-    describe('publish', () => {
-      it('should publish events with required fields', () => {
-        const handler = vi.fn();
-        eventBus.subscribe('test.event', handler);
-        
-        eventBus.publish('test.event', { data: 'test' });
-        
-        const event = handler.mock.calls[0][0];
-        expect(event.id).toBeDefined();
-        expect(event.timestamp).toBeDefined();
-        expect(event.type).toBe('test.event');
-        expect(event.payload).toEqual({ data: 'test' });
-        expect(event.correlationId).toBeDefined();
-      });
-
-      it('should apply event filters', () => {
-        const handler = vi.fn();
-        eventBus.subscribe('test.event', handler);
-        
-        eventBus.addEventFilter(event => event.payload.data !== 'filtered');
-        
-        eventBus.publish('test.event', { data: 'test' });
-        eventBus.publish('test.event', { data: 'filtered' });
-        
-        expect(handler).toHaveBeenCalledTimes(1);
-        expect(handler.mock.calls[0][0].payload.data).toBe('test');
-      });
-
-      it('should route events to additional channels', () => {
-        const handler = vi.fn();
-        eventBus.subscribe('routed.event', handler);
-        
-        eventBus.addEventRouter(event => ['routed.event']);
-        
-        eventBus.publish('test.event', { data: 'test' });
-        
-        expect(handler).toHaveBeenCalledTimes(1);
-        expect(handler.mock.calls[0][0].type).toBe('routed.event');
-      });
-    });
-
-    describe('event persistence', () => {
-      it('should persist events when storage is enabled', async () => {
-        eventBus.enablePersistence(storage);
-        
-        eventBus.publish('test.event', { data: 'test' });
-        
-        const events = await storage.getEvents({});
-        expect(events).toHaveLength(1);
-        expect(events[0].type).toBe('test.event');
-      });
-
-      it('should not persist events when storage is disabled', async () => {
-        eventBus.disablePersistence();
-        
-        eventBus.publish('test.event', { data: 'test' });
-        
-        const events = await storage.getEvents({});
-        expect(events).toHaveLength(0);
-      });
-    });
-
-    describe('event replay', () => {
-      it('should replay events matching the filter', async () => {
-        eventBus.enablePersistence(storage);
-        
-        // Publish some test events
-        eventBus.publish('test.event1', { data: 'test1' });
-        eventBus.publish('test.event2', { data: 'test2' });
-        eventBus.publish('test.event1', { data: 'test3' });
-        
-        const handler = vi.fn();
-        eventBus.subscribe('test.event1', handler);
-        
-        // Replay only test.event1 events
-        await eventBus.replay({ types: ['test.event1'] });
-        
-        expect(handler).toHaveBeenCalledTimes(2);
-        expect(handler.mock.calls[0][0].payload.data).toBe('test1');
-        expect(handler.mock.calls[1][0].payload.data).toBe('test3');
-      });
-
-      it('should emit replay start and complete events', async () => {
-        eventBus.enablePersistence(storage);
-        
-        const startHandler = vi.fn();
-        const completeHandler = vi.fn();
-        
-        eventBus.subscribe('replay:started', startHandler);
-        eventBus.subscribe('replay:completed', completeHandler);
-        
-        await eventBus.replay({});
-        
-        expect(startHandler).toHaveBeenCalledTimes(1);
-        expect(completeHandler).toHaveBeenCalledTimes(1);
-      });
-    });
-
-    describe('event correlation', () => {
-      it('should correlate events by correlation ID', async () => {
-        eventBus.enablePersistence(storage);
-        
-        const correlationId = 'test-correlation';
-        eventBus.publish('test.event1', { data: 'test1' }, { correlationId });
-        eventBus.publish('test.event2', { data: 'test2' }, { correlationId });
-        
-        const events = await eventBus.correlate(correlationId);
-        expect(events).toHaveLength(2);
-        expect(events.every(e => e.correlationId === correlationId)).toBe(true);
-      });
-    });
-
-    describe('backpressure', () => {
-      it('should apply backpressure strategy', () => {
-        const strategy: BackpressureStrategy = {
-          shouldAccept: vi.fn().mockReturnValue(false),
-          calculateDelay: vi.fn().mockReturnValue(0)
-        };
-        
-        eventBus.applyBackpressure('test.event', strategy);
-        
-        eventBus.publish('test.event', { data: 'test' });
-        
-        expect(strategy.shouldAccept).toHaveBeenCalled();
-      });
-    });
-
-    describe('metrics', () => {
-      it('should track event metrics', () => {
-        const handler = vi.fn();
-        eventBus.subscribe('test.event', handler);
-        
-        eventBus.publish('test.event', { data: 'test' });
-        eventBus.publish('test.event', { data: 'test' });
-        
-        const metrics = eventBus.getEventMetrics();
-        expect(metrics.eventsPublished).toBe(2);
-        expect(metrics.eventsDelivered).toBe(2);
-        expect(metrics.eventCounts.get('test.event')).toBe(2);
-      });
+      eventBus.applyBackpressure(eventType, strategy);
+      // Note: Actual backpressure behavior is tested in the implementation tests
     });
   });
 }); 

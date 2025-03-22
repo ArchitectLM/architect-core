@@ -1,4 +1,4 @@
-import { EventBus } from '../models/event.js';
+import { EventBus } from '../models/event';
 import { v4 as uuidv4 } from 'uuid';
 
 export type OutboxEntryStatus = 'pending' | 'processed' | 'failed';

@@ -1,8 +1,9 @@
-import { Extension } from '../models/extension.js';
-import { TaskExecution, TaskDefinition, TaskRetryPolicy } from '../models/index.js';
-import { EventBus } from '../models/event.js';
-import { ExtensionSystem } from '../models/extension.js';
-import { CancellationToken } from '../models/index.js';
+import { Extension } from '../models/extension';
+import { TaskExecution, TaskDefinition, TaskRetryPolicy } from '../models/index';
+import { EventBus } from '../models/event';
+import { ExtensionSystem } from '../models/extension';
+import { CancellationToken } from '../models/index';
+import { ExtensionContext } from '../models/extension';
 
 /**
  * Backoff strategies for retry attempts
@@ -101,14 +102,22 @@ export class RetryPlugin implements Extension {
   constructor(
     private eventBus: EventBus,
     private extensionSystem: ExtensionSystem,
-    options: RetryPluginOptions
+    options: Partial<RetryPluginOptions> = {}
   ) {
     this.options = {
-      maxRetries: options.maxRetries || 3,
-      retryableErrors: options.retryableErrors || [Error],
-      backoffStrategy: options.backoffStrategy || BackoffStrategy.EXPONENTIAL,
-      initialDelay: options.initialDelay || 100,
-      maxDelay: options.maxDelay || 30000
+      maxRetries: options.maxRetries ?? 3,
+      retryableErrors: options.retryableErrors ?? [Error],
+      backoffStrategy: options.backoffStrategy ?? BackoffStrategy.EXPONENTIAL,
+      initialDelay: options.initialDelay ?? 100,
+      maxDelay: options.maxDelay ?? 30000
+    };
+  }
+
+  getExtension(): Extension {
+    return {
+      name: this.name,
+      description: this.description,
+      hooks: this.hooks
     };
   }
 
@@ -117,7 +126,11 @@ export class RetryPlugin implements Extension {
   }
 
   hooks = {
-    'task:onError': async (context: any) => {
+    'task:onError': async (context: ExtensionContext) => {
+      if (!context.taskType) {
+        throw new Error('Task type is required for retry');
+      }
+
       const taskId = context.taskType;
       const error = context.error;
 
@@ -138,7 +151,7 @@ export class RetryPlugin implements Extension {
       }
 
       // Check if error is retryable
-      if (!this.isErrorRetryable(error, taskOptions.retryableErrors)) {
+      if (!this.isErrorRetryable(error as Error, taskOptions.retryableErrors)) {
         this.updateStats(taskId, retryContext.retryCount, false);
         throw error;
       }
@@ -158,11 +171,15 @@ export class RetryPlugin implements Extension {
       );
 
       // Execute beforeRetry extension point
-      const beforeRetryContext = await this.extensionSystem.executeExtensionPoint('task:beforeRetry', {
+      const beforeRetryContext = await this.extensionSystem.executeExtensionPoint('task:beforeExecution', {
         taskId,
+        taskType: taskId,
         error,
-        retryContext,
-        delay
+        state: context.state,
+        metadata: {
+          retryContext,
+          delay
+        }
       });
 
       // Schedule retry
@@ -188,27 +205,15 @@ export class RetryPlugin implements Extension {
       return updatedContext;
     },
 
-    'task:afterRetry': async (context: any) => {
-      const { taskId, success } = context;
+    'task:afterCompletion': async (context: ExtensionContext) => {
+      if (!context.taskType) {
+        throw new Error('Task type is required for retry');
+      }
+
+      const taskId = context.taskType;
       
       // Update stats based on retry result
-      this.updateStats(taskId, context._retry?.retryCount || 0, success);
-
-      return context;
-    },
-
-    'task:retryFailed': async (context: any) => {
-      const { taskId, error } = context;
-      
-      // Update stats for failed retry
-      this.updateStats(taskId, context._retry?.retryCount || 0, false);
-
-      // Publish retry failed event
-      this.eventBus.publish('task:retryFailed', {
-        taskId,
-        error,
-        retryCount: context._retry?.retryCount || 0
-      });
+      this.updateStats(taskId, context._retry?.retryCount || 0, true);
 
       return context;
     }
@@ -236,13 +241,17 @@ export class RetryPlugin implements Extension {
 
     // Execute task with retry context
     const context = await this.extensionSystem.executeExtensionPoint('task:onError', {
+      taskId: execution.id,
       taskType: execution.type,
-      execution,
-      input,
-      cancellationToken
+      data: input,
+      state: {},
+      metadata: {
+        execution,
+        cancellationToken
+      }
     });
 
-    return context.execution;
+    return context.result as TaskExecution;
   }
 
   /**

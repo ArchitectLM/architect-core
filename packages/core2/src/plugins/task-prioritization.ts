@@ -1,4 +1,4 @@
-import { Extension, ExtensionContext, ExtensionHandler } from '../models/extension.js';
+import { Extension, ExtensionContext, ExtensionHandler } from '../models/extension';
 
 export enum TaskPriority {
   LOW = 0,
@@ -30,6 +30,7 @@ export interface TaskPrioritizationOptions {
   priorityAgingEnabled?: boolean;
   waitingTimeThreshold?: number;
   priorityBoostAmount?: number;
+  defaultPriority?: TaskPriority;
 }
 
 interface TaskState {
@@ -309,7 +310,7 @@ export class TaskPrioritizationPlugin implements Extension {
   }
 
   hooks: Record<string, ExtensionHandler> = {
-    'beforeTaskExecution': async (context: ExtensionContext): Promise<ExtensionContext> => {
+    'task:beforeExecution': async (context: ExtensionContext): Promise<ExtensionContext> => {
       const taskId = context.taskId as string;
       const metadata = context.metadata as TaskMetadata;
 
@@ -363,7 +364,7 @@ export class TaskPrioritizationPlugin implements Extension {
       return context;
     },
 
-    'afterTaskCompletion': async (context: ExtensionContext): Promise<ExtensionContext> => {
+    'task:afterCompletion': async (context: ExtensionContext): Promise<ExtensionContext> => {
       const taskId = context.taskId as string;
       const state = this.taskStates.get(taskId);
       
@@ -472,5 +473,17 @@ export class TaskPrioritizationPlugin implements Extension {
     };
     state.resourceAffinity = Object.keys(requirements);
     this.taskStates.set(taskId, state);
+  }
+
+  public assignTaskToGroup(taskId: string, groupId: string): void {
+    const state = this.taskStates.get(taskId);
+    if (!state) return;
+
+    state.groupId = groupId;
+    this.debug('assignTaskToGroup', `Assigned task ${taskId} to group ${groupId}`);
+  }
+
+  public getResourceAllocations(resourceId: string): number {
+    return this.resourceAllocations.get(resourceId) ?? 0;
   }
 } 

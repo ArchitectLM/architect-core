@@ -117,11 +117,11 @@ const validationResult = await validator.validateCode(
 The RAG system integrates with the ArchitectLM event system to provide real-time updates and notifications:
 
 ```typescript
-import { ReactiveEventBus } from "@architectlm/core";
+import { EventBusImpl } from "../../core2/src/implementations/event-bus.js";
 import { RAGEventHandler } from "@architectlm/rag";
 
 // Create an event bus
-const eventBus = new ReactiveEventBus();
+const eventBus = new EventBusImpl();
 
 // Create a RAG event handler
 const ragEventHandler = new RAGEventHandler(eventBus, vectorDB);

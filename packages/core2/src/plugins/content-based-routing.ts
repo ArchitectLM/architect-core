@@ -1,4 +1,4 @@
-import { EventBus } from '../models/event.js';
+import { EventBus } from '../models/event';
 
 export interface RouteMatch {
   routeName: string;

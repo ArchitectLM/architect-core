@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Runtime, ReactiveRuntime, ExtensionSystemImpl, EventBusImpl, InMemoryEventStorage } from '../src/index.js';
-import { Stream, createStream } from '../src/models/stream.js';
+import { Runtime, ReactiveRuntime, ExtensionSystemImpl, EventBusImpl, InMemoryEventStorage } from '../src/index';
+import { Stream, createStream } from '../src/models/stream';
 
 describe('Stream Processing', () => {
   let runtime: Runtime;

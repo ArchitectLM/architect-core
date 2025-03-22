@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { EventBus } from '../../src/models/event.js';
+import { EventBus } from '../../src/models/event';
 import { 
   OutboxPattern, 
   OutboxEntry, 
   OutboxRepository, 
   createOutboxPattern 
-} from '../../src/plugins/outbox-pattern.js';
+} from '../../src/plugins/outbox-pattern';
 
 describe('Outbox Pattern Plugin', () => {
   let eventBus: EventBus;

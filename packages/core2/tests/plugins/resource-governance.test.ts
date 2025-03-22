@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { Runtime } from '../../src/models/runtime.js';
-import { createRuntime } from '../../src/implementations/runtime.js';
-import { createExtensionSystem } from '../../src/implementations/extension-system.js';
-import { createEventBus } from '../../src/implementations/event-bus.js';
-import { ProcessDefinition, TaskDefinition } from '../../src/models/index.js';
+import { Runtime } from '../../src/models/runtime';
+import { createRuntime } from '../../src/implementations/runtime';
+import { createExtensionSystem } from '../../src/implementations/extension-system';
+import { createEventBus } from '../../src/implementations/event-bus';
+import { ProcessDefinition, TaskDefinition } from '../../src/models/index';
 import { 
   createResourceGovernancePlugin, 
   ResourceGovernancePlugin,
@@ -11,7 +11,7 @@ import {
   ResourceType,
   ResourcePolicy,
   ThrottlingStrategy
-} from '../../src/plugins/resource-governance.js';
+} from '../../src/plugins/resource-governance';
 
 describe('Resource Governance Plugin', () => {
   let runtime: Runtime;
@@ -391,13 +391,13 @@ describe('Resource Governance Plugin', () => {
   describe('Plugin Integration', () => {
     it('should report resource metrics through event bus', async () => {
       // Spy on event bus
-      const emitSpy = vi.spyOn(eventBus, 'emit');
+      const publishSpy = vi.spyOn(eventBus, 'publish');
       
       // Execute task
       await runtime.executeTask(lightweightTask.id, { data: 'event-test' });
       
       // Check for resource metrics events
-      expect(emitSpy).toHaveBeenCalledWith(
+      expect(publishSpy).toHaveBeenCalledWith(
         'resource:metrics',
         expect.objectContaining({
           cpu: expect.any(Object),
@@ -411,8 +411,8 @@ describe('Resource Governance Plugin', () => {
       // Spy on the plugin's event handler
       const handleResourceAlertSpy = vi.spyOn(resourceGovernancePlugin, 'handleResourceAlert');
       
-      // Emit a resource alert event
-      eventBus.emit('resource:alert', {
+      // Publish a resource alert event
+      eventBus.publish('resource:alert', {
         type: ResourceType.MEMORY,
         level: 'warning',
         message: 'Memory usage approaching limit',

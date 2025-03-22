@@ -1,112 +1,114 @@
-import { Event, EventFilter, EventStorage } from '../models/event.js';
+import { DomainEvent, Result } from '../models/core-types';
+import { EventStorage } from '../models/event-system';
 
+/**
+ * In-memory event storage implementation
+ */
 export class InMemoryEventStorage implements EventStorage {
-  private events: Event[] = [];
-  private eventIndex: Map<string, Event> = new Map();
-  private correlationIndex: Map<string, Set<string>> = new Map();
+  private events: DomainEvent<any>[] = [];
+  private eventIndex: Map<string, DomainEvent<any>> = new Map();
+  private correlationIndex: Map<string, DomainEvent<any>[]> = new Map();
 
-  async saveEvent(event: Event): Promise<void> {
-    // Ensure event has required fields
-    if (!event.id) {
-      event.id = `event-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
-    }
-    if (!event.timestamp) {
-      event.timestamp = Date.now();
-    }
-
-    // Add to main storage
-    this.events.push(event);
-    
-    // Update indexes
-    this.eventIndex.set(event.id, event);
-    
-    if (event.correlationId) {
-      if (!this.correlationIndex.has(event.correlationId)) {
-        this.correlationIndex.set(event.correlationId, new Set());
+  async storeEvent<T>(event: DomainEvent<T>): Promise<Result<void>> {
+    try {
+      // Store event in array
+      this.events.push(event);
+      
+      // Index by event ID
+      this.eventIndex.set(event.id, event);
+      
+      // Index by correlation ID if present
+      if (event.metadata?.correlationId) {
+        const correlationId = event.metadata.correlationId as string;
+        const correlatedEvents = this.correlationIndex.get(correlationId) || [];
+        correlatedEvents.push(event);
+        this.correlationIndex.set(correlationId, correlatedEvents);
       }
-      this.correlationIndex.get(event.correlationId)!.add(event.id);
+      
+      return { success: true, value: undefined };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error : new Error(String(error))
+      };
     }
   }
 
-  async getEvents(filter: EventFilter): Promise<Event[]> {
-    let filteredEvents = [...this.events];
-
-    // Apply type filters
-    if (filter.types && filter.types.length > 0) {
-      filteredEvents = filteredEvents.filter(e => filter.types!.includes(e.type));
-    }
-
-    if (filter.excludeTypes && filter.excludeTypes.length > 0) {
-      filteredEvents = filteredEvents.filter(e => !filter.excludeTypes!.includes(e.type));
-    }
-
-    // Apply timestamp filters
-    if (filter.fromTimestamp !== undefined) {
-      filteredEvents = filteredEvents.filter(e => e.timestamp >= filter.fromTimestamp!);
-    }
-
-    if (filter.toTimestamp !== undefined) {
-      filteredEvents = filteredEvents.filter(e => e.timestamp <= filter.toTimestamp!);
-    }
-
-    // Apply correlation ID filter
-    if (filter.correlationIds && filter.correlationIds.length > 0) {
-      const correlatedEventIds = new Set<string>();
-      for (const correlationId of filter.correlationIds) {
-        const eventIds = this.correlationIndex.get(correlationId);
-        if (eventIds) {
-          eventIds.forEach(id => correlatedEventIds.add(id));
-        }
-      }
-      filteredEvents = filteredEvents.filter(e => correlatedEventIds.has(e.id!));
-    }
-
-    // Apply metadata filter
-    if (filter.metadataFilter) {
-      filteredEvents = filteredEvents.filter(e => {
-        if (!e.metadata) return false;
-        
-        return Object.entries(filter.metadataFilter!).every(([key, value]) => 
-          e.metadata![key] === value
-        );
+  async getEventsByType<T>(
+    eventType: string,
+    startTime?: number,
+    endTime?: number
+  ): Promise<Result<DomainEvent<T>[]>> {
+    try {
+      const filteredEvents = this.events.filter(event => {
+        const matchesType = event.type === eventType;
+        const matchesTimeRange = (!startTime || event.timestamp >= startTime) &&
+                               (!endTime || event.timestamp <= endTime);
+        return matchesType && matchesTimeRange;
       });
+
+      return { success: true, value: filteredEvents as DomainEvent<T>[] };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error : new Error(String(error))
+      };
     }
-
-    // Sort by timestamp ascending
-    return filteredEvents.sort((a, b) => a.timestamp - b.timestamp);
   }
 
-  async getEventById(eventId: string): Promise<Event | undefined> {
-    return this.eventIndex.get(eventId);
-  }
-
-  async getEventsByCorrelationId(correlationId: string): Promise<Event[]> {
-    const eventIds = this.correlationIndex.get(correlationId);
-    if (!eventIds) {
-      return [];
+  async getEventsByCorrelationId<T>(
+    correlationId: string
+  ): Promise<Result<DomainEvent<T>[]>> {
+    try {
+      const correlatedEvents = this.correlationIndex.get(correlationId) || [];
+      return { success: true, value: correlatedEvents as DomainEvent<T>[] };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error : new Error(String(error))
+      };
     }
-    
-    return Array.from(eventIds)
-      .map(id => this.eventIndex.get(id)!)
-      .sort((a, b) => a.timestamp - b.timestamp);
   }
 
-  // Additional utility methods for testing and debugging
+  async getAllEvents<T>(
+    startTime?: number,
+    endTime?: number
+  ): Promise<Result<DomainEvent<T>[]>> {
+    try {
+      const filteredEvents = this.events.filter(event => {
+        return (!startTime || event.timestamp >= startTime) &&
+               (!endTime || event.timestamp <= endTime);
+      });
+
+      return { success: true, value: filteredEvents as DomainEvent<T>[] };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error : new Error(String(error))
+      };
+    }
+  }
+
+  /**
+   * Clear all stored events
+   */
   clear(): void {
     this.events = [];
     this.eventIndex.clear();
     this.correlationIndex.clear();
   }
 
+  /**
+   * Get the total number of stored events
+   */
   getEventCount(): number {
     return this.events.length;
   }
-
-  getCorrelationCount(): number {
-    return this.correlationIndex.size;
-  }
 }
 
+/**
+ * Creates a new in-memory event storage instance
+ */
 export function createEventStorage(): EventStorage {
   return new InMemoryEventStorage();
 } 

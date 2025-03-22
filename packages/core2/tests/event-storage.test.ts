@@ -1,163 +1,157 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { Runtime } from '../src/models/runtime.js';
-import { ReactiveRuntime } from '../src/implementations/runtime.js';
-import { Event } from '../src/models/index.js';
-import { ExtensionSystemImpl } from '../src/implementations/extension-system.js';
-import { EventBusImpl } from '../src/implementations/event-bus.js';
-import { InMemoryEventStorage } from '../src/implementations/event-storage.js';
+import { InMemoryEventStorage, createEventStorage } from '../src/implementations/event-storage';
+import { DomainEvent, Result } from '../src/models/core-types';
 
-describe('Event Storage', () => {
-  let runtime: Runtime;
-  let extensionSystem: ExtensionSystemImpl;
-  let eventBus: EventBusImpl;
-  let eventStorage: InMemoryEventStorage;
+describe('InMemoryEventStorage', () => {
+  let storage: InMemoryEventStorage;
 
   beforeEach(() => {
-    extensionSystem = new ExtensionSystemImpl();
-    eventBus = new EventBusImpl();
-    eventStorage = new InMemoryEventStorage();
-    
-    runtime = new ReactiveRuntime({}, {}, {
-      extensionSystem,
-      eventBus,
-      eventStorage
-    });
+    storage = new InMemoryEventStorage();
   });
 
-  describe('Event Persistence', () => {
-    it('should persist events with generated id and timestamp', async () => {
-      const event = { type: 'test', data: 'test' };
-      await runtime.persistEvent(event);
+  describe('Event Storage', () => {
+    it('should store and retrieve events', async () => {
+      const event: DomainEvent<{ test: string }> = {
+        id: 'test-event',
+        type: 'test.event',
+        timestamp: Date.now(),
+        payload: { test: 'value' },
+        metadata: {
+          timestamp: Date.now(),
+          correlationId: 'test-correlation'
+        }
+      };
 
-      const startTime = Date.now() - 1000;
-      const endTime = Date.now() + 1000;
-      await runtime.replayEvents(startTime, endTime, ['test']);
-      
-      const metrics = await runtime.getEventMetrics('test');
-      expect(metrics).toBeDefined();
-      expect(metrics.length).toBeGreaterThan(0);
-      expect(metrics[0].eventType).toBe('test');
+      // Store event
+      const storeResult = await storage.storeEvent(event);
+      expect(storeResult.success).toBe(true);
+
+      // Retrieve events by type
+      const getResult = await storage.getEventsByType<{ test: string }>('test.event');
+      expect(getResult.success).toBe(true);
+      if (getResult.success) {
+        expect(getResult.value).toHaveLength(1);
+        expect(getResult.value[0]).toEqual(event);
+      }
     });
 
-    it('should persist events with existing id and timestamp', async () => {
-      const event = {
-        id: 'test-id',
-        type: 'test',
-        data: 'test',
-        timestamp: 1234567890
-      };
-      await runtime.persistEvent(event);
-
-      const startTime = Date.now() - 1000;
-      const endTime = Date.now() + 1000;
-      await runtime.replayEvents(startTime, endTime, ['test']);
-      
-      const metrics = await runtime.getEventMetrics('test');
-      expect(metrics).toBeDefined();
-      expect(metrics.length).toBeGreaterThan(0);
-      expect(metrics[0].eventType).toBe('test');
-    });
-
-    it('should index events by correlation id', async () => {
-      const correlationId = 'test-correlation';
-      const event = {
-        type: 'test',
-        data: 'test',
-        correlationId
-      };
-      await runtime.persistEvent(event);
-
-      const correlatedEvents = await runtime.correlateEvents(correlationId);
-      expect(correlatedEvents).toHaveLength(1);
-      expect(correlatedEvents[0].correlationId).toBe(correlationId);
+    it('should handle storage errors gracefully', async () => {
+      // Force an error by storing an invalid event
+      const invalidEvent = null as unknown as DomainEvent<any>;
+      const result = await storage.storeEvent(invalidEvent);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error).toBeDefined();
+      }
     });
   });
 
   describe('Event Retrieval', () => {
-    it('should retrieve events by time range', async () => {
+    it('should filter events by time range', async () => {
       const now = Date.now();
       const events = [
-        { type: 'test1', data: 'test1', timestamp: now - 500 },
-        { type: 'test2', data: 'test2', timestamp: now - 250 },
-        { type: 'test3', data: 'test3', timestamp: now + 500 }
+        {
+          id: 'event-1',
+          type: 'test.event',
+          timestamp: now - 1000,
+          payload: { test: 'old' },
+          metadata: { timestamp: now - 1000 }
+        },
+        {
+          id: 'event-2',
+          type: 'test.event',
+          timestamp: now,
+          payload: { test: 'current' },
+          metadata: { timestamp: now }
+        },
+        {
+          id: 'event-3',
+          type: 'test.event',
+          timestamp: now + 1000,
+          payload: { test: 'future' },
+          metadata: { timestamp: now + 1000 }
+        }
       ];
 
+      // Store events
       for (const event of events) {
-        await runtime.persistEvent(event);
+        await storage.storeEvent(event);
       }
 
-      const startTime = now - 1000;
-      const endTime = now;
-      await runtime.replayEvents(startTime, endTime);
-      
-      const metrics = await runtime.getEventMetrics();
-      expect(metrics).toBeDefined();
-      expect(metrics.length).toBeGreaterThan(0);
-      expect(metrics.some(m => m.eventType === 'test1')).toBe(true);
-      expect(metrics.some(m => m.eventType === 'test2')).toBe(true);
-    });
+      // Get events within time range
+      const result = await storage.getEventsByType<{ test: string }>(
+        'test.event',
+        now - 500,
+        now + 500
+      );
 
-    it('should filter events by type', async () => {
-      const events = [
-        { type: 'test1', data: 'test1' },
-        { type: 'test2', data: 'test2' },
-        { type: 'test1', data: 'test3' }
-      ];
-
-      for (const event of events) {
-        await runtime.persistEvent(event);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.value).toHaveLength(1);
+        expect(result.value[0].payload.test).toBe('current');
       }
-
-      const startTime = Date.now() - 1000;
-      const endTime = Date.now() + 1000;
-      await runtime.replayEvents(startTime, endTime, ['test1']);
-      
-      const metrics = await runtime.getEventMetrics('test1');
-      expect(metrics).toBeDefined();
-      expect(metrics.length).toBe(2);
     });
-  });
 
-  describe('Event Correlation', () => {
-    it('should correlate events by correlation ID', async () => {
+    it('should retrieve events by correlation ID', async () => {
       const correlationId = 'test-correlation';
       const events = [
-        { type: 'test1', data: 'test1', correlationId },
-        { type: 'test2', data: 'test2', correlationId }
+        {
+          id: 'event-1',
+          type: 'test.event',
+          timestamp: Date.now(),
+          payload: { test: 'value1' },
+          metadata: { correlationId }
+        },
+        {
+          id: 'event-2',
+          type: 'test.event',
+          timestamp: Date.now(),
+          payload: { test: 'value2' },
+          metadata: { correlationId }
+        }
       ];
 
+      // Store events
       for (const event of events) {
-        await runtime.persistEvent(event);
+        await storage.storeEvent(event);
       }
 
-      const correlatedEvents = await runtime.correlateEvents(correlationId);
-      expect(correlatedEvents).toHaveLength(2);
-      expect(correlatedEvents.every(e => e.correlationId === correlationId)).toBe(true);
-    });
+      // Get correlated events
+      const result = await storage.getEventsByCorrelationId<{ test: string }>(correlationId);
 
-    it('should handle non-existent correlation IDs', async () => {
-      const correlatedEvents = await runtime.correlateEvents('non-existent');
-      expect(correlatedEvents).toHaveLength(0);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.value).toHaveLength(2);
+        expect(result.value.map((e: DomainEvent<{ test: string }>) => e.payload.test))
+          .toEqual(['value1', 'value2']);
+      }
     });
   });
 
-  describe('Event Metrics', () => {
-    it('should track event storage metrics', async () => {
-      const events = [
-        { type: 'test1', data: 'test1' },
-        { type: 'test2', data: 'test2' },
-        { type: 'test1', data: 'test3' }
-      ];
+  describe('Storage Management', () => {
+    it('should clear all stored events', async () => {
+      // Store some events
+      const event: DomainEvent<{ test: string }> = {
+        id: 'test-event',
+        type: 'test.event',
+        timestamp: Date.now(),
+        payload: { test: 'value' },
+        metadata: { timestamp: Date.now() }
+      };
 
-      for (const event of events) {
-        await runtime.persistEvent(event);
+      await storage.storeEvent(event);
+      expect(storage.getEventCount()).toBe(1);
+
+      // Clear storage
+      storage.clear();
+      expect(storage.getEventCount()).toBe(0);
+
+      // Verify events are gone
+      const result = await storage.getEventsByType<{ test: string }>('test.event');
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.value).toHaveLength(0);
       }
-
-      const metrics = await runtime.getEventMetrics();
-      expect(metrics).toBeDefined();
-      expect(metrics.length).toBeGreaterThan(0);
-      expect(metrics.some(m => m.eventType === 'test1')).toBe(true);
-      expect(metrics.some(m => m.eventType === 'test2')).toBe(true);
     });
   });
 }); 

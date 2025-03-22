@@ -1,10 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Runtime, TaskExecution, TaskContext, TaskDefinition, TaskRetryPolicy, ReactiveRuntime, ExtensionSystemImpl, EventBusImpl, InMemoryEventStorage } from '../src/index.js';
+import { Runtime } from '../src/models/runtime';
+import { TaskExecution, TaskContext, TaskDefinition, TaskRetryPolicy } from '../src/models/task-system';
+import { EventBus } from '../src/models/event-system';
+import { ExtensionSystem } from '../src/models/extension-system';
+import { InMemoryEventStorage } from '../src/implementations/event-storage-impl';
+import { createModernRuntime } from '../src/implementations/modern-factory';
 
 describe('Task Retry and Error Handling', () => {
   let runtime: Runtime;
-  let extensionSystem: ExtensionSystemImpl;
-  let eventBus: EventBusImpl;
+  let extensionSystem: ExtensionSystem;
+  let eventBus: EventBus;
   let eventStorage: InMemoryEventStorage;
   let taskExecutionCount: number;
   
@@ -23,8 +28,9 @@ describe('Task Retry and Error Handling', () => {
     retry: {
       maxAttempts: 3,
       backoffStrategy: 'linear',
-      backoffDelay: 10, // Use small delay for tests
-      retryableErrors: ['Error']
+      initialDelay: 10, // Use small delay for tests
+      maxDelay: 100,
+      retryableErrorTypes: ['Error']
     }
   };
 
@@ -52,51 +58,67 @@ describe('Task Retry and Error Handling', () => {
     retry: {
       maxAttempts: 3,
       backoffStrategy: 'linear',
-      backoffDelay: 10,
-      retryableErrors: ['RetryableError']
+      initialDelay: 10,
+      maxDelay: 100,
+      retryableErrorTypes: ['RetryableError']
     }
   };
 
-  beforeEach(() => {
+  beforeEach(async () => {
     taskExecutionCount = 0;
-    extensionSystem = new ExtensionSystemImpl();
-    eventBus = new EventBusImpl();
-    eventStorage = new InMemoryEventStorage();
     
-    runtime = new ReactiveRuntime({}, {
-      [taskWithRetryPolicy.id]: taskWithRetryPolicy,
-      [taskWithoutRetryPolicy.id]: taskWithoutRetryPolicy,
-      [taskWithErrorFilter.id]: taskWithErrorFilter
-    }, {
-      extensionSystem,
-      eventBus,
-      eventStorage
+    runtime = createModernRuntime({
+      persistEvents: true,
+      runtimeOptions: {
+        version: '1.0.0',
+        namespace: 'test'
+      }
     });
+
+    // Register task definitions
+    await runtime.taskRegistry.registerTask(taskWithRetryPolicy);
+    await runtime.taskRegistry.registerTask(taskWithoutRetryPolicy);
+    await runtime.taskRegistry.registerTask(taskWithErrorFilter);
+
+    // Initialize and start the runtime
+    await runtime.initialize({
+      version: '1.0.0',
+      namespace: 'test'
+    });
+    await runtime.start();
   });
 
   describe('Task Retry Behavior', () => {
     it('should retry a task up to the configured maximum attempts', async () => {
-      const execution = await runtime.executeTask('retry-task', {});
+      const result = await runtime.executeTask('retry-task', {});
       
-      expect(execution.status).toBe('completed');
-      expect(execution.result).toEqual({ result: 'success', attempts: 3 });
-      expect(execution.attempts).toBe(3);
-      expect(taskExecutionCount).toBe(3);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.value.result).toEqual({ result: 'success', attempts: 3 });
+        expect(result.value.attemptNumber).toBe(3);
+        expect(taskExecutionCount).toBe(3);
+      }
     });
 
     it('should not retry a task that does not have a retry policy', async () => {
-      await expect(runtime.executeTask('no-retry-task', {}))
-        .rejects.toThrow('Fatal failure');
+      const result = await runtime.executeTask('no-retry-task', {});
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.message).toBe('Fatal failure');
+      }
     });
 
     it('should only retry for specified error types', async () => {
-      await expect(runtime.executeTask('error-filter-task', {}))
-        .rejects.toThrow('NonRetryableError');
+      const result = await runtime.executeTask('error-filter-task', {});
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.message).toBe('NonRetryableError');
+      }
     });
 
     it('should emit events for task retry attempts', async () => {
       const retryAttemptHandler = vi.fn();
-      runtime.subscribe('task:retryAttempt', retryAttemptHandler);
+      runtime.eventBus.subscribe('task:retryAttempt', retryAttemptHandler);
       
       await runtime.executeTask('retry-task', {});
       
@@ -121,24 +143,35 @@ describe('Task Retry and Error Handling', () => {
             }, 1000); // 1 second
             
             // Store the timeout ID so it can be cleared if cancelled
-            context.cancellationToken?.onCancel(() => {
-              clearTimeout(timeoutId);
-              reject(new Error('Task was cancelled'));
-            });
+            if (context.cancellationToken) {
+              context.cancellationToken.onCancellationRequested(() => {
+                clearTimeout(timeoutId);
+                reject(new Error('Task was cancelled'));
+              });
+            }
           });
         }
       };
       
       // Add the task definition
-      const task = await runtime.executeTask('long-running-task', {});
+      await runtime.taskRegistry.registerTask(longRunningTask);
+      
+      // Start the task
+      const taskResult = await runtime.executeTask('long-running-task', {});
       
       // Cancel the task after a short delay
       setTimeout(() => {
-        runtime.cancelTask(task.id);
+        if (taskResult.success) {
+          runtime.taskExecutor.cancelTask(taskResult.value.id);
+        }
       }, 10);
       
       // Check that the task was cancelled
-      await expect(runtime.executeTask('long-running-task', {})).rejects.toThrow('Task was cancelled');
+      const result = await taskResult;
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.message).toBe('Task was cancelled');
+      }
     });
   });
 
@@ -148,14 +181,16 @@ describe('Task Retry and Error Handling', () => {
       await runtime.executeTask('retry-task', {});
       
       // Get metrics
-      const metrics = await runtime.getTaskMetrics();
+      const metricsResult = await runtime.getMetrics();
       
       // Verify metrics
-      expect(metrics).toBeDefined();
-      expect(metrics.length).toBeGreaterThan(0);
-      const retryMetrics = metrics.find(m => m.taskId === 'retry-task');
-      expect(retryMetrics).toBeDefined();
-      expect(retryMetrics?.retryCount).toBe(2);
+      expect(metricsResult.success).toBe(true);
+      if (metricsResult.success) {
+        const metrics = metricsResult.value;
+        expect(metrics.tasks.total).toBeGreaterThan(0);
+        expect(metrics.tasks.failed).toBe(2); // Two failed attempts before success
+        expect(metrics.tasks.completed).toBe(1); // One successful completion
+      }
     });
   });
 }); 

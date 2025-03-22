@@ -1,15 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { Event, ReactiveEventBus } from "../../core/src/index.js";
-import {
-  ExtensionSystem,
-  createExtensionSystem,
-  EventInterceptor,
-} from "../src/index.js";
+import { Event } from "../src/models.js";
+import { EventBusImpl } from "../../core2/src/implementations/event-bus.js";
+import { ExtensionSystem, EventInterceptor } from "../src/models.js";
+import { createExtensionSystem } from "../src/extension-system.js";
 
 /**
  * Extended event bus that integrates with the extension system
  */
-class ExtendedEventBus extends ReactiveEventBus {
+class ExtendedEventBus extends EventBusImpl {
   private extensionSystem: ExtensionSystem;
 
   constructor(extensionSystem: ExtensionSystem) {

@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { Runtime } from '../../src/models/runtime.js';
-import { RuntimeImpl } from '../../src/implementations/runtime.new.js';
-import { ExtensionSystemImpl } from '../../src/implementations/extension-system.js';
-import { EventBusImpl } from '../../src/implementations/event-bus.js';
-import { InMemoryEventStorage } from '../../src/implementations/event-storage.js';
-import { ProcessDefinition, TaskDefinition, Extension } from '../../src/models/index.js';
+import { Runtime } from '../../src/models/runtime';
+import { RuntimeInstance } from '../../src/implementations/runtime';
+import { ExtensionSystemImpl } from '../../src/implementations/extension-system';
+import { EventBusImpl } from '../../src/implementations/event-bus';
+import { InMemoryEventStorage } from '../../src/implementations/event-storage-impl';
+import { ProcessDefinition, TaskDefinition, Extension } from '../../src/models/index';
 import { performance } from 'perf_hooks';
 import { setTimeout as sleep } from 'timers/promises';
 
@@ -130,7 +130,7 @@ describe('Plugin Performance Tests', () => {
     eventBus = new EventBusImpl();
     eventStorage = new InMemoryEventStorage();
     
-    runtime = new RuntimeImpl(
+    runtime = new RuntimeInstance(
       processDefinitions, 
       taskDefinitions,
       { 

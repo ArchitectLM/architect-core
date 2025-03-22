@@ -1,15 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { Runtime } from '../../src/models/runtime.js';
-import { createRuntime } from '../../src/implementations/runtime.js';
-import { createExtensionSystem } from '../../src/implementations/extension-system.js';
-import { createEventBus } from '../../src/implementations/event-bus.js';
-import { ProcessDefinition, TaskDefinition } from '../../src/models/index.js';
-import { createCachingPlugin, CachingPlugin } from '../../src/plugins/caching.js';
+import { Runtime } from '../../src/models/runtime';
+import { createRuntime } from '../../src/factories';
+import { createExtensionSystemInstance } from '../../src/factories';
+import { createEventBusInstance } from '../../src/factories';
+import { ProcessDefinition, TaskDefinition } from '../../src/models/index';
+import { createCachingPlugin, CachingPlugin } from '../../src/plugins/caching';
 
 describe('Caching Plugin', () => {
   let runtime: Runtime;
-  let extensionSystem = createExtensionSystem();
-  let eventBus = createEventBus();
+  let extensionSystem = createExtensionSystemInstance();
+  let eventBus = createEventBusInstance();
   let cachingPlugin: CachingPlugin;
   
   // Sample process and task definitions
@@ -53,8 +53,8 @@ describe('Caching Plugin', () => {
     vi.resetAllMocks();
     
     // Create the extension system and event bus
-    extensionSystem = createExtensionSystem();
-    eventBus = createEventBus();
+    extensionSystem = createExtensionSystemInstance();
+    eventBus = createEventBusInstance();
     
     // Create the plugin
     cachingPlugin = createCachingPlugin({
@@ -65,7 +65,7 @@ describe('Caching Plugin', () => {
     // Register the plugin with the extension system
     extensionSystem.registerExtension(cachingPlugin);
     
-    // Create runtime with the extension system
+    // Create runtime with the extension system and task definitions
     const processDefinitions = { 
       [testProcessDefinition.id]: testProcessDefinition 
     };
@@ -120,7 +120,7 @@ describe('Caching Plugin', () => {
       }) as CachingPlugin;
       
       // Register with a new extension system
-      const newExtensionSystem = createExtensionSystem();
+      const newExtensionSystem = createExtensionSystemInstance();
       newExtensionSystem.registerExtension(shortTTLPlugin);
       
       // Create a new runtime
@@ -240,7 +240,7 @@ describe('Caching Plugin', () => {
       }) as CachingPlugin;
       
       // Register with a new extension system
-      const newExtensionSystem = createExtensionSystem();
+      const newExtensionSystem = createExtensionSystemInstance();
       newExtensionSystem.registerExtension(smallCachePlugin);
       
       // Create a new runtime

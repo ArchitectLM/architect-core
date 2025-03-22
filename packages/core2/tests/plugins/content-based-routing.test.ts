@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { EventBus } from '../../src/models/event.js';
+import { EventBus } from '../../src/models/event';
 import { 
   ContentBasedRouter, 
   RouteDefinition, 
   RouteMatch,
   createContentBasedRouter 
-} from '../../src/plugins/content-based-routing.js';
+} from '../../src/plugins/content-based-routing';
 
 describe('Content-Based Routing Plugin', () => {
   let eventBus: EventBus;

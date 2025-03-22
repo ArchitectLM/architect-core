@@ -1,5 +1,5 @@
-import { Extension } from '../models/extension.js';
-import { Event } from '../models/event.js';
+import { Extension } from '../models/extension';
+import { Event } from '../models/event';
 
 export interface TaskMetrics {
   total: number;

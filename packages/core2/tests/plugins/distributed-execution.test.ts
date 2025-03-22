@@ -1,15 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { Runtime } from '../../src/models/runtime.js';
-import { createRuntime } from '../../src/implementations/runtime.js';
-import { createExtensionSystem } from '../../src/implementations/extension-system.js';
-import { createEventBus } from '../../src/implementations/event-bus.js';
-import { ProcessDefinition, TaskDefinition } from '../../src/models/index.js';
+import { Runtime } from '../../src/models/runtime';
+import { createRuntime } from '../../src/implementations/runtime';
+import { createExtensionSystem } from '../../src/implementations/extension-system';
+import { createEventBus } from '../../src/implementations/event-bus';
+import { ProcessDefinition, TaskDefinition } from '../../src/models/index';
 import { 
   createDistributedExecutionPlugin, 
   DistributedExecutionPlugin,
   DistributionStrategy,
   NodeStatus
-} from '../../src/plugins/distributed-execution.js';
+} from '../../src/plugins/distributed-execution';
 
 describe('Distributed Execution Plugin', () => {
   let runtime: Runtime;

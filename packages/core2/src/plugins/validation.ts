@@ -1,4 +1,4 @@
-import { Extension } from '../models/extension.js';
+import { Extension } from '../models/extension';
 
 /**
  * JSON Schema type for validating inputs

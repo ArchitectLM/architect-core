@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ExtensionSystemImpl } from '../../src/implementations/extension-system.js';
-import { Extension, ExtensionPoint, ExtensionContext } from '../../src/models/extension.js';
-import { EventBus } from '../../src/models/event.js';
+import { ExtensionSystemImpl } from '../../src/implementations/extension-system';
+import { Extension, ExtensionPoint, ExtensionContext } from '../../src/models/extension';
+import { EventBus } from '../../src/models/event';
 
 interface TestExtensionContext extends ExtensionContext {
   state?: {

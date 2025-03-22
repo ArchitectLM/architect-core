@@ -1,10 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Runtime, TaskExecution, TaskContext, TaskDefinition, ReactiveRuntime, ExtensionSystemImpl, EventBusImpl, InMemoryEventStorage } from '../src/index.js';
+import { Runtime, TaskExecution, TaskContext, TaskDefinition, InMemoryExtensionSystem, InMemoryEventStorage } from '../src/index';
+import { InMemoryEventBus } from '../src/implementations/event-bus-impl';
+import { RuntimeInstance } from '../src/implementations/runtime';
+import { SimplePluginRegistry } from '../src/implementations/plugin-registry';
+import { InMemoryTaskRegistry } from '../src/implementations/task-registry';
+import { InMemoryTaskExecutor } from '../src/implementations/task-executor';
+import { SimpleTaskScheduler } from '../src/implementations/task-scheduler';
+import { SimpleProcessRegistry } from '../src/implementations/process-registry';
+import { SimpleProcessManager } from '../src/implementations/process-manager';
+import { Result } from '../src/models/core-types';
+import { EventBus } from '../src/models/event-system';
 
 describe('Task Dependencies and Sequencing', () => {
-  let runtime: Runtime;
-  let extensionSystem: ExtensionSystemImpl;
-  let eventBus: EventBusImpl;
+  let runtime: RuntimeInstance;
+  let extensionSystem: InMemoryExtensionSystem;
+  let eventBus: EventBus;
   let eventStorage: InMemoryEventStorage;
   const executionOrder: string[] = [];
   
@@ -15,7 +25,7 @@ describe('Task Dependencies and Sequencing', () => {
     description: 'First task in sequence',
     handler: async (context: TaskContext) => {
       executionOrder.push('task1');
-      return { result: 'task1-result' };
+      return { success: true, value: { result: 'task1-result' } };
     }
   };
   
@@ -25,7 +35,7 @@ describe('Task Dependencies and Sequencing', () => {
     description: 'Second task in sequence',
     handler: async (context: TaskContext) => {
       executionOrder.push('task2');
-      return { result: 'task2-result', previousResult: context.previousResult };
+      return { success: true, value: { result: 'task2-result' } };
     },
     dependencies: ['task1']
   };
@@ -36,7 +46,7 @@ describe('Task Dependencies and Sequencing', () => {
     description: 'Third task in sequence',
     handler: async (context: TaskContext) => {
       executionOrder.push('task3');
-      return { result: 'task3-result', previousResults: context.previousResults };
+      return { success: true, value: { result: 'task3-result' } };
     },
     dependencies: ['task1', 'task2']
   };
@@ -46,11 +56,10 @@ describe('Task Dependencies and Sequencing', () => {
     name: 'Long Running Task',
     description: 'A task that takes a long time to complete',
     handler: async () => {
-      return new Promise(resolve => {
+      return new Promise<Result<any>>(resolve => {
         setTimeout(() => {
-          executionOrder.push('long-running');
-          resolve({ result: 'long-running-result' });
-        }, 50);
+          resolve({ success: true, value: { result: 'long-running-result' } });
+        }, 1000);
       });
     }
   };
@@ -61,23 +70,41 @@ describe('Task Dependencies and Sequencing', () => {
     description: 'A task that fails',
     handler: async () => {
       executionOrder.push('failing-task');
-      throw new Error('Task failed');
+      return { success: false, error: new Error('Task failed') };
     }
   };
 
   beforeEach(() => {
     executionOrder.length = 0;
-    extensionSystem = new ExtensionSystemImpl();
-    eventBus = new EventBusImpl();
+    extensionSystem = new InMemoryExtensionSystem();
+    eventBus = new InMemoryEventBus();
     eventStorage = new InMemoryEventStorage();
     
-    runtime = new ReactiveRuntime({}, {
-      [task1.id]: task1,
-      [task2.id]: task2,
-      [task3.id]: task3
-    }, {
-      extensionSystem,
+    // Create task registry and register tasks
+    const taskRegistry = new InMemoryTaskRegistry();
+    taskRegistry.registerTask(task1);
+    taskRegistry.registerTask(task2);
+    taskRegistry.registerTask(task3);
+    taskRegistry.registerTask(longRunningTask);
+    
+    // Create task executor with dependencies
+    const taskExecutor = new InMemoryTaskExecutor(taskRegistry, eventBus);
+    const taskScheduler = new SimpleTaskScheduler(taskExecutor);
+    
+    // Create process registry and manager
+    const processRegistry = new SimpleProcessRegistry();
+    const processManager = new SimpleProcessManager(processRegistry, taskExecutor);
+    
+    // Create runtime instance
+    runtime = new RuntimeInstance({
       eventBus,
+      extensionSystem,
+      pluginRegistry: new SimplePluginRegistry(),
+      taskRegistry,
+      taskExecutor,
+      taskScheduler,
+      processRegistry,
+      processManager,
       eventStorage
     });
   });
@@ -89,7 +116,10 @@ describe('Task Dependencies and Sequencing', () => {
       
       // Check execution order
       expect(executionOrder).toEqual(['task1', 'task2', 'task3']);
-      expect(task3Result.status).toBe('completed');
+      expect(task3Result.success).toBe(true);
+      if (task3Result.success) {
+        expect(task3Result.value).toBeDefined();
+      }
     });
 
     it('should pass results from previous tasks to dependent tasks', async () => {
@@ -97,21 +127,29 @@ describe('Task Dependencies and Sequencing', () => {
       const result = await runtime.executeTaskWithDependencies('task3', {}, ['task1', 'task2']);
       
       // Task3 should have received the results from task1 and task2
-      expect(result.result.previousResults).toBeDefined();
-      expect(result.result.previousResults).toHaveProperty('task1');
-      expect(result.result.previousResults).toHaveProperty('task2');
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.value).toBeDefined();
+        expect(result.value.previousResults).toBeDefined();
+        expect(result.value.previousResults).toHaveProperty('task1');
+        expect(result.value.previousResults).toHaveProperty('task2');
+      }
     });
 
     it('should handle failures in dependency chain', async () => {
       // Try to execute a task that depends on a failing task
-      await expect(runtime.executeTaskWithDependencies(
+      const result = await runtime.executeTaskWithDependencies(
         'dependent-on-failing', 
         {}, 
         ['failing-task']
-      )).rejects.toThrow('Task failed');
+      );
       
       // Check that only the failing task executed, not the dependent task
       expect(executionOrder).toEqual(['failing-task']);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.message).toBe('Task failed');
+      }
     });
   });
 
@@ -130,19 +168,23 @@ describe('Task Dependencies and Sequencing', () => {
       expect(executionOrder[2]).toBe('collector');
       
       // Should have collected all results
-      expect(result.result.independentResults).toHaveProperty('independent1');
-      expect(result.result.independentResults).toHaveProperty('independent2');
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.value).toBeDefined();
+        expect(result.value.independentResults).toHaveProperty('independent1');
+        expect(result.value.independentResults).toHaveProperty('independent2');
+      }
     });
   });
 
   describe('Task Scheduling', () => {
     it('should schedule tasks for future execution', async () => {
       const handler = vi.fn();
-      runtime.subscribe('task:completed', handler);
+      eventBus.subscribe('task:completed', handler);
       
       // Schedule a task to run in 25ms
       const scheduledTime = Date.now() + 25;
-      const taskId = await runtime.scheduleTask('task1', {}, scheduledTime);
+      const taskId = await runtime.taskScheduler.scheduleTask('task1', {}, scheduledTime);
       
       // Verify task was scheduled but not executed immediately
       expect(taskId).toBeDefined();
@@ -159,7 +201,7 @@ describe('Task Dependencies and Sequencing', () => {
     it('should execute tasks immediately if scheduled time is in the past', async () => {
       // Schedule for the past
       const pastTime = Date.now() - 1000;
-      await runtime.scheduleTask('task1', {}, pastTime);
+      await runtime.taskScheduler.scheduleTask('task1', {}, pastTime);
       
       // Should execute immediately
       expect(executionOrder).toEqual(['task1']);
@@ -172,7 +214,9 @@ describe('Task Dependencies and Sequencing', () => {
       const task = await runtime.executeTask('cancellable', {});
       
       // Cancel the task
-      await runtime.cancelTask(task.id);
+      if (task.success) {
+        await runtime.taskExecutor.cancelTask(task.value.id);
+      }
       
       // Verify task was cancelled
       expect(executionOrder).toEqual(['cancellable-cancelled']);
@@ -185,12 +229,15 @@ describe('Task Dependencies and Sequencing', () => {
       await runtime.executeTask('task1', {});
       
       // Get metrics
-      const metrics = await runtime.getTaskMetrics();
+      const metricsResult = await runtime.getMetrics();
       
       // Verify metrics
-      expect(metrics).toBeDefined();
-      expect(metrics.length).toBeGreaterThan(0);
-      expect(metrics.some(m => m.taskId === 'task1')).toBe(true);
+      expect(metricsResult.success).toBe(true);
+      if (metricsResult.success) {
+        const metrics = metricsResult.value;
+        expect(metrics.tasks.total).toBeGreaterThan(0);
+        expect(metrics.tasks.completed).toBeGreaterThan(0);
+      }
     });
   });
 }); 

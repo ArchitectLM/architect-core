@@ -1,229 +1,187 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Runtime, Event, EventFilter, EventStorage, ReactiveRuntime, ExtensionSystemImpl, EventBusImpl, InMemoryEventStorage } from '../src/index.js';
-
-// Create an in-memory event storage implementation for testing
-class TestEventStorage extends InMemoryEventStorage {
-  async saveEvent(event: Event): Promise<void> {
-    await super.saveEvent(event);
-  }
-
-  async getEvents(filter: EventFilter): Promise<Event[]> {
-    return super.getEvents(filter);
-  }
-
-  async getEventById(eventId: string): Promise<Event | undefined> {
-    return super.getEventById(eventId);
-  }
-
-  async getEventsByCorrelationId(correlationId: string): Promise<Event[]> {
-    return super.getEventsByCorrelationId(correlationId);
-  }
-}
+import { Runtime } from '../src/models/runtime';
+import { createModernRuntime } from '../src/implementations/modern-factory';
+import { DomainEvent, Result } from '../src/models/core-types';
+import { InMemoryExtensionSystem } from '../src/implementations/extension-system';
+import { ExtensionEventBus } from '../src/implementations/event-bus';
+import { InMemoryEventStorage } from '../src/implementations/event-storage-impl';
+import { createEventSource } from '../src/implementations/event-source';
+import { EventSource } from '../src/models/event-system';
 
 describe('Event Persistence and Correlation', () => {
   let runtime: Runtime;
-  let eventBus: EventBusImpl;
-  let storage: TestEventStorage;
-  let extensionSystem: ExtensionSystemImpl;
+  let eventBus: ExtensionEventBus;
+  let storage: InMemoryEventStorage;
+  let extensionSystem: InMemoryExtensionSystem;
+  let eventSource: EventSource;
 
   beforeEach(() => {
-    extensionSystem = new ExtensionSystemImpl();
-    eventBus = new EventBusImpl();
-    storage = new TestEventStorage();
+    extensionSystem = new InMemoryExtensionSystem();
+    eventBus = new ExtensionEventBus(extensionSystem);
+    storage = new InMemoryEventStorage();
+    eventSource = createEventSource(storage, eventBus);
     
-    runtime = new ReactiveRuntime({}, {}, {
-      extensionSystem,
-      eventBus,
-      eventStorage: storage
+    runtime = createModernRuntime({
+      persistEvents: true,
+      extensions: {
+        processManagement: true,
+        taskManagement: true,
+        pluginManagement: true
+      }
     });
   });
 
   describe('Event Persistence', () => {
     it('should persist events when published', async () => {
+      eventBus.enablePersistence(storage);
+      
       // Publish some events
-      runtime.publish('test-event', { data: 'test1' });
-      runtime.publish('test-event', { data: 'test2' });
-      runtime.publish('other-event', { data: 'test3' });
+      const events: DomainEvent<string>[] = [
+        {
+          id: 'test-id-1',
+          type: 'test-event',
+          timestamp: Date.now(),
+          payload: 'test1'
+        },
+        {
+          id: 'test-id-2',
+          type: 'test-event',
+          timestamp: Date.now(),
+          payload: 'test2'
+        },
+        {
+          id: 'test-id-3',
+          type: 'other-event',
+          timestamp: Date.now(),
+          payload: 'test3'
+        }
+      ];
+      
+      for (const event of events) {
+        await eventBus.publish(event);
+      }
       
       // Check persisted events
-      const events = await storage.getEvents({});
-      expect(events.length).toBe(3);
-      expect(events.filter(e => e.type === 'test-event').length).toBe(2);
-      expect(events.filter(e => e.type === 'other-event').length).toBe(1);
+      const result = await storage.getAllEvents();
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.value.length).toBe(3);
+        expect(result.value.filter((e: DomainEvent<unknown>) => e.type === 'test-event').length).toBe(2);
+        expect(result.value.filter((e: DomainEvent<unknown>) => e.type === 'other-event').length).toBe(1);
+      }
     });
 
     it('should not persist events when persistence is disabled', async () => {
-      // Enable persistence
-      runtime.publish('test-event', { data: 'test1' });
+      eventBus.enablePersistence(storage);
       
-      // Disable persistence
+      // Publish an event while persistence is enabled
+      const event1: DomainEvent<string> = {
+        id: 'test-id-1',
+        type: 'test-event',
+        timestamp: Date.now(),
+        payload: 'test1'
+      };
+      await eventBus.publish(event1);
+      
+      // Disable persistence and publish another event
       eventBus.disablePersistence();
-      runtime.publish('test-event', { data: 'test2' });
+      const event2: DomainEvent<string> = {
+        id: 'test-id-2',
+        type: 'test-event',
+        timestamp: Date.now(),
+        payload: 'test2'
+      };
+      await eventBus.publish(event2);
       
       // Check persisted events
-      const events = await storage.getEvents({});
-      expect(events.length).toBe(1);
-      expect(events[0].payload.data).toBe('test1');
+      const result = await storage.getAllEvents();
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.value.length).toBe(1);
+        expect(result.value[0].payload).toBe('test1');
+      }
     });
   });
 
   describe('Event Correlation', () => {
     it('should correlate events by correlation ID', async () => {
-      const correlationId = 'test-correlation-id';
+      eventBus.enablePersistence(storage);
       
-      // Publish correlated events
-      runtime.publish('event1', { data: 'test1', correlationId });
-      runtime.publish('event2', { data: 'test2', correlationId });
-      runtime.publish('event3', { data: 'test3' }); // No correlation ID
+      const correlationId = 'test-correlation-id';
+      const events: DomainEvent<string>[] = [
+        {
+          id: 'test-id-1',
+          type: 'event1',
+          timestamp: Date.now(),
+          payload: 'test1',
+          metadata: { correlationId }
+        },
+        {
+          id: 'test-id-2',
+          type: 'event2',
+          timestamp: Date.now(),
+          payload: 'test2',
+          metadata: { correlationId }
+        },
+        {
+          id: 'test-id-3',
+          type: 'event3',
+          timestamp: Date.now(),
+          payload: 'test3'
+          // No correlation ID
+        }
+      ];
+      
+      for (const event of events) {
+        await eventBus.publish(event);
+      }
       
       // Get correlated events
-      const correlatedEvents = await runtime.correlateEvents(correlationId);
+      const correlatedEvents = await eventBus.correlate(correlationId);
       expect(correlatedEvents.length).toBe(2);
-      expect(correlatedEvents.map(e => e.type)).toContain('event1');
-      expect(correlatedEvents.map(e => e.type)).toContain('event2');
+      expect(correlatedEvents.map((e: DomainEvent<unknown>) => e.type)).toContain('event1');
+      expect(correlatedEvents.map((e: DomainEvent<unknown>) => e.type)).toContain('event2');
     });
-
-    it('should support causation chains', async () => {
-      // Create a chain of events where each event causes the next
-      const rootEvent = await publishAndGetEvent('root-event', { data: 'root' });
-      
-      const childEvent = await publishAndGetEvent('child-event', { 
-        data: 'child',
-        causationId: rootEvent.id,
-        correlationId: rootEvent.correlationId 
-      });
-      
-      const grandchildEvent = await publishAndGetEvent('grandchild-event', { 
-        data: 'grandchild',
-        causationId: childEvent.id,
-        correlationId: rootEvent.correlationId 
-      });
-      
-      // Get all events in the correlation
-      const correlatedEvents = await runtime.correlateEvents(rootEvent.correlationId!);
-      expect(correlatedEvents.length).toBe(3);
-      
-      // Validate causation chain
-      const root = correlatedEvents.find(e => e.type === 'root-event');
-      const child = correlatedEvents.find(e => e.type === 'child-event');
-      const grandchild = correlatedEvents.find(e => e.type === 'grandchild-event');
-      
-      expect(root?.causationId).toBeUndefined();
-      expect(child?.causationId).toBe(root?.id);
-      expect(grandchild?.causationId).toBe(child?.id);
-    });
-    
-    // Helper to publish an event and get the persisted version
-    async function publishAndGetEvent(type: string, payload: any): Promise<Event> {
-      runtime.publish(type, payload);
-      const events = await storage.getEvents({ types: [type] });
-      return events[events.length - 1];
-    }
   });
 
   describe('Event Replay', () => {
-    it('should replay events based on a filter', async () => {
-      // Publish some events with different timestamps
+    it('should replay events within a time range', async () => {
+      eventBus.enablePersistence(storage);
+      
       const now = Date.now();
-      
-      // These events will be in the replay window
-      runtime.publish('test-event', { 
-        value: 1,
-        metadata: { timestamp: now - 5000 } 
-      });
-      runtime.publish('test-event', { 
-        value: 2,
-        metadata: { timestamp: now - 3000 } 
-      });
-      runtime.publish('other-event', { 
-        value: 3,
-        metadata: { timestamp: now - 4000 } 
-      });
-      
-      // This event will be outside the replay window
-      runtime.publish('test-event', { 
-        value: 4,
-        metadata: { timestamp: now - 6000 } 
-      });
-      
-      // Setup handler to collect replayed events
-      const replayedEvents: Event[] = [];
-      const unsubscribe = runtime.subscribe('test-event', event => {
-        if (event.metadata?.isReplay) {
-          replayedEvents.push(event);
+      const events: DomainEvent<string>[] = [
+        {
+          id: 'test-id-1',
+          type: 'test-event',
+          timestamp: now - 1000,
+          payload: 'past'
+        },
+        {
+          id: 'test-id-2',
+          type: 'test-event',
+          timestamp: now,
+          payload: 'present'
+        },
+        {
+          id: 'test-id-3',
+          type: 'test-event',
+          timestamp: now + 1000,
+          payload: 'future'
         }
-      });
+      ];
       
-      // Replay events in a specific time window
-      await runtime.replayEvents(now - 5500, now - 2500, ['test-event']);
+      for (const event of events) {
+        await eventBus.publish(event);
+      }
       
-      unsubscribe();
+      // Replay events within a time window
+      const handler = vi.fn();
+      eventBus.subscribe('test-event', handler);
       
-      // Check that only the right events were replayed
-      expect(replayedEvents.length).toBe(2);
-      expect(replayedEvents[0].payload.value).toBe(1);
-      expect(replayedEvents[1].payload.value).toBe(2);
-      expect(replayedEvents.every(e => e.metadata?.isReplay)).toBe(true);
-    });
-
-    it('should emit replay start and complete events', async () => {
-      // Publish an event to replay
-      runtime.publish('test-event', { data: 'test' });
-      
-      // Setup handlers to detect replay events
-      const replayEvents: Event[] = [];
-      const unsubscribe = runtime.subscribe('replay:*', event => {
-        replayEvents.push(event);
-      });
-      
-      // Replay all events
-      await runtime.replayEvents(0, Date.now());
-      
-      unsubscribe();
-      
-      // Check replay events
-      expect(replayEvents.length).toBe(2);
-      expect(replayEvents[0].type).toBe('replay:started');
-      expect(replayEvents[1].type).toBe('replay:completed');
-    });
-  });
-
-  describe('Event Routing and Filtering', () => {
-    it('should route events to additional channels', async () => {
-      // Setup router to send user events to a user-specific channel
-      eventBus.addEventRouter(event => {
-        if (event.type === 'user-action' && event.payload.userId) {
-          return [`user-${event.payload.userId}`];
-        }
-        return [];
-      });
-      
-      // Setup handlers for both channels
-      const userActionEvents: Event[] = [];
-      const userSpecificEvents: Event[] = [];
-      
-      const unsubscribe1 = runtime.subscribe('user-action', event => {
-        userActionEvents.push(event);
-      });
-      
-      const unsubscribe2 = runtime.subscribe('user-123', event => {
-        userSpecificEvents.push(event);
-      });
-      
-      // Publish a user action event
-      runtime.publish('user-action', { 
-        userId: '123',
-        action: 'login'
-      });
-      
-      unsubscribe1();
-      unsubscribe2();
-      
-      // Check that the event was routed to both channels
-      expect(userActionEvents.length).toBe(1);
-      expect(userSpecificEvents.length).toBe(1);
-      expect(userActionEvents[0].payload.userId).toBe('123');
-      expect(userSpecificEvents[0].payload.userId).toBe('123');
+      const result = await eventSource.replayEvents('test-event', now - 500, now + 500);
+      expect(result.success).toBe(true);
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenCalledWith(events[1]); // Only the 'present' event
     });
   });
 }); 

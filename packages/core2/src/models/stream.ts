@@ -1,4 +1,4 @@
-import { EventBus } from './event.js';
+import { EventBus } from './event';
 
 export interface StreamSubscription<T> {
   unsubscribe(): void;

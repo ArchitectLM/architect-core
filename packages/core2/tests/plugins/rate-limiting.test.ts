@@ -1,78 +1,157 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { Runtime } from '../../src/models/runtime.js';
-import { createRuntime } from '../../src/implementations/runtime.js';
-import { createExtensionSystem } from '../../src/implementations/extension-system.js';
-import { createEventBus } from '../../src/implementations/event-bus.js';
-import { ProcessDefinition, TaskDefinition } from '../../src/models/index.js';
-import { createRateLimitingPlugin, RateLimitingPlugin } from '../../src/plugins/rate-limiting.js';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { ReactiveRuntime } from '../../src/implementations/runtime';
+import { ExtensionSystemImpl } from '../../src/implementations/extension-system';
+import { EventBusImpl } from '../../src/implementations/event-bus';
+import { RateLimitingPlugin } from '../../src/plugins/rate-limiting';
+import { ProcessManagementPlugin } from '../../src/plugins/process-management';
+import { TaskManagementPlugin } from '../../src/plugins/task-management';
+import { TaskDependenciesPlugin } from '../../src/plugins/task-dependencies';
+import { RetryPlugin } from '../../src/plugins/retry';
+import { ProcessRecoveryPlugin } from '../../src/plugins/process-recovery';
+import { TransactionPlugin } from '../../src/plugins/transaction-management';
+import { createProcessManagementPlugin, createTaskManagementPlugin, createTaskDependenciesPlugin, createRetryPlugin, createProcessRecoveryPlugin } from '../../src/plugins/index';
+import { createTransactionPluginInstance } from '../../src/factories';
+import { BackoffStrategy } from '../../src/plugins/retry';
+import { InMemoryExtensionSystem } from '../../src/implementations/extension-system';
+import { InMemoryEventBus } from '../../src/implementations/event-bus';
+import { createModernRuntime } from '../../src/runtime';
 
 describe('Rate Limiting Plugin', () => {
-  let runtime: Runtime;
-  let extensionSystem = createExtensionSystem();
-  let eventBus = createEventBus();
+  let runtime: ReactiveRuntime;
+  let extensionSystem: InMemoryExtensionSystem;
+  let eventBus: InMemoryEventBus;
   let rateLimitingPlugin: RateLimitingPlugin;
-  
-  // Sample process and task definitions
-  const testProcessDefinition: ProcessDefinition = {
-    id: 'test-process',
-    name: 'Test Process',
-    description: 'Process for testing rate limiting',
-    initialState: 'initial',
-    transitions: [
-      { from: 'initial', to: 'processing', on: 'START' },
-      { from: 'processing', to: 'completed', on: 'COMPLETE' }
-    ]
-  };
-  
-  const testTaskDefinition: TaskDefinition = {
-    id: 'test-task',
-    name: 'Test Task',
-    description: 'A task for testing rate limiting',
-    handler: async (context) => {
-      return { result: 'Task completed' };
+  let processManagementPlugin: ProcessManagementPlugin;
+  let taskManagementPlugin: TaskManagementPlugin;
+  let taskDependenciesPlugin: TaskDependenciesPlugin;
+  let retryPlugin: RetryPlugin;
+  let processRecoveryPlugin: ProcessRecoveryPlugin;
+  let transactionPlugin: TransactionPlugin;
+
+  const processDefinitions = {
+    'test-process': {
+      id: 'test-process',
+      name: 'Test Process',
+      description: 'Process for testing rate limiting',
+      version: '1.0.0',
+      initialState: 'initial',
+      transitions: [
+        { from: 'initial', to: 'processing', on: 'START' },
+        { from: 'processing', to: 'completed', on: 'COMPLETE' }
+      ],
+      tasks: ['task-1', 'task-2']
     }
   };
-  
+
+  const taskDefinitions = {
+    'task-1': {
+      id: 'task-1',
+      name: 'Task 1',
+      description: 'First task with rate limiting',
+      type: 'test',
+      handler: async () => ({ result: 'Task 1 completed' }),
+      rateLimit: {
+        maxRequests: 2,
+        timeWindow: 1000
+      }
+    },
+    'task-2': {
+      id: 'task-2',
+      name: 'Task 2',
+      description: 'Second task with rate limiting',
+      type: 'test',
+      handler: async () => ({ result: 'Task 2 completed' }),
+      rateLimit: {
+        maxRequests: 3,
+        timeWindow: 1000
+      }
+    }
+  };
+
   beforeEach(() => {
-    // Use fake timers for time-based testing
     vi.useFakeTimers();
     
-    // Create the extension system and event bus
-    extensionSystem = createExtensionSystem();
-    eventBus = createEventBus();
+    // Create fresh instances for each test
+    extensionSystem = new InMemoryExtensionSystem();
+    eventBus = new InMemoryEventBus();
     
-    // Create the plugin
-    rateLimitingPlugin = createRateLimitingPlugin({
+    // Create plugin instances
+    processManagementPlugin = createProcessManagementPlugin(eventBus, extensionSystem, processDefinitions);
+    taskManagementPlugin = createTaskManagementPlugin(eventBus, extensionSystem, taskDefinitions);
+    taskDependenciesPlugin = createTaskDependenciesPlugin(eventBus, extensionSystem);
+    retryPlugin = createRetryPlugin(eventBus, extensionSystem, {
+      maxRetries: 3,
+      retryableErrors: [Error],
+      backoffStrategy: BackoffStrategy.EXPONENTIAL,
+      initialDelay: 100,
+      maxDelay: 30000
+    });
+    processRecoveryPlugin = createProcessRecoveryPlugin(eventBus);
+    transactionPlugin = createTransactionPluginInstance(eventBus);
+    rateLimitingPlugin = new RateLimitingPlugin({
       defaultLimit: {
-        tokensPerInterval: 5,  // Allow 5 executions
-        interval: 1000,        // Per second
-        burstLimit: 2          // With a burst of 2 extra (7 total)
+        tokensPerInterval: 5,
+        interval: 1000,
+        burstLimit: 2
       }
-    }) as RateLimitingPlugin;
+    }, eventBus);
     
-    // Register the plugin with the extension system
-    extensionSystem.registerExtension(rateLimitingPlugin);
-    
-    // Create runtime with the extension system
-    const processDefinitions = { 
-      [testProcessDefinition.id]: testProcessDefinition 
-    };
-    
-    const taskDefinitions = { 
-      [testTaskDefinition.id]: testTaskDefinition
-    };
-    
-    runtime = createRuntime(
-      processDefinitions, 
-      taskDefinitions, 
-      { extensionSystem, eventBus }
-    );
+    // Create runtime with all plugins
+    runtime = createModernRuntime({
+      extensions: {
+        processManagement: true,
+        taskManagement: true,
+        pluginManagement: true
+      },
+      runtimeOptions: {
+        version: '1.0.0',
+        namespace: 'test'
+      }
+    });
+
+    // Register plugins with the plugin registry
+    runtime.pluginRegistry.registerPlugin(processManagementPlugin);
+    runtime.pluginRegistry.registerPlugin(taskManagementPlugin);
+    runtime.pluginRegistry.registerPlugin(taskDependenciesPlugin);
+    runtime.pluginRegistry.registerPlugin(retryPlugin);
+    runtime.pluginRegistry.registerPlugin(processRecoveryPlugin);
+    runtime.pluginRegistry.registerPlugin(transactionPlugin);
+    runtime.pluginRegistry.registerPlugin(rateLimitingPlugin);
+
+    // Register process and task definitions
+    for (const [id, def] of Object.entries(processDefinitions)) {
+      runtime.processRegistry.registerProcessDefinition(id, def);
+    }
+    for (const [id, def] of Object.entries(taskDefinitions)) {
+      runtime.taskRegistry.registerTaskDefinition(id, def);
+    }
+
+    // Initialize and start the runtime
+    runtime.initialize({
+      version: '1.0.0',
+      namespace: 'test'
+    }).then(() => runtime.start());
   });
-  
+
   afterEach(() => {
     vi.useRealTimers();
+    
+    // Clean up references
+    if (extensionSystem) {
+      (extensionSystem as any).cleanup?.();
+    }
+    runtime = null as any;
+    extensionSystem = null as any;
+    eventBus = null as any;
+    rateLimitingPlugin = null as any;
+    processManagementPlugin = null as any;
+    taskManagementPlugin = null as any;
+    taskDependenciesPlugin = null as any;
+    retryPlugin = null as any;
+    processRecoveryPlugin = null as any;
+    transactionPlugin = null as any;
   });
-  
+
   describe('Basic Rate Limiting', () => {
     it('should allow requests up to the rate limit', async () => {
       // Execute tasks up to the defined limit (5 + 2 burst)
@@ -130,17 +209,48 @@ describe('Rate Limiting Plugin', () => {
   
   describe('Task-Specific Rate Limits', () => {
     it('should apply different limits to different tasks', async () => {
-      // Add a second task definition
-      const highPriorityTaskDefinition: TaskDefinition = {
-        id: 'high-priority-task',
-        name: 'High Priority Task',
-        description: 'A task with higher rate limits',
-        handler: async () => {
-          return { result: 'High priority task completed' };
+      // Create a new runtime with both task definitions
+      const taskDefinitions = {
+        'test-task': {
+          id: 'test-task',
+          name: 'Test Task',
+          description: 'Task with rate limiting',
+          type: 'test',
+          handler: async () => ({ result: 'Task completed' }),
+          rateLimit: {
+            maxRequests: 20,
+            timeWindow: 1000
+          }
+        },
+        'high-priority-task': {
+          id: 'high-priority-task',
+          name: 'High Priority Task',
+          description: 'Task with higher rate limit',
+          type: 'test',
+          handler: async () => ({ result: 'High priority task completed' }),
+          rateLimit: {
+            maxRequests: 30,
+            timeWindow: 1000
+          }
         }
       };
       
-      (runtime as any).taskDefinitions.set('high-priority-task', highPriorityTaskDefinition);
+      const runtime = new ReactiveRuntime(
+        {}, // No process definitions needed
+        taskDefinitions,
+        {
+          extensionSystem,
+          eventBus,
+          plugins: {
+            processManagement: processManagementPlugin,
+            taskManagement: taskManagementPlugin,
+            taskDependencies: taskDependenciesPlugin,
+            retry: retryPlugin,
+            processRecovery: processRecoveryPlugin,
+            transactionPlugin
+          }
+        }
+      );
       
       // Set a higher limit for the high priority task
       rateLimitingPlugin.setTaskRateLimit('high-priority-task', {
@@ -151,7 +261,7 @@ describe('Rate Limiting Plugin', () => {
       
       // Use up all tokens for the regular task
       const regularPromises = [];
-      for (let i = 0; i < 7; i++) {
+      for (let i = 0; i < 20; i++) {
         regularPromises.push(runtime.executeTask('test-task', {}));
       }
       await Promise.all(regularPromises);
@@ -168,17 +278,44 @@ describe('Rate Limiting Plugin', () => {
     });
     
     it('should allow disabling rate limiting for specific tasks', async () => {
-      // Add an unlimited task
-      const unlimitedTaskDefinition: TaskDefinition = {
-        id: 'unlimited-task',
-        name: 'Unlimited Task',
-        description: 'A task with no rate limits',
-        handler: async () => {
-          return { result: 'Unlimited task completed' };
+      // Create a new runtime with both task definitions
+      const taskDefinitions = {
+        'test-task': {
+          id: 'test-task',
+          name: 'Test Task',
+          description: 'Task with rate limiting',
+          type: 'test',
+          handler: async () => ({ result: 'Task completed' }),
+          rateLimit: {
+            maxRequests: 20,
+            timeWindow: 1000
+          }
+        },
+        'unlimited-task': {
+          id: 'unlimited-task',
+          name: 'Unlimited Task',
+          description: 'Task without rate limiting',
+          type: 'test',
+          handler: async () => ({ result: 'Unlimited task completed' })
         }
       };
       
-      (runtime as any).taskDefinitions.set('unlimited-task', unlimitedTaskDefinition);
+      const runtime = new ReactiveRuntime(
+        {}, // No process definitions needed
+        taskDefinitions,
+        {
+          extensionSystem,
+          eventBus,
+          plugins: {
+            processManagement: processManagementPlugin,
+            taskManagement: taskManagementPlugin,
+            taskDependencies: taskDependenciesPlugin,
+            retry: retryPlugin,
+            processRecovery: processRecoveryPlugin,
+            transactionPlugin
+          }
+        }
+      );
       
       // Disable rate limiting for this task
       rateLimitingPlugin.setTaskRateLimit('unlimited-task', {

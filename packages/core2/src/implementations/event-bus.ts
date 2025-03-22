@@ -1,255 +1,326 @@
-import { Event, EventBus, EventFilter, EventHandler, EventStorage } from '../models/event.js';
-import { BackpressureStrategy } from '../models/backpressure.js';
-import { InMemoryEventStorage } from './event-storage.js';
+import { v4 as uuidv4 } from 'uuid';
+import { 
+  EventBus, 
+  EventFilter, 
+  EventHandler, 
+  Subscription, 
+  SubscriptionOptions,
+  EventStorage,
+  EventDispatcher,
+  EventSubscriber
+} from '../models/event-system';
+import { BackpressureStrategy } from '../models/backpressure';
+import { DomainEvent, Identifier, Metadata, Result } from '../models/core-types';
+import { ExtensionSystem, ExtensionPointNames, ExtensionPointParameters } from '../models/extension-system';
 
-export class EventBusImpl implements EventBus {
-  private subscribers: Map<string, Set<EventHandler>> = new Map();
-  private wildcardSubscribers: Set<EventHandler> = new Set();
-  private backpressureStrategies: Map<string, BackpressureStrategy> = new Map();
-  private queueDepths: Map<string, number> = new Map();
-  private eventRouters: Array<(event: Event) => string[]> = [];
-  private eventFilters: Array<(event: Event) => boolean> = [];
-  private storage: EventStorage | null = null;
-  private metrics = {
-    eventsPublished: 0,
-    eventsDelivered: 0,
-    subscriberCounts: new Map<string, number>(),
-    eventCounts: new Map<string, number>(),
-    eventLatencies: new Map<string, number[]>()
-  };
+/**
+ * Subscription implementation with internal handler
+ */
+interface SubscriptionImpl<T = unknown> extends Subscription {
+  /** Event handler */
+  handler: EventHandler<T>;
+  
+  /** Event filter */
+  filter?: EventFilter<T>;
+  
+  /** Subscription options */
+  options: Required<SubscriptionOptions>;
+}
 
-  constructor(storage?: EventStorage) {
-    if (storage) {
-      this.storage = storage;
-    }
-  }
+/**
+ * Concrete implementation of the EventBus interface that integrates with the extension system
+ */
+export class ExtensionEventBus implements EventBus, EventDispatcher, EventSubscriber {
+  /** Map of event type to subscriptions */
+  private subscriptions = new Map<string, Set<{
+    id: Identifier;
+    handler: EventHandler<any>;
+    filter?: EventFilter<any>;
+    options: SubscriptionOptions;
+  }>>();
+  
+  /** Map of subscription ID to event type for faster lookups */
+  private subscriptionIdToType = new Map<Identifier, string>();
 
-  subscribe(eventType: string, handler: EventHandler): () => void {
-    if (eventType === '*') {
-      this.wildcardSubscribers.add(handler);
-    } else {
-      if (!this.subscribers.has(eventType)) {
-        this.subscribers.set(eventType, new Set());
-      }
-      this.subscribers.get(eventType)!.add(handler);
-    }
+  /** Event storage for persistence */
+  private storage?: EventStorage;
+
+  /** Global event filters */
+  private globalFilters: ((event: DomainEvent<any>) => boolean)[] = [];
+
+  /** Event routers */
+  private eventRouters: ((event: DomainEvent<any>) => string[])[] = [];
+
+  /** Backpressure strategies by event type */
+  private backpressureStrategies = new Map<string, BackpressureStrategy>();
+
+  constructor(private readonly extensionSystem: ExtensionSystem) {}
+
+  /**
+   * Subscribe to an event type
+   * @param eventType The type of event to subscribe to
+   * @param handler The event handler function
+   * @param options Optional subscription configuration
+   */
+  public subscribe<T>(
+    eventType: string,
+    handler: EventHandler<T>,
+    options: SubscriptionOptions = {}
+  ): Subscription {
+    const subscriptionId = uuidv4();
+    const subscribers = this.subscriptions.get(eventType) || new Set();
     
-    // Update metrics
-    this.metrics.subscriberCounts.set(eventType, (this.metrics.subscriberCounts.get(eventType) || 0) + 1);
+    subscribers.add({
+      id: subscriptionId,
+      handler,
+      options
+    });
+    
+    this.subscriptions.set(eventType, subscribers);
 
-    return () => this.unsubscribe(eventType, handler);
+    return {
+      id: subscriptionId,
+      eventType,
+      unsubscribe: () => this.unsubscribe(eventType, handler)
+    };
   }
+  
+  /**
+   * Subscribe to an event type with a filter
+   * @param eventType The type of event to subscribe to
+   * @param filter Filter function to determine which events to handle
+   * @param handler The event handler function
+   * @param options Optional subscription configuration
+   */
+  public subscribeWithFilter<T>(
+    eventType: string,
+    filter: EventFilter<T>,
+    handler: EventHandler<T>,
+    options: SubscriptionOptions = {}
+  ): Subscription {
+    const subscriptionId = uuidv4();
+    const subscribers = this.subscriptions.get(eventType) || new Set();
+    
+    subscribers.add({
+      id: subscriptionId,
+      handler,
+      filter,
+      options
+    });
+    
+    this.subscriptions.set(eventType, subscribers);
 
-  unsubscribe(eventType: string, handler: EventHandler): void {
-    if (eventType === '*') {
-      this.wildcardSubscribers.delete(handler);
-    } else {
-      const handlers = this.subscribers.get(eventType);
-      if (handlers) {
-        handlers.delete(handler);
-        if (handlers.size === 0) {
-          this.subscribers.delete(eventType);
+    return {
+      id: subscriptionId,
+      eventType,
+      unsubscribe: () => this.unsubscribe(eventType, handler)
+    };
+  }
+  
+  /**
+   * Publish an event to all subscribers
+   * @param event The event to publish
+   */
+  public async publish<T>(event: DomainEvent<T>): Promise<void> {
+    // Apply global filters
+    if (this.globalFilters.some(filter => !filter(event))) {
+      return;
+    }
+
+    // Execute before publish hooks
+    const beforeResult = await this.extensionSystem.executeExtensionPoint(
+      ExtensionPointNames.EVENT_BEFORE_PUBLISH,
+      {
+        eventType: event.type,
+        payload: event.payload
+      }
+    );
+
+    if (!beforeResult.success) {
+      throw beforeResult.error;
+    }
+
+    // Get subscribers for this event type
+    const subscribers = this.subscriptions.get(event.type) || new Set();
+
+    // Apply backpressure if configured
+    const strategy = this.backpressureStrategies.get(event.type);
+    if (strategy) {
+      const queueDepth = this.subscriberCount(event.type);
+      if (!strategy.shouldAccept(queueDepth)) {
+        await new Promise(resolve => setTimeout(resolve, strategy.calculateDelay()));
+      }
+    }
+
+    // Execute handlers in parallel
+    const handlerPromises = Array.from(subscribers)
+      .filter(sub => !sub.filter || sub.filter(event))
+      .map(sub => sub.handler(event));
+
+    await Promise.all(handlerPromises);
+
+    // Store event if persistence is enabled
+    if (this.storage) {
+      await this.storage.storeEvent(event);
+    }
+
+    // Execute after publish hooks
+    await this.extensionSystem.executeExtensionPoint(
+      ExtensionPointNames.EVENT_AFTER_PUBLISH,
+      {
+        eventId: event.id,
+        eventType: event.type,
+        payload: event.payload
+      }
+    );
+
+    // Route event to additional channels
+    const channels = this.eventRouters.flatMap(router => router(event));
+    for (const channel of channels) {
+      const channelSubscribers = this.subscriptions.get(channel) || new Set();
+      const channelHandlerPromises = Array.from(channelSubscribers)
+        .filter(sub => !sub.filter || sub.filter(event))
+        .map(sub => sub.handler(event));
+      await Promise.all(channelHandlerPromises);
+    }
+  }
+  
+  /**
+   * Publish multiple events in order
+   * @param events Array of events to publish
+   */
+  public async publishAll<T>(events: DomainEvent<T>[]): Promise<void> {
+    for (const event of events) {
+      await this.publish(event);
+    }
+  }
+  
+  /**
+   * Remove all subscriptions for a specific event type
+   * @param eventType The event type to clear subscriptions for
+   */
+  public clearSubscriptions(eventType: string): void {
+    this.subscriptions.delete(eventType);
+  }
+  
+  /**
+   * Remove all subscriptions
+   */
+  public clearAllSubscriptions(): void {
+    this.subscriptions.clear();
+  }
+  
+  /**
+   * Get the count of subscribers for an event type
+   * @param eventType The event type to check
+   */
+  public subscriberCount(eventType: string): number {
+    return (this.subscriptions.get(eventType) || new Set()).size;
+  }
+  
+  /**
+   * Unsubscribe a specific handler from an event type
+   * @param eventType The event type to unsubscribe from
+   * @param handler The handler to unsubscribe
+   */
+  public unsubscribe(eventType: string, handler: EventHandler<any>): void {
+    const subscribers = this.subscriptions.get(eventType);
+    if (subscribers) {
+      for (const sub of subscribers) {
+        if (sub.handler === handler) {
+          subscribers.delete(sub);
+          break;
         }
       }
     }
-    
-    // Update metrics
-    const count = (this.metrics.subscriberCounts.get(eventType) || 1) - 1;
-    if (count > 0) {
-      this.metrics.subscriberCounts.set(eventType, count);
-    } else {
-      this.metrics.subscriberCounts.delete(eventType);
+  }
+  
+  /**
+   * Get or create an array of subscriptions for an event type
+   * @param eventType The event type to get subscriptions for
+   */
+  private getOrCreateEventTypeSubscriptions(eventType: string): Set<{
+    id: Identifier;
+    handler: EventHandler<any>;
+    filter?: EventFilter<any>;
+    options: SubscriptionOptions;
+  }> {
+    if (!this.subscriptions.has(eventType)) {
+      this.subscriptions.set(eventType, new Set());
     }
+    return this.subscriptions.get(eventType)!;
   }
-
-  applyBackpressure(eventType: string, strategy: BackpressureStrategy): void {
-    this.backpressureStrategies.set(eventType, strategy);
-    this.queueDepths.set(eventType, 0);
-  }
-
-  publish(eventType: string, payload: any, options: { correlationId?: string; causationId?: string; metadata?: Record<string, any> } = {}): void {
-    const timestamp = Date.now();
-    const event: Event = {
-      id: `event-${timestamp}-${Math.random().toString(36).substring(2, 10)}`,
-      type: eventType,
-      payload,
-      timestamp,
-      correlationId: options.correlationId || crypto.randomUUID(),
-      causationId: options.causationId,
+  
+  /**
+   * Get default options with fallbacks for missing values
+   * @param options The provided options
+   */
+  private getDefaultOptions(options: SubscriptionOptions): Required<SubscriptionOptions> {
+    return {
+      name: options.name || 'unnamed',
+      priority: options.priority || 0,
+      once: options.once || false,
       metadata: options.metadata || {}
     };
-
-    // Apply global filters
-    for (const filter of this.eventFilters) {
-      if (!filter(event)) {
-        return; // Event filtered out
-      }
-    }
-
-    // Check backpressure for specific event type
-    const strategy = this.backpressureStrategies.get(eventType);
-    if (strategy) {
-      const queueDepth = this.queueDepths.get(eventType) || 0;
-      if (!strategy.shouldAccept(queueDepth)) {
-        return;
-      }
-      this.queueDepths.set(eventType, queueDepth + 1);
-    }
-
-    // Update metrics
-    this.metrics.eventsPublished++;
-    const count = (this.metrics.eventCounts.get(eventType) || 0) + 1;
-    this.metrics.eventCounts.set(eventType, count);
-
-    // Persist event if storage is enabled
-    if (this.storage) {
-      this.storage.saveEvent(event).catch(error => {
-        console.error(`Error persisting event ${event.id}:`, error);
-      });
-    }
-
-    // Deliver to specific subscribers
-    this.deliverToSubscribers(event, eventType);
-
-    // Determine additional event types from routers
-    const additionalEventTypes: string[] = [];
-    for (const router of this.eventRouters) {
-      additionalEventTypes.push(...router(event));
-    }
-
-    // Deliver to additional event types from routers
-    for (const additionalType of additionalEventTypes) {
-      this.deliverToSubscribers(event, additionalType);
-    }
-
-    // Deliver to wildcard subscribers
-    for (const handler of this.wildcardSubscribers) {
-      try {
-        handler(event);
-      } catch (error) {
-        console.error(`Error in wildcard event handler for ${eventType}:`, error);
-      }
-    }
-
-    // Decrement queue depths after processing
-    if (strategy) {
-      const queueDepth = this.queueDepths.get(eventType) || 0;
-      this.queueDepths.set(eventType, Math.max(0, queueDepth - 1));
-    }
   }
 
-  private deliverToSubscribers(event: Event, eventType: string): void {
-    const handlers = this.subscribers.get(eventType);
-    if (handlers) {
-      const startTime = performance.now();
-      
-      for (const handler of handlers) {
-        try {
-          handler(event);
-        } catch (error) {
-          console.error(`Error in event handler for ${eventType}:`, error);
-        }
-      }
-
-      // Calculate latency
-      const endTime = performance.now();
-      const latency = endTime - startTime;
-      
-      const latencies = this.metrics.eventLatencies.get(eventType) || [];
-      latencies.push(latency);
-      this.metrics.eventLatencies.set(eventType, latencies);
-      
-      this.metrics.eventsDelivered++;
-    }
+  /**
+   * Apply backpressure strategy to an event type
+   * @param eventType The event type to apply backpressure to
+   * @param strategy The backpressure strategy to apply
+   */
+  public applyBackpressure(eventType: string, strategy: BackpressureStrategy): void {
+    this.backpressureStrategies.set(eventType, strategy);
   }
 
-  enablePersistence(storage: EventStorage): void {
+  /**
+   * Enable event persistence with the provided storage
+   * @param storage The event storage to use
+   */
+  public enablePersistence(storage: EventStorage): void {
     this.storage = storage;
   }
 
-  disablePersistence(): void {
-    this.storage = null;
+  /**
+   * Disable event persistence
+   */
+  public disablePersistence(): void {
+    this.storage = undefined;
   }
 
-  async replay(filter: EventFilter): Promise<void> {
-    if (!this.storage) {
-      throw new Error('Event persistence is not enabled, cannot replay events');
-    }
-
-    // Publish a replay started event
-    this.publish('replay:started', {
-      filter,
-      timestamp: Date.now()
-    });
-
-    try {
-      // Get events from storage
-      const events = await this.storage.getEvents(filter);
-
-      // Sort by timestamp ascending
-      events.sort((a, b) => a.timestamp - b.timestamp);
-
-      // Replay each event through the event bus
-      for (const event of events) {
-        // Publish a copy of the event with a replay marker in metadata
-        this.publish(event.type, event.payload, {
-          correlationId: event.correlationId,
-          causationId: event.causationId,
-          metadata: {
-            ...(event.metadata || {}),
-            isReplay: true,
-            originalEventId: event.id,
-            originalTimestamp: event.timestamp
-          }
-        });
-      }
-
-      // Publish a replay completed event
-      this.publish('replay:completed', { 
-        filter,
-        eventCount: events.length,
-        endTimestamp: Date.now()
-      });
-    } catch (error) {
-      // Publish a replay failed event
-      this.publish('replay:failed', {
-        filter,
-        error,
-        timestamp: Date.now()
-      });
-      throw error;
-    }
-  }
-
-  addEventRouter(router: (event: Event) => string[]): void {
+  /**
+   * Add an event router to route events to additional channels
+   * @param router The event router function
+   */
+  public addEventRouter(router: (event: DomainEvent<any>) => string[]): void {
     this.eventRouters.push(router);
   }
 
-  addEventFilter(filter: (event: Event) => boolean): void {
-    this.eventFilters.push(filter);
+  /**
+   * Add a global event filter
+   * @param filter The filter function
+   */
+  public addEventFilter(filter: (event: DomainEvent<any>) => boolean): void {
+    this.globalFilters.push(filter);
   }
 
-  async correlate(correlationId: string): Promise<Event[]> {
+  /**
+   * Get events by correlation ID
+   * @param correlationId The correlation ID to search for
+   */
+  public async correlate(correlationId: string): Promise<DomainEvent<any>[]> {
     if (!this.storage) {
-      throw new Error('Event persistence is not enabled, cannot correlate events');
+      return [];
     }
-    return this.storage.getEventsByCorrelationId(correlationId);
-  }
 
-  getEventMetrics() {
-    return { ...this.metrics };
-  }
-
-  getQueueDepth(eventType?: string): number {
-    if (eventType) {
-      return this.queueDepths.get(eventType) || 0;
-    }
-    
-    // Sum all queue depths
-    return Array.from(this.queueDepths.values()).reduce((total, depth) => total + depth, 0);
+    const result = await this.storage.getEventsByCorrelationId(correlationId);
+    return result.success ? result.value : [];
   }
 }
 
-export function createEventBus(storage?: EventStorage): EventBus {
-  return new EventBusImpl(storage);
-} 
+/**
+ * Creates a new event bus instance
+ */
+export function createEventBus(extensionSystem: ExtensionSystem): EventBus {
+  return new ExtensionEventBus(extensionSystem);
+}

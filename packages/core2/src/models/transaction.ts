@@ -1,5 +1,6 @@
-import { EventBus } from './event.js';
+import { EventBus } from './event-system';
 import { v4 as uuidv4 } from 'uuid';
+import { DomainEvent } from './core-types';
 
 export interface Transaction {
   id: string;
@@ -49,9 +50,19 @@ export class TransactionManagerImpl implements TransactionManager {
       }
     });
 
-    this.eventBus.publish('transaction.started', {
-      transactionId: transaction.id
-    });
+    const event: DomainEvent<{ transactionId: string }> = {
+      id: uuidv4(),
+      type: 'transaction.started',
+      timestamp: Date.now(),
+      payload: {
+        transactionId: transaction.id
+      },
+      metadata: {
+        timestamp: Date.now()
+      }
+    };
+
+    this.eventBus.publish(event);
 
     return transaction;
   }
@@ -67,11 +78,21 @@ export class TransactionManagerImpl implements TransactionManager {
     }
 
     transaction.status = 'committed';
-    transaction.endTime = Date.now();
+    transaction.completedAt = Date.now();
 
-    this.eventBus.publish('transaction.committed', {
-      transactionId: transaction.id
-    });
+    const event: DomainEvent<{ transactionId: string }> = {
+      id: uuidv4(),
+      type: 'transaction.committed',
+      timestamp: Date.now(),
+      payload: {
+        transactionId: transaction.id
+      },
+      metadata: {
+        timestamp: Date.now()
+      }
+    };
+
+    this.eventBus.publish(event);
   }
 
   rollbackTransaction(transactionId: string): void {
@@ -85,11 +106,21 @@ export class TransactionManagerImpl implements TransactionManager {
     }
 
     transaction.status = 'rolled_back';
-    transaction.endTime = Date.now();
+    transaction.completedAt = Date.now();
 
-    this.eventBus.publish('transaction.rolled_back', {
-      transactionId: transaction.id
-    });
+    const event: DomainEvent<{ transactionId: string }> = {
+      id: uuidv4(),
+      type: 'transaction.rolled_back',
+      timestamp: Date.now(),
+      payload: {
+        transactionId: transaction.id
+      },
+      metadata: {
+        timestamp: Date.now()
+      }
+    };
+
+    this.eventBus.publish(event);
   }
 
   getActiveTransactions(): Transaction[] {
@@ -102,7 +133,12 @@ export class TransactionManagerImpl implements TransactionManager {
     if (!context) {
       throw new Error('Transaction not found');
     }
+    context.metadata.lastAccessedAt = Date.now();
     return context;
+  }
+
+  getTransaction(transactionId: string): Transaction | undefined {
+    return this.transactions.get(transactionId);
   }
 }
 

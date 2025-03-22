@@ -137,12 +137,13 @@ The reactive core has been optimized for performance in several ways:
 
 To migrate from the previous implementation to the reactive core:
 
-1. Replace `RuntimeImpl` with `ReactiveRuntime` in your application
+1. Replace `RuntimeInstance` with `ReactiveRuntime` in your application
 2. Initialize required plugins based on your needs
 3. Adapt any direct usage of internal implementations to use the plugin APIs
 
 ```typescript
-import { createReactiveRuntime } from '../implementations/runtime.reactive.js';
+import { Runtime } from '../models/runtime.js';
+import { createRuntime } from '../implementations/runtime.js';
 import { ExtensionSystemImpl } from '../implementations/extension-system.js';
 import { EventBusImpl } from '../implementations/event-bus.js';
 import { InMemoryEventStorage } from '../implementations/event-storage.js';
@@ -153,7 +154,7 @@ const eventBus = new EventBusImpl();
 const eventStorage = new InMemoryEventStorage();
 
 // Create reactive runtime
-const runtime = createReactiveRuntime(
+const runtime = createRuntime(
   processDefinitions,
   taskDefinitions,
   {

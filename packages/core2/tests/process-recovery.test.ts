@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Runtime, ProcessDefinition, TaskDefinition, ProcessInstance, Event, ReactiveRuntime, ExtensionSystemImpl, EventBusImpl, InMemoryEventStorage } from '../src/index.js';
+import { Runtime, ProcessDefinition, TaskDefinition, ProcessInstance, Event, ReactiveRuntime, ExtensionSystemImpl, EventBusImpl, InMemoryEventStorage } from '../src/index';
 
 describe('Process Versioning and Recovery', () => {
   let runtime: Runtime;

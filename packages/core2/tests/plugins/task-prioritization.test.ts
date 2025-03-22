@@ -1,47 +1,34 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { Runtime } from '../../src/models/runtime.js';
+import { Runtime } from '../../src/models/runtime';
 import { 
-  createReactiveRuntime, 
+  createRuntime,
   createTaskPrioritizationPluginInstance,
-  createTransactionPluginInstance
-} from '../../src/factories.js';
-import { createExtensionSystemInstance } from '../../src/factories.js';
-import { createEventBusInstance } from '../../src/factories.js';
-import { ProcessDefinition, TaskDefinition } from '../../src/models/index.js';
-import { Extension, ExtensionHandler } from '../../src/models/extension.js';
+  createTransactionPluginInstance,
+  createExtensionSystemInstance,
+  createEventBusInstance
+} from '../../src/factories';
+import { ProcessDefinition, TaskDefinition } from '../../src/models/index';
+import { Extension } from '../../src/models/extension';
 import { 
   TaskPriority,
   SchedulingPolicy,
   TaskMetadata,
   TaskPrioritizationPlugin
-} from '../../src/plugins/task-prioritization.js';
-import { ReactiveRuntime } from '../../src/implementations/runtime.js';
-import { EventBus } from '../../src/models/event.js';
-import { ExtensionSystem } from '../../src/models/extension.js';
-import { EventBusImpl } from '../../src/implementations/event-bus.js';
-import { ExtensionSystemImpl } from '../../src/implementations/extension-system.js';
-
-// Helper function to convert TaskPriority enum to string
-const priorityToString = (priority: TaskPriority): string => {
-  return String(priority);
-};
-
-// Modified metadata type to accept string priorities
-interface TestTaskMetadata extends Omit<TaskMetadata, 'priority'> {
-  priority: string;
-}
+} from '../../src/plugins/task-prioritization';
+import { EventBus } from '../../src/models/event';
+import { ExtensionSystem } from '../../src/models/extension';
 
 // Plugin interface that includes both Extension and plugin-specific methods
 interface TaskPrioritizationPluginWithHooks extends Extension {
-  setTaskPriority: (taskId: string, priority: string) => void;
-  getTaskPriority: (taskId: string) => string;
+  setTaskPriority: (taskId: string, priority: TaskPriority) => void;
+  getTaskPriority: (taskId: string) => TaskPriority;
   setTaskExecutionTime: (taskId: string, time: number) => void;
-  setSchedulingPolicy: (policy: string) => void;
+  setSchedulingPolicy: (policy: SchedulingPolicy) => void;
   setMaxConcurrentTasks: (max: number) => void;
   enablePreemption: (enabled: boolean) => void;
   setTaskDeadline: (taskId: string, deadline: number) => void;
   enablePriorityAging: (options: { waitingTimeThreshold: number, boostAmount: number }) => void;
-  createTaskGroup: (groupId: string, options: { priority: string, maxConcurrent: number }) => void;
+  createTaskGroup: (groupId: string, options: { priority: TaskPriority, maxConcurrent: number }) => void;
   assignTaskToGroup: (taskId: string, groupId: string) => void;
   getRunningTasks: () => string[];
   defineResource: (resourceId: string, capacity: number) => void;
@@ -52,10 +39,10 @@ interface TaskPrioritizationPluginWithHooks extends Extension {
 }
 
 // Shared test variables
-let runtime: ReactiveRuntime;
+let runtime: Runtime;
 let extensionSystem: ExtensionSystem;
 let eventBus: EventBus;
-let prioritizationPlugin: TaskPrioritizationPlugin;
+let prioritizationPlugin: TaskPrioritizationPluginWithHooks;
 
 // Mock current time for testing
 const mockNow = new Date('2023-01-01T12:00:00Z').getTime();
@@ -85,55 +72,50 @@ const createTrackedTaskDefinition = (id: string, executionTime = 10): TaskDefini
   })
 });
 
-// Initialize tasks with different priorities and execution times
-const highPriorityTask = createTrackedTaskDefinition('high-priority-task', 20);
-const mediumPriorityTask = createTrackedTaskDefinition('medium-priority-task', 30);
-const lowPriorityTask = createTrackedTaskDefinition('low-priority-task', 10);
-const criticalTask = createTrackedTaskDefinition('critical-task', 5);
-const deadlineTask = createTrackedTaskDefinition('deadline-task', 15);
-const longRunningTask = createTrackedTaskDefinition('long-running-task', 100);
+// Create task definitions with different priorities
+const highPriorityTask = createTrackedTaskDefinition('high-priority', 5);
+const mediumPriorityTask = createTrackedTaskDefinition('medium-priority', 10);
+const lowPriorityTask = createTrackedTaskDefinition('low-priority', 15);
+
+beforeEach(() => {
+  // Reset mocks and create fresh instances for each test
+  vi.resetAllMocks();
+  vi.spyOn(Date, 'now').mockImplementation(() => mockNow);
+  
+  // Create the extension system and event bus
+  extensionSystem = createExtensionSystemInstance();
+  eventBus = createEventBusInstance();
+  
+  // Create the plugin with default options
+  prioritizationPlugin = createTaskPrioritizationPluginInstance({
+    defaultPriority: TaskPriority.NORMAL,
+    defaultPolicy: SchedulingPolicy.PRIORITY,
+    maxConcurrentTasks: 2,
+    enablePreemption: true
+  }) as unknown as TaskPrioritizationPluginWithHooks;
+  
+  // Register the plugin with the extension system
+  extensionSystem.registerExtension(prioritizationPlugin);
+  
+  // Create runtime with the extension system and task definitions
+  const processDefinitions = { 
+    [testProcessDefinition.id]: testProcessDefinition 
+  };
+  
+  const taskDefinitions = { 
+    [highPriorityTask.id]: highPriorityTask,
+    [mediumPriorityTask.id]: mediumPriorityTask,
+    [lowPriorityTask.id]: lowPriorityTask
+  };
+  
+  runtime = createRuntime(
+    processDefinitions, 
+    taskDefinitions, 
+    { extensionSystem, eventBus }
+  );
+});
 
 describe('Task Prioritization Plugin', () => {
-  beforeEach(() => {
-    // Mock Date.now for consistent testing
-    vi.spyOn(Date, 'now').mockImplementation(() => mockNow);
-    
-    // Create fresh instances for each test
-    eventBus = new EventBusImpl();
-    extensionSystem = new ExtensionSystemImpl();
-    
-    // Create process and task definitions
-    const processDefinitions = { 
-      [testProcessDefinition.id]: testProcessDefinition 
-    };
-    
-    const taskDefinitions = { 
-      [highPriorityTask.id]: highPriorityTask,
-      [mediumPriorityTask.id]: mediumPriorityTask,
-      [lowPriorityTask.id]: lowPriorityTask,
-      [criticalTask.id]: criticalTask,
-      [deadlineTask.id]: deadlineTask,
-      [longRunningTask.id]: longRunningTask
-    };
-    
-    // Create runtime with task prioritization plugin
-    runtime = new ReactiveRuntime(
-      processDefinitions,
-      taskDefinitions,
-      { extensionSystem, eventBus }
-    );
-    
-    // Create and register prioritization plugin
-    prioritizationPlugin = new TaskPrioritizationPlugin({
-      maxConcurrentTasks: 2,
-      preemptionEnabled: true
-    });
-    extensionSystem.registerExtension(prioritizationPlugin);
-    
-    // Reset mock function call counts
-    vi.clearAllMocks();
-  });
-  
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
@@ -231,7 +213,7 @@ describe('Task Prioritization Plugin', () => {
       prioritizationPlugin.setSchedulingPolicy(SchedulingPolicy.DEADLINE);
 
       const now = Date.now();
-      const deadlineExecution = await runtime.executeTask(deadlineTask.id, {
+      const deadlineExecution = await runtime.executeTask(lowPriorityTask.id, {
         metadata: { deadline: now + 30 }
       });
       const highPriorityExecution = await runtime.executeTask(highPriorityTask.id, {

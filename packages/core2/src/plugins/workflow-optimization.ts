@@ -1,5 +1,5 @@
-import { Extension } from '../models/extension.js';
-import { EventBus } from '../models/event.js';
+import { Extension } from '../models/extension';
+import { EventBus } from '../models/event';
 
 export enum OptimizationStrategy {
   PARALLELIZATION = 'PARALLELIZATION',

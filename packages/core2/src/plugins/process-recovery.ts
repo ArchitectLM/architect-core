@@ -1,7 +1,6 @@
-import { Extension } from '../models/extension.js';
-import { ProcessDefinition, ProcessInstance, Event } from '../models/index.js';
-import { EventBus } from '../models/event.js';
-import { v4 as uuidv4 } from 'uuid';
+import { Extension } from '../models/extension';
+import { ProcessDefinition, ProcessInstance } from '../models/index';
+import { EventBus } from '../models/event';
 
 interface ProcessCheckpoint {
   id: string;
@@ -20,6 +19,14 @@ export class ProcessRecoveryPlugin implements Extension {
   private processVersions: Map<string, Map<string, ProcessDefinition>> = new Map();
 
   constructor(private eventBus: EventBus) {}
+
+  getExtension(): Extension {
+    return {
+      name: this.name,
+      description: this.description,
+      hooks: this.hooks
+    };
+  }
 
   initialize(): void {
     // No initialization needed

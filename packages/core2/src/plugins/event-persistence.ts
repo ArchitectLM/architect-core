@@ -1,26 +1,26 @@
-import { Extension } from '../models/extension.js';
-import { Event, EventStorage, EventFilter, EventRouter } from '../models/event.js';
-import { EventBus } from '../models/event.js';
-import { ExtensionSystem } from '../models/extension.js';
+import { Extension } from '../models/extension';
+import { EventBus, EventStorage } from '../models/event-system';
+import { ExtensionSystem } from '../models/extension';
 import { v4 as uuidv4 } from 'uuid';
+import { ExtensionPoint, ExtensionHook, ExtensionContext } from '../models/extension';
+import { DomainEvent, Result } from '../models/core-types';
 
 interface EventPersistenceOptions {
   storage: EventStorage;
   maxEvents?: number;
   retentionPeriod?: number; // in milliseconds
-  routers?: EventRouter[];
 }
 
 interface ReplayContext {
   fromTimestamp: number;
   toTimestamp: number;
   eventTypes?: string[];
-  events?: Event[];
+  events?: DomainEvent<any>[];
 }
 
 interface CorrelationContext {
   correlationId: string;
-  events?: Event[];
+  events?: DomainEvent<any>[];
 }
 
 export class EventPersistencePlugin implements Extension {
@@ -28,7 +28,6 @@ export class EventPersistencePlugin implements Extension {
   description = 'Handles event persistence, replay, and correlation';
 
   private options: Required<EventPersistenceOptions>;
-  private routers: EventRouter[] = [];
 
   constructor(
     private eventBus: EventBus,
@@ -39,37 +38,37 @@ export class EventPersistencePlugin implements Extension {
       storage: options.storage,
       maxEvents: options.maxEvents || 10000,
       retentionPeriod: options.retentionPeriod || 7 * 24 * 60 * 60 * 1000, // 7 days
-      routers: options.routers || []
     };
-    this.routers = this.options.routers;
   }
 
-  hooks = {
-    'event:beforePublish': async (context: any) => {
-      const { event } = context;
+  getExtension(): Extension {
+    return {
+      name: this.name,
+      description: this.description,
+      hooks: this.hooks
+    };
+  }
+
+  hooks: Partial<Record<ExtensionPoint, ExtensionHook>> = {
+    'event:beforeReplay': async (context: ExtensionContext) => {
+      const event = context.data as DomainEvent<any>;
       
       // Add metadata if not present
       event.metadata = event.metadata || {};
 
       // Ensure required metadata fields
-      event.metadata.id = event.metadata.id || uuidv4();
-      event.metadata.timestamp = event.metadata.timestamp || Date.now();
+      event.id = event.id || uuidv4();
+      event.timestamp = event.timestamp || Date.now();
       event.metadata.source = event.metadata.source || 'event-persistence';
-
-      // Route event if routers are configured
-      if (this.routers.length > 0) {
-        const routes = await this.routeEvent(event);
-        event.metadata.routes = routes;
-      }
 
       return {
         ...context,
-        event
+        data: event
       };
     },
 
-    'event:afterPublish': async (context: any) => {
-      const { event } = context;
+    'event:afterReplay': async (context: ExtensionContext) => {
+      const event = context.data as DomainEvent<any>;
       
       // Persist event
       await this.persistEvent(event);
@@ -78,9 +77,12 @@ export class EventPersistencePlugin implements Extension {
     }
   };
 
-  async persistEvent(event: Event): Promise<void> {
+  async persistEvent(event: DomainEvent<any>): Promise<void> {
     // Store event
-    await this.options.storage.saveEvent(event);
+    const result = await this.options.storage.storeEvent(event);
+    if (!result.success) {
+      throw new Error(`Failed to store event: ${result.error.message}`);
+    }
 
     // Clean up old events if needed
     await this.cleanupOldEvents();
@@ -95,78 +97,65 @@ export class EventPersistencePlugin implements Extension {
     });
 
     // Get events from storage
-    const filter: EventFilter = {
-      fromTimestamp,
-      toTimestamp,
-      types: eventTypes
-    };
-
-    const events = await this.options.storage.getEvents(filter);
-    if (!events) {
-      throw new Error('Failed to retrieve events for replay');
+    const result = await this.options.storage.getAllEvents<any>(fromTimestamp, toTimestamp);
+    if (!result.success) {
+      throw new Error(`Failed to retrieve events for replay: ${result.error.message}`);
     }
 
+    const events = result.value.filter(event => !eventTypes || eventTypes.includes(event.type));
+
     // Publish replay start event
-    this.eventBus.publish('event:replayStarted', {
-      fromTimestamp,
-      toTimestamp,
-      eventTypes,
-      eventCount: events.length
+    await this.eventBus.publish({
+      id: uuidv4(),
+      type: 'event:replayStarted',
+      timestamp: Date.now(),
+      payload: {
+        fromTimestamp,
+        toTimestamp,
+        eventTypes,
+        eventCount: events.length
+      }
     });
 
     // Replay events in order
     for (const event of events) {
-      const metadata = event.metadata || {};
-      await this.eventBus.publish(event.type, event.payload, {
+      await this.eventBus.publish({
+        ...event,
         metadata: {
-          ...metadata,
+          ...event.metadata,
           isReplay: true,
-          originalTimestamp: metadata.timestamp
+          originalTimestamp: event.timestamp
         }
       });
     }
 
     // Publish replay completion event
-    this.eventBus.publish('event:replayCompleted', {
-      fromTimestamp,
-      toTimestamp,
-      eventTypes,
-      eventCount: events.length
+    await this.eventBus.publish({
+      id: uuidv4(),
+      type: 'event:replayCompleted',
+      timestamp: Date.now(),
+      payload: {
+        fromTimestamp,
+        toTimestamp,
+        eventTypes,
+        eventCount: events.length
+      }
     });
   }
 
-  async correlateEvents(correlationId: string): Promise<Event[]> {
+  async correlateEvents(correlationId: string): Promise<DomainEvent<any>[]> {
     // Execute beforeCorrelation extension point
     const correlationContext = await this.extensionSystem.executeExtensionPoint<CorrelationContext>('event:beforeCorrelation', {
       correlationId
     });
 
     // Get correlated events from storage
-    const events = await this.options.storage.getEventsByCorrelationId(correlationId);
-    if (!events) {
-      throw new Error('Failed to retrieve correlated events');
+    const result = await this.options.storage.getEventsByCorrelationId<any>(correlationId);
+    if (!result.success) {
+      throw new Error(`Failed to retrieve correlated events: ${result.error.message}`);
     }
 
-    return events;
-  }
-
-  addEventRouter(router: EventRouter): void {
-    this.routers.push(router);
-  }
-
-  removeEventRouter(router: EventRouter): void {
-    this.routers = this.routers.filter(r => r !== router);
-  }
-
-  private async routeEvent(event: Event): Promise<string[]> {
-    const routes: string[] = [];
-    
-    for (const router of this.routers) {
-      const routeResults = await router(event);
-      routes.push(...routeResults);
-    }
-
-    return routes;
+    return result.value;
   }
 
   private async cleanupOldEvents(): Promise<void> {
@@ -174,23 +163,21 @@ export class EventPersistencePlugin implements Extension {
     const cutoffTime = now - this.options.retentionPeriod;
 
     // Get events older than retention period
-    const oldEvents = await this.options.storage.getEvents({
-      toTimestamp: cutoffTime
-    });
+    const result = await this.options.storage.getAllEvents<any>(0, cutoffTime);
+    if (!result.success) {
+      console.error(`Failed to retrieve old events: ${result.error.message}`);
+      return;
+    }
     
     // Note: The EventStorage interface doesn't have a delete method,
     // so we'll need to implement a different cleanup strategy
     // For now, we'll just log a warning
-    console.warn(`Found ${oldEvents.length} events older than retention period`);
+    console.warn(`Found ${result.value.length} events older than retention period`);
   }
 
   // Utility methods for testing and debugging
-  getRouters(): EventRouter[] {
-    return [...this.routers];
-  }
-
   clear(): void {
-    this.routers = [];
+    // No-op since we don't maintain any state
   }
 }
 

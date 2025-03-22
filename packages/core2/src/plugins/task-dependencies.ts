@@ -1,7 +1,7 @@
-import { Extension } from '../models/extension.js';
-import { TaskDefinition, TaskExecution, TaskContext } from '../models/index.js';
-import { EventBus } from '../models/event.js';
-import { ExtensionSystem } from '../models/extension.js';
+import { Extension, ExtensionPoint, ExtensionContext, ExtensionHook } from '../models/extension';
+import { TaskDefinition, TaskExecution, TaskContext } from '../models/index';
+import { EventBus } from '../models/event';
+import { ExtensionSystem } from '../models/extension';
 
 interface TaskDependency {
   taskId: string;
@@ -37,105 +37,114 @@ interface CompletionContext {
   error?: Error;
 }
 
-export class TaskDependenciesPlugin implements Extension {
-  name = 'task-dependencies';
-  description = 'Handles task dependencies and sequencing';
-
+export class TaskDependenciesPlugin {
+  private extension: Extension;
   private dependencies: Map<string, TaskDependency> = new Map();
   private runningTasks: Map<string, TaskExecution> = new Map();
 
   constructor(
     private eventBus: EventBus,
     private extensionSystem: ExtensionSystem
-  ) {}
+  ) {
+    this.extension = {
+      name: 'task-dependencies',
+      description: 'Handles task dependencies and sequencing',
+      hooks: {
+        'task:beforeDependencyCheck': async (context: ExtensionContext) => {
+          const taskId = context.taskId!;
+          const dependencies = context.metadata?.dependencies as string[] || [];
+          
+          // Create dependency record
+          const dependency: TaskDependency = {
+            taskId,
+            dependsOn: dependencies,
+            status: 'pending'
+          };
 
-  initialize(): void {
-    // No initialization needed
+          this.dependencies.set(taskId, dependency);
+
+          // Wait for all dependencies to complete
+          const dependencyResults = await this.waitForDependencies(dependencies);
+
+          return {
+            ...context,
+            metadata: {
+              ...context.metadata,
+              dependency,
+              dependencyResults
+            }
+          };
+        },
+
+        'task:beforeExecution': async (context: ExtensionContext) => {
+          const taskType = context.taskType!;
+          const input = context.data;
+          const dependencyResults = context.metadata?.dependencyResults;
+          
+          const execution: TaskExecution = {
+            id: `task-${Date.now()}`,
+            type: taskType,
+            input,
+            status: 'running',
+            startTime: Date.now(),
+            attempts: 1,
+            dependency: {
+              dependsOn: [],
+              waitingFor: []
+            }
+          };
+
+          this.runningTasks.set(execution.id, execution);
+
+          return {
+            ...context,
+            skipExecution: false,
+            metadata: {
+              ...context.metadata,
+              execution
+            }
+          };
+        },
+
+        'task:afterCompletion': async (context: ExtensionContext) => {
+          const execution = context.metadata?.execution as TaskExecution;
+          const result = context.result;
+          const error = context.error;
+          
+          if (error) {
+            execution.status = 'failed';
+            execution.error = error;
+            execution.endTime = Date.now();
+
+            // Publish failure event
+            this.eventBus.publish('task:failed', {
+              taskId: execution.id,
+              taskType: execution.type,
+              error
+            });
+          } else {
+            execution.result = result;
+            execution.status = 'completed';
+            execution.endTime = Date.now();
+
+            // Publish completion event
+            this.eventBus.publish('task:completed', {
+              taskId: execution.id,
+              taskType: execution.type,
+              result
+            });
+          }
+
+          this.runningTasks.delete(execution.id);
+          return context;
+        }
+      }
+    };
   }
 
-  hooks = {
-    'task:beforeDependencyCheck': async (context: any) => {
-      const { taskId, dependencies } = context;
-      
-      // Create dependency record
-      const dependency: TaskDependency = {
-        taskId,
-        dependsOn: dependencies,
-        status: 'pending'
-      };
-
-      this.dependencies.set(taskId, dependency);
-
-      return {
-        ...context,
-        dependency
-      };
-    },
-
-    'task:afterDependencyCheck': async (context: any) => {
-      const { taskId, dependency } = context;
-      
-      // Wait for all dependencies to complete
-      const dependencyResults = await this.waitForDependencies(dependency.dependsOn);
-
-      return {
-        ...context,
-        dependencyResults
-      };
-    },
-
-    'task:beforeExecution': async (context: any) => {
-      const { taskType, input, dependencyResults } = context;
-      
-      const execution: TaskExecution = {
-        id: `task-${Date.now()}`,
-        type: taskType,
-        input,
-        status: 'running',
-        startedAt: Date.now(),
-        attempts: 1
-      };
-
-      this.runningTasks.set(execution.id, execution);
-
-      return {
-        ...context,
-        execution,
-        skipExecution: false
-      };
-    },
-
-    'task:afterExecution': async (context: any) => {
-      const { execution, result, error } = context;
-      
-      if (error) {
-        execution.status = 'failed';
-        execution.error = error;
-        execution.completedAt = Date.now();
-
-        // Publish failure event
-        this.eventBus.publish('task:failed', {
-          taskId: execution.id,
-          taskType: execution.type,
-          error
-        });
-      } else {
-        execution.result = result;
-        execution.status = 'completed';
-        execution.completedAt = Date.now();
-
-        // Publish completion event
-        this.eventBus.publish('task:completed', {
-          taskId: execution.id,
-          taskType: execution.type,
-          result
-        });
-      }
-
-      this.runningTasks.delete(execution.id);
-      return context;
-    }
-  };
+  getExtension(): Extension {
+    return this.extension;
+  }
 
   private async waitForDependencies(dependencies: string[]): Promise<Record<string, any>> {
     const results: Record<string, any> = {};
@@ -227,7 +236,7 @@ export class TaskDependenciesPlugin implements Extension {
 
     // Update execution status
     execution.status = 'cancelled';
-    execution.completedAt = Date.now();
+    execution.endTime = Date.now();
 
     // Publish cancellation event
     this.eventBus.publish('task:cancelled', {
@@ -246,62 +255,55 @@ export class TaskDependenciesPlugin implements Extension {
     const taskId = `task-${Date.now()}`;
 
     // Execute beforeDependencyCheck extension point
-    const dependencyContext = await this.extensionSystem.executeExtensionPoint<DependencyCheckContext>('task:beforeDependencyCheck', {
+    const dependencyContext = await this.extensionSystem.executeExtensionPoint('task:beforeDependencyCheck', {
       taskId,
-      dependencies
+      taskType,
+      data: input,
+      state: {},
+      metadata: {
+        dependencies
+      }
     });
-
-    if (!dependencyContext.dependency) {
-      throw new Error('Dependency check failed');
-    }
-
-    // Execute afterDependencyCheck extension point
-    const dependencyResultsContext = await this.extensionSystem.executeExtensionPoint<DependencyResultsContext>('task:afterDependencyCheck', {
-      taskId,
-      dependency: dependencyContext.dependency
-    });
-
-    if (!dependencyResultsContext.dependencyResults) {
-      throw new Error('Dependency results not available');
-    }
-
-    // Create task context with dependency results
-    const context: TaskContext = {
-      input,
-      previousResults: dependencyResultsContext.dependencyResults
-    };
 
     // Execute beforeExecution extension point
-    const executionContext = await this.extensionSystem.executeExtensionPoint<ExecutionContext>('task:beforeExecution', {
+    const executionContext = await this.extensionSystem.executeExtensionPoint('task:beforeExecution', {
+      taskId,
       taskType,
-      input,
-      dependencyResults: dependencyResultsContext.dependencyResults
+      data: input,
+      state: {},
+      metadata: dependencyContext.metadata
     });
 
-    if (!executionContext.execution) {
-      throw new Error('Task execution initialization failed');
-    }
-
-    // Check if execution should be skipped
     if (executionContext.skipExecution) {
-      return executionContext.execution;
+      return executionContext.metadata?.execution as TaskExecution;
     }
 
     try {
       // Execute the task
-      const result = await this.executeTaskHandler(taskType, context);
+      const result = await this.executeTaskHandler(taskType, {
+        input,
+        ...executionContext.metadata
+      });
 
-      // Execute afterExecution extension point
-      const completionContext = await this.extensionSystem.executeExtensionPoint<CompletionContext>('task:afterExecution', {
-        execution: executionContext.execution,
+      // Execute afterCompletion extension point
+      const completionContext = await this.extensionSystem.executeExtensionPoint('task:afterCompletion', {
+        taskId,
+        taskType,
+        data: input,
+        state: {},
+        metadata: executionContext.metadata,
         result
       });
 
-      return completionContext.execution;
+      return completionContext.metadata?.execution as TaskExecution;
     } catch (error: unknown) {
-      // Execute afterExecution extension point with error
-      const errorContext = await this.extensionSystem.executeExtensionPoint<CompletionContext>('task:afterExecution', {
-        execution: executionContext.execution,
+      // Execute afterCompletion extension point with error
+      const errorContext = await this.extensionSystem.executeExtensionPoint('task:afterCompletion', {
+        taskId,
+        taskType,
+        data: input,
+        state: {},
+        metadata: executionContext.metadata,
         error: error instanceof Error ? error : new Error(String(error))
       });
 
