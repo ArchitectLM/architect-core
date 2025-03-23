@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { CoreRuntime, createCoreRuntime } from '../src/runtime/core-runtime';
+import { RuntimeInstance, createCoreRuntime, CoreRuntimeConfig } from '../src/implementations/runtime';
 import { Plugin, BasePlugin } from '../src/models/plugin-system';
 import { EventBus } from '../src/models/event-system';
 import { ExtensionSystem } from '../src/models/extension-system';
 import { EventStorage } from '../src/models/event-system';
 
 describe('CoreRuntime', () => {
-  let runtime: CoreRuntime;
+  let runtime: RuntimeInstance;
   let mockPlugin: Plugin;
 
   beforeEach(() => {
@@ -56,7 +56,7 @@ describe('CoreRuntime', () => {
       // Try to register again
       const result = await runtime.registerPlugin(mockPlugin);
       expect(result.success).toBe(false);
-      if (!result.success) {
+      if (!result.success && result.error) {
         expect(result.error.message).toContain('already registered');
       }
     });
@@ -91,7 +91,7 @@ describe('CoreRuntime', () => {
 
       const result = await runtime.registerPlugin(failingPlugin);
       expect(result.success).toBe(false);
-      if (!result.success) {
+      if (!result.success && result.error) {
         expect(result.error.message).toBe('Initialization failed');
       }
     });
@@ -99,14 +99,14 @@ describe('CoreRuntime', () => {
 
   describe('System Integration', () => {
     it('should integrate with event bus', () => {
-      const eventBus = runtime.getEventBus();
+      const eventBus = runtime.eventBus;
       expect(eventBus).toBeDefined();
       expect(eventBus.publish).toBeDefined();
       expect(eventBus.subscribe).toBeDefined();
     });
 
     it('should integrate with extension system', () => {
-      const extensionSystem = runtime.getExtensionSystem();
+      const extensionSystem = runtime.extensionSystem;
       expect(extensionSystem).toBeDefined();
       expect(extensionSystem.registerExtension).toBeDefined();
       expect(extensionSystem.executeExtensionPoint).toBeDefined();
@@ -117,7 +117,7 @@ describe('CoreRuntime', () => {
         enableEventPersistence: true
       });
 
-      const eventStorage = runtimeWithStorage.getEventStorage();
+      const eventStorage = runtimeWithStorage.eventStorage;
       expect(eventStorage).toBeDefined();
       expect(eventStorage?.storeEvent).toBeDefined();
       expect(eventStorage?.getEventsByType).toBeDefined();
@@ -142,7 +142,7 @@ describe('CoreRuntime', () => {
       } as unknown as EventBus;
 
       const runtime = createCoreRuntime({ eventBus: mockEventBus });
-      expect(runtime.getEventBus()).toBe(mockEventBus);
+      expect(runtime.eventBus).toBe(mockEventBus);
     });
 
     it('should use custom extension system implementation', () => {
@@ -156,7 +156,7 @@ describe('CoreRuntime', () => {
       } as unknown as ExtensionSystem;
 
       const runtime = createCoreRuntime({ extensionSystem: mockExtensionSystem });
-      expect(runtime.getExtensionSystem()).toBe(mockExtensionSystem);
+      expect(runtime.extensionSystem).toBe(mockExtensionSystem);
     });
 
     it('should use custom event storage implementation', () => {
@@ -172,7 +172,7 @@ describe('CoreRuntime', () => {
         eventStorage: mockEventStorage
       });
 
-      expect(runtime.getEventStorage()).toBe(mockEventStorage);
+      expect(runtime.eventStorage).toBe(mockEventStorage);
     });
   });
 }); 

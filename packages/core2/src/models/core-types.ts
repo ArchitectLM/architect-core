@@ -18,23 +18,26 @@ export type Timestamp = number;
 export type Metadata = Record<string, unknown>;
 
 /**
- * Domain event interface with proper generics
+ * Domain event interface
  */
-export interface DomainEvent<T> {
-  /** Unique event identifier */
+export interface DomainEvent<T = unknown> {
+  /** Event unique identifier */
   id: Identifier;
   
-  /** Type of the event for classification */
+  /** Event type */
   type: string;
   
-  /** When the event occurred */
-  timestamp: Timestamp;
+  /** Event timestamp */
+  timestamp: number;
   
-  /** Actual event payload */
+  /** Event payload */
   payload: T;
   
-  /** Additional contextual information */
-  metadata?: Metadata;
+  /** Optional metadata */
+  metadata?: Record<string, unknown>;
+  
+  /** Optional correlation ID for tracing */
+  correlationId?: string;
 }
 
 /**
@@ -72,11 +75,18 @@ export interface CommandResult<T> {
 }
 
 /**
- * Result of a domain operation
+ * Result type for operations
  */
-export type Result<T> = 
-  | { success: true; value: T; metadata?: Metadata }
-  | { success: false; error: Error; metadata?: Metadata };
+export interface Result<T = void> {
+  /** Whether the operation was successful */
+  success: boolean;
+  
+  /** The result value, if successful */
+  value?: T;
+  
+  /** The error, if unsuccessful */
+  error?: DomainError;
+}
 
 /**
  * State pattern type for domain entities
@@ -93,19 +103,19 @@ export type State<T extends string, D> = {
 };
 
 /**
- * Rich domain error with context
+ * Domain error class
  */
 export class DomainError extends Error {
-  /** Additional contextual information about the error */
-  context: Record<string, unknown>;
+  /** Error code */
+  public code?: string;
   
-  /** Underlying cause if this is a wrapper */
-  cause?: Error;
+  /** Additional context */
+  public context?: Record<string, unknown>;
   
-  constructor(message: string, context: Record<string, unknown> = {}, cause?: Error) {
+  constructor(message: string, code?: string, context?: Record<string, unknown>) {
     super(message);
-    this.name = this.constructor.name;
+    this.name = 'DomainError';
+    this.code = code;
     this.context = context;
-    this.cause = cause;
   }
 } 

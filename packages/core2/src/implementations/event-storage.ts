@@ -1,108 +1,192 @@
-import { DomainEvent, Result } from '../models/core-types';
+import { DomainEvent, Identifier, Result } from '../models/core-types';
 import { EventStorage } from '../models/event-system';
 
 /**
- * In-memory event storage implementation
+ * In-memory implementation of EventStorage for testing and standard usage
  */
 export class InMemoryEventStorage implements EventStorage {
-  private events: DomainEvent<any>[] = [];
-  private eventIndex: Map<string, DomainEvent<any>> = new Map();
-  private correlationIndex: Map<string, DomainEvent<any>[]> = new Map();
+  private events: DomainEvent<unknown>[] = [];
+  private eventsByType: Map<string, DomainEvent<unknown>[]> = new Map();
+  private eventsByCorrelationId: Map<string, DomainEvent<unknown>[]> = new Map();
 
-  async storeEvent<T>(event: DomainEvent<T>): Promise<Result<void>> {
+  /**
+   * Store an event
+   * @param event The event to store
+   */
+  public async storeEvent<T>(event: DomainEvent<T>): Promise<Result<void>> {
     try {
-      // Store event in array
-      this.events.push(event);
+      // Store in main collection
+      this.events.push(event as DomainEvent<unknown>);
       
-      // Index by event ID
-      this.eventIndex.set(event.id, event);
+      // Store by type
+      if (!this.eventsByType.has(event.type)) {
+        this.eventsByType.set(event.type, []);
+      }
+      this.eventsByType.get(event.type)!.push(event as DomainEvent<unknown>);
       
-      // Index by correlation ID if present
-      if (event.metadata?.correlationId) {
-        const correlationId = event.metadata.correlationId as string;
-        const correlatedEvents = this.correlationIndex.get(correlationId) || [];
-        correlatedEvents.push(event);
-        this.correlationIndex.set(correlationId, correlatedEvents);
+      // Store by correlation ID if present
+      const correlationId = event.metadata?.['correlationId'] as string | undefined;
+      if (correlationId) {
+        if (!this.eventsByCorrelationId.has(correlationId)) {
+          this.eventsByCorrelationId.set(correlationId, []);
+        }
+        this.eventsByCorrelationId.get(correlationId)!.push(event as DomainEvent<unknown>);
       }
       
       return { success: true, value: undefined };
     } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error : new Error(String(error))
+      return { 
+        success: false, 
+        error: error instanceof Error 
+          ? error 
+          : new Error(`Failed to store event: ${String(error)}`) 
       };
     }
   }
 
-  async getEventsByType<T>(
+  /**
+   * Retrieve events by type within a time range
+   * @param eventType The type of events to retrieve
+   * @param startTime Start of the time range
+   * @param endTime End of the time range
+   */
+  public async getEventsByType<T>(
     eventType: string,
     startTime?: number,
     endTime?: number
   ): Promise<Result<DomainEvent<T>[]>> {
     try {
-      const filteredEvents = this.events.filter(event => {
-        const matchesType = event.type === eventType;
-        const matchesTimeRange = (!startTime || event.timestamp >= startTime) &&
-                               (!endTime || event.timestamp <= endTime);
-        return matchesType && matchesTimeRange;
+      const events = this.eventsByType.get(eventType) || [];
+      
+      const filteredEvents = events.filter(event => {
+        if (startTime !== undefined && event.timestamp < startTime) {
+          return false;
+        }
+        
+        if (endTime !== undefined && event.timestamp > endTime) {
+          return false;
+        }
+        
+        return true;
       });
-
-      return { success: true, value: filteredEvents as DomainEvent<T>[] };
+      
+      return { 
+        success: true, 
+        value: filteredEvents as unknown as DomainEvent<T>[]
+      };
     } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error : new Error(String(error))
+      return { 
+        success: false, 
+        error: error instanceof Error 
+          ? error 
+          : new Error(`Failed to get events by type: ${String(error)}`) 
       };
     }
   }
 
-  async getEventsByCorrelationId<T>(
+  /**
+   * Retrieve events by correlation ID
+   * @param correlationId The correlation ID to search for
+   */
+  public async getEventsByCorrelationId<T>(
     correlationId: string
   ): Promise<Result<DomainEvent<T>[]>> {
     try {
-      const correlatedEvents = this.correlationIndex.get(correlationId) || [];
-      return { success: true, value: correlatedEvents as DomainEvent<T>[] };
+      const events = this.eventsByCorrelationId.get(correlationId) || [];
+      
+      return { 
+        success: true, 
+        value: events as unknown as DomainEvent<T>[]
+      };
     } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error : new Error(String(error))
+      return { 
+        success: false, 
+        error: error instanceof Error 
+          ? error 
+          : new Error(`Failed to get events by correlation ID: ${String(error)}`) 
       };
     }
   }
 
-  async getAllEvents<T>(
+  /**
+   * Get all events within a time range
+   * @param startTime Start of the time range
+   * @param endTime End of the time range
+   */
+  public async getAllEvents<T>(
     startTime?: number,
     endTime?: number
   ): Promise<Result<DomainEvent<T>[]>> {
     try {
       const filteredEvents = this.events.filter(event => {
-        return (!startTime || event.timestamp >= startTime) &&
-               (!endTime || event.timestamp <= endTime);
+        if (startTime !== undefined && event.timestamp < startTime) {
+          return false;
+        }
+        
+        if (endTime !== undefined && event.timestamp > endTime) {
+          return false;
+        }
+        
+        return true;
       });
-
-      return { success: true, value: filteredEvents as DomainEvent<T>[] };
+      
+      return { 
+        success: true, 
+        value: filteredEvents as unknown as DomainEvent<T>[]
+      };
     } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error : new Error(String(error))
+      return { 
+        success: false, 
+        error: error instanceof Error 
+          ? error 
+          : new Error(`Failed to get all events: ${String(error)}`) 
       };
     }
   }
 
   /**
-   * Clear all stored events
+   * Helper methods for test implementations
    */
-  clear(): void {
-    this.events = [];
-    this.eventIndex.clear();
-    this.correlationIndex.clear();
+
+  /**
+   * Save an event directly - this is used by the ReactiveRuntimeImpl
+   */
+  public async saveEvent<T>(event: DomainEvent<T>): Promise<void> {
+    await this.storeEvent(event);
   }
 
   /**
-   * Get the total number of stored events
+   * Query events by criteria
    */
-  getEventCount(): number {
+  public async queryEvents<T>(criteria: { correlationId?: string; eventType?: string }): Promise<DomainEvent<T>[]> {
+    return this.events.filter((event) => {
+      if (criteria.correlationId && event.metadata?.['correlationId'] !== criteria.correlationId) return false;
+      if (criteria.eventType && event.type !== criteria.eventType) return false;
+      return true;
+    }) as DomainEvent<T>[];
+  }
+
+  /**
+   * Clear all events
+   */
+  public clear(): void {
+    this.events = [];
+    this.eventsByType.clear();
+    this.eventsByCorrelationId.clear();
+  }
+
+  /**
+   * Get the count of stored events
+   */
+  public count(): number {
     return this.events.length;
+  }
+
+  /**
+   * Get the count of stored events (alias for compatibility)
+   */
+  public getEventCount(): number {
+    return this.count();
   }
 }
 

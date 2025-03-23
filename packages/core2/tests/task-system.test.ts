@@ -1,14 +1,19 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { TaskDefinition, TaskExecution, TaskRegistry, TaskExecutor, TaskScheduler } from '../src/models/task-system';
 import { Result } from '../src/models/core-types';
+import { InMemoryTaskRegistry } from '../src/implementations/task-registry';
+import { InMemoryTaskExecutor } from '../src/implementations/task-executor';
+import { SimpleTaskScheduler } from '../src/implementations/task-scheduler';
+import { InMemoryEventBus } from '../src/implementations/event-bus-impl';
 
 describe('Task System', () => {
   let taskRegistry: TaskRegistry;
   let taskExecutor: TaskExecutor;
   let taskScheduler: TaskScheduler;
+  let eventBus: InMemoryEventBus;
 
   // Sample task definition
-  const sampleTask: TaskDefinition<{ value: number }, number> = {
+  const sampleTask: TaskDefinition<{ value: number }, number, unknown> = {
     id: 'test-task',
     name: 'Test Task',
     description: 'A test task that doubles its input',
@@ -27,6 +32,12 @@ describe('Task System', () => {
   beforeEach(() => {
     // Reset mocks and implementations before each test
     vi.clearAllMocks();
+    
+    // Initialize components
+    eventBus = new InMemoryEventBus();
+    taskRegistry = new InMemoryTaskRegistry();
+    taskExecutor = new InMemoryTaskExecutor(taskRegistry, eventBus);
+    taskScheduler = new SimpleTaskScheduler(taskExecutor);
   });
 
   describe('Task Registry', () => {
@@ -36,7 +47,7 @@ describe('Task System', () => {
       expect(registerResult.success).toBe(true);
 
       // Retrieve task
-      const getResult = taskRegistry.getTaskDefinition<{ value: number }, number>(sampleTask.id);
+      const getResult = taskRegistry.getTaskDefinition<{ value: number }, number, unknown>(sampleTask.id);
       expect(getResult.success).toBe(true);
       if (getResult.success) {
         expect(getResult.value).toEqual(sampleTask);
@@ -90,7 +101,7 @@ describe('Task System', () => {
 
     it('should handle task failures and retries', async () => {
       // Create a failing task
-      const failingTask: TaskDefinition<{ value: number }, number> = {
+      const failingTask: TaskDefinition<{ value: number }, number, unknown> = {
         ...sampleTask,
         id: 'failing-task',
         handler: async (context) => {
@@ -121,12 +132,12 @@ describe('Task System', () => {
 
     it('should handle task dependencies', async () => {
       // Create dependent tasks
-      const taskA: TaskDefinition<{ value: number }, number> = {
+      const taskA: TaskDefinition<{ value: number }, number, unknown> = {
         ...sampleTask,
         id: 'task-a'
       };
 
-      const taskB: TaskDefinition<{ value: number }, number> = {
+      const taskB: TaskDefinition<{ value: number }, number, unknown> = {
         ...sampleTask,
         id: 'task-b',
         handler: async (context) => {
@@ -150,7 +161,9 @@ describe('Task System', () => {
         const execution = result.value;
         expect(execution.status).toBe('completed');
         expect(execution.result).toBe(15);
-        expect(execution.relations?.dependsOn).toContain(taskA.id);
+        if (execution.relations && execution.relations.dependsOn) {
+          expect(execution.relations.dependsOn).toContain(taskA.id);
+        }
       }
     });
   });

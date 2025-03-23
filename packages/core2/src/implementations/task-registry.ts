@@ -2,80 +2,80 @@ import {
   TaskDefinition, 
   TaskRegistry 
 } from '../models/task-system';
-import { Result } from '../models/core-types';
+import { Result, DomainError } from '../models/core-types';
+
+/**
+ * Extended task definition with additional properties
+ */
+interface ExtendedTaskDefinition<TInput, TOutput> extends TaskDefinition<TInput, TOutput> {
+  resources?: string[];
+}
 
 /**
  * In-memory implementation of TaskRegistry
  * Manages task definitions with proper error handling and type safety
  */
 export class InMemoryTaskRegistry implements TaskRegistry {
-  private tasks = new Map<string, TaskDefinition<unknown, unknown, unknown>>();
+  private tasks = new Map<string, TaskDefinition<unknown, unknown>>();
 
   /**
    * Register a task definition
    * @param definition The task definition to register
    */
-  registerTask<TInput, TOutput, TState>(
-    definition: TaskDefinition<TInput, TOutput, TState>
-  ): Result<void> {
-    try {
-      if (this.tasks.has(definition.id)) {
-        return {
-          success: false,
-          error: new Error(`Task ${definition.id} is already registered`)
-        };
-      }
-
-      this.tasks.set(definition.id, definition as unknown as TaskDefinition<unknown, unknown, unknown>);
-      return { success: true, value: undefined };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error : new Error(String(error))
-      };
+  registerTask<TInput = unknown, TOutput = unknown>(
+    definition: TaskDefinition<TInput, TOutput>
+  ): void {
+    if (!definition.type) {
+      throw new DomainError(`Task definition must have a type`);
     }
+
+    if (this.tasks.has(definition.type)) {
+      throw new DomainError(`Task ${definition.type} is already registered`);
+    }
+
+    this.tasks.set(definition.type, definition as TaskDefinition<unknown, unknown>);
   }
 
   /**
    * Unregister a task definition
-   * @param taskId The ID of the task definition to unregister
+   * @param taskType The ID of the task definition to unregister
    */
-  unregisterTask(taskId: string): Result<void> {
-    try {
-      if (!this.tasks.has(taskId)) {
-        return {
-          success: false,
-          error: new Error(`Task ${taskId} not found`)
-        };
-      }
-
-      this.tasks.delete(taskId);
-      return { success: true, value: undefined };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error : new Error(String(error))
-      };
+  unregisterTask(taskType: string): void {
+    if (!this.tasks.has(taskType)) {
+      throw new DomainError(`Task ${taskType} not found`);
     }
+
+    this.tasks.delete(taskType);
   }
 
   /**
-   * Get a task definition by ID
-   * @param taskId The ID of the task definition to retrieve
+   * Get a task definition by type
+   * @param taskType The task type
    */
-  getTaskDefinition<TInput, TOutput, TState>(
-    taskId: string
-  ): Result<TaskDefinition<TInput, TOutput, TState>> {
+  getTask<TInput = unknown, TOutput = unknown>(
+    taskType: string
+  ): TaskDefinition<TInput, TOutput> | undefined {
+    const task = this.tasks.get(taskType);
+    return task as TaskDefinition<TInput, TOutput> | undefined;
+  }
+
+  /**
+   * Get a task definition by type with a Result wrapper
+   * @param taskType The task type to retrieve
+   */
+  async getTaskDefinition<TInput = unknown, TOutput = unknown>(
+    taskType: string
+  ): Promise<Result<TaskDefinition<TInput, TOutput>>> {
     try {
-      const task = this.tasks.get(taskId);
+      const task = this.tasks.get(taskType);
       if (!task) {
         return {
           success: false,
-          error: new Error(`Task ${taskId} not found`)
+          error: new DomainError(`Task ${taskType} not found`)
         };
       }
 
-      return { success: true, value: task as unknown as TaskDefinition<TInput, TOutput, TState> };
+      return { success: true, value: task as TaskDefinition<TInput, TOutput> };
     } catch (error) {
       return {
         success: false,
@@ -86,17 +86,17 @@ export class InMemoryTaskRegistry implements TaskRegistry {
 
   /**
    * Check if a task definition exists
-   * @param taskId The ID of the task definition to check
+   * @param taskType The ID of the task definition to check
    */
-  hasTaskDefinition(taskId: string): boolean {
-    return this.tasks.has(taskId);
+  hasTask(taskType: string): boolean {
+    return this.tasks.has(taskType);
   }
 
   /**
-   * Get all registered task definitions
+   * Get all registered task types
    */
-  getAllTaskDefinitions(): TaskDefinition<unknown, unknown, unknown>[] {
-    return Array.from(this.tasks.values());
+  getTaskTypes(): string[] {
+    return Array.from(this.tasks.keys());
   }
 
   /**
@@ -104,8 +104,8 @@ export class InMemoryTaskRegistry implements TaskRegistry {
    * @param filterFn Function to filter task definitions
    */
   getTaskDefinitionsByFilter(
-    filterFn: (task: TaskDefinition<unknown, unknown, unknown>) => boolean
-  ): TaskDefinition<unknown, unknown, unknown>[] {
+    filterFn: (task: TaskDefinition<unknown, unknown>) => boolean
+  ): TaskDefinition<unknown, unknown>[] {
     return Array.from(this.tasks.values()).filter(filterFn);
   }
 
@@ -115,11 +115,13 @@ export class InMemoryTaskRegistry implements TaskRegistry {
    */
   getTaskDefinitionsByResource(
     resourceName: string
-  ): TaskDefinition<unknown, unknown, unknown>[] {
-    return this.getTaskDefinitionsByFilter(task => 
-      task.resources !== undefined && 
-      task.resources.includes(resourceName)
-    );
+  ): TaskDefinition<unknown, unknown>[] {
+    return this.getTaskDefinitionsByFilter(task => {
+      const extendedTask = task as ExtendedTaskDefinition<unknown, unknown>;
+      return extendedTask.resources !== undefined && 
+        Array.isArray(extendedTask.resources) &&
+        extendedTask.resources.includes(resourceName);
+    });
   }
 
   /**

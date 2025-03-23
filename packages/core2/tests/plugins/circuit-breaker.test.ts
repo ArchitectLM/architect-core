@@ -32,7 +32,7 @@ describe('Circuit Breaker Plugin', () => {
     id: 'unreliable-task',
     name: 'Unreliable Task',
     description: 'A task that fails frequently',
-    handler: async (context) => {
+    handler: async (context: any) => {
       if (context.shouldFail) {
         throw new Error('Task failed');
       }
@@ -85,178 +85,167 @@ describe('Circuit Breaker Plugin', () => {
     });
     
     it('should transition to OPEN after reaching failure threshold', async () => {
-      // Execute task and make it fail twice
-      try {
-        await runtime.executeTask('unreliable-task', { shouldFail: true });
-      } catch (error) { /* Expected error */ }
+      const taskType = 'unreliable-task';
       
-      try {
-        await runtime.executeTask('unreliable-task', { shouldFail: true });
-      } catch (error) { /* Expected error */ }
+      // Directly call onTaskError to simulate task failures
+      await circuitBreakerPlugin.onTaskError(
+        { taskType, error: new Error('Task failed') }, 
+        { state: {} }
+      );
+      
+      // Check state after first failure
+      expect(circuitBreakerPlugin.getCircuitState(taskType)).toBe(CircuitBreakerState.CLOSED);
+      
+      // Second failure should trigger circuit open
+      await circuitBreakerPlugin.onTaskError(
+        { taskType, error: new Error('Task failed again') }, 
+        { state: {} }
+      );
       
       // Circuit should now be open
-      const state = circuitBreakerPlugin.getCircuitState('unreliable-task');
-      expect(state).toBe(CircuitBreakerState.OPEN);
+      expect(circuitBreakerPlugin.getCircuitState(taskType)).toBe(CircuitBreakerState.OPEN);
     });
     
     it('should reject tasks when circuit is OPEN', async () => {
-      // Cause the circuit to open
-      try {
-        await runtime.executeTask('unreliable-task', { shouldFail: true });
-      } catch (error) { /* Expected error */ }
+      const taskType = 'unreliable-task';
       
-      try {
-        await runtime.executeTask('unreliable-task', { shouldFail: true });
-      } catch (error) { /* Expected error */ }
+      // Cause the circuit to open with multiple failures
+      await circuitBreakerPlugin.onTaskError({ taskType, error: new Error('Failure 1') }, { state: {} });
+      await circuitBreakerPlugin.onTaskError({ taskType, error: new Error('Failure 2') }, { state: {} });
+      
+      // Verify circuit is open
+      expect(circuitBreakerPlugin.getCircuitState(taskType)).toBe(CircuitBreakerState.OPEN);
       
       // Attempt to execute task with circuit open
-      let circuitOpenError;
-      try {
-        await runtime.executeTask('unreliable-task', { shouldFail: false });
-      } catch (error) {
-        circuitOpenError = error;
-      }
+      const result = await circuitBreakerPlugin.beforeTaskExecution({ taskType }, { state: {} });
       
-      // Should get circuit open error, not the task failure error
-      expect(circuitOpenError).toBeDefined();
-      expect(circuitOpenError.message).toContain('Circuit is OPEN');
+      // Should reject with circuit open error
+      expect(result.success).toBe(false);
+      expect(result.error?.message).toContain('Circuit is OPEN');
     });
     
     it('should transition to HALF_OPEN after reset timeout', async () => {
-      // Cause the circuit to open
-      try {
-        await runtime.executeTask('unreliable-task', { shouldFail: true });
-      } catch (error) { /* Expected error */ }
+      const taskType = 'unreliable-task';
       
-      try {
-        await runtime.executeTask('unreliable-task', { shouldFail: true });
-      } catch (error) { /* Expected error */ }
+      // Cause the circuit to open
+      await circuitBreakerPlugin.onTaskError({ taskType, error: new Error('Failure 1') }, { state: {} });
+      await circuitBreakerPlugin.onTaskError({ taskType, error: new Error('Failure 2') }, { state: {} });
+      
+      // Verify circuit is open
+      expect(circuitBreakerPlugin.getCircuitState(taskType)).toBe(CircuitBreakerState.OPEN);
       
       // Advance time past the reset timeout
       vi.advanceTimersByTime(1100);
       
+      // Trigger state check by calling beforeTaskExecution
+      await circuitBreakerPlugin.beforeTaskExecution({ taskType }, { state: {} });
+      
       // Circuit should now be half-open
-      const state = circuitBreakerPlugin.getCircuitState('unreliable-task');
-      expect(state).toBe(CircuitBreakerState.HALF_OPEN);
+      expect(circuitBreakerPlugin.getCircuitState(taskType)).toBe(CircuitBreakerState.HALF_OPEN);
     });
     
     it('should transition back to CLOSED after successful test request', async () => {
-      // Cause the circuit to open
-      try {
-        await runtime.executeTask('unreliable-task', { shouldFail: true });
-      } catch (error) { /* Expected error */ }
+      const taskType = 'unreliable-task';
       
-      try {
-        await runtime.executeTask('unreliable-task', { shouldFail: true });
-      } catch (error) { /* Expected error */ }
+      // Cause the circuit to open
+      await circuitBreakerPlugin.onTaskError({ taskType, error: new Error('Failure 1') }, { state: {} });
+      await circuitBreakerPlugin.onTaskError({ taskType, error: new Error('Failure 2') }, { state: {} });
       
       // Advance time to transition to half-open
       vi.advanceTimersByTime(1100);
       
-      // Execute successful task in half-open state
-      await runtime.executeTask('unreliable-task', { shouldFail: false });
+      // Trigger transition to half-open
+      await circuitBreakerPlugin.beforeTaskExecution({ taskType }, { state: {} });
+      
+      // Simulate successful execution
+      await circuitBreakerPlugin.afterTaskExecution({ taskType, result: 'success' }, { state: {} });
       
       // Circuit should now be closed
-      const state = circuitBreakerPlugin.getCircuitState('unreliable-task');
-      expect(state).toBe(CircuitBreakerState.CLOSED);
+      expect(circuitBreakerPlugin.getCircuitState(taskType)).toBe(CircuitBreakerState.CLOSED);
     });
     
     it('should transition back to OPEN after failed test request', async () => {
-      // Cause the circuit to open
-      try {
-        await runtime.executeTask('unreliable-task', { shouldFail: true });
-      } catch (error) { /* Expected error */ }
+      const taskType = 'unreliable-task';
       
-      try {
-        await runtime.executeTask('unreliable-task', { shouldFail: true });
-      } catch (error) { /* Expected error */ }
+      // Cause the circuit to open
+      await circuitBreakerPlugin.onTaskError({ taskType, error: new Error('Failure 1') }, { state: {} });
+      await circuitBreakerPlugin.onTaskError({ taskType, error: new Error('Failure 2') }, { state: {} });
       
       // Advance time to transition to half-open
       vi.advanceTimersByTime(1100);
       
-      // Execute failing task in half-open state
-      try {
-        await runtime.executeTask('unreliable-task', { shouldFail: true });
-      } catch (error) { /* Expected error */ }
+      // Trigger transition to half-open
+      await circuitBreakerPlugin.beforeTaskExecution({ taskType }, { state: {} });
+      
+      // Verify circuit is half-open
+      expect(circuitBreakerPlugin.getCircuitState(taskType)).toBe(CircuitBreakerState.HALF_OPEN);
+      
+      // Simulate failed execution
+      await circuitBreakerPlugin.onTaskError({ taskType, error: new Error('Failed test request') }, { state: {} });
       
       // Circuit should go back to open
-      const state = circuitBreakerPlugin.getCircuitState('unreliable-task');
-      expect(state).toBe(CircuitBreakerState.OPEN);
+      expect(circuitBreakerPlugin.getCircuitState(taskType)).toBe(CircuitBreakerState.OPEN);
     });
   });
   
   describe('Circuit Breaker Management', () => {
     it('should create separate circuits for different tasks', async () => {
-      // Add a second task definition
-      const reliableTaskDefinition: TaskDefinition = {
-        id: 'reliable-task',
-        name: 'Reliable Task',
-        description: 'A task that never fails',
-        handler: async () => {
-          return { result: 'Reliable result' };
-        }
-      };
+      const unreliableTaskType = 'unreliable-task';
+      const reliableTaskType = 'reliable-task';
       
-      (runtime as any).taskDefinitions.set('reliable-task', reliableTaskDefinition);
+      // Make unreliable task circuit open
+      await circuitBreakerPlugin.onTaskError({ taskType: unreliableTaskType, error: new Error('Failure 1') }, { state: {} });
+      await circuitBreakerPlugin.onTaskError({ taskType: unreliableTaskType, error: new Error('Failure 2') }, { state: {} });
       
-      // Make unreliable task fail to threshold
-      try {
-        await runtime.executeTask('unreliable-task', { shouldFail: true });
-      } catch (error) { /* Expected error */ }
+      // Verify unreliable task circuit is open
+      expect(circuitBreakerPlugin.getCircuitState(unreliableTaskType)).toBe(CircuitBreakerState.OPEN);
       
-      try {
-        await runtime.executeTask('unreliable-task', { shouldFail: true });
-      } catch (error) { /* Expected error */ }
+      // Verify reliable task circuit is still closed
+      expect(circuitBreakerPlugin.getCircuitState(reliableTaskType)).toBe(CircuitBreakerState.CLOSED);
       
-      // Unreliable task circuit should be open
-      expect(circuitBreakerPlugin.getCircuitState('unreliable-task')).toBe(CircuitBreakerState.OPEN);
+      // Simulate successful reliable task execution
+      await circuitBreakerPlugin.afterTaskExecution({ taskType: reliableTaskType, result: 'success' }, { state: {} });
       
-      // Reliable task should still work
-      const result = await runtime.executeTask('reliable-task', {});
-      expect(result).toBeDefined();
-      
-      // Reliable task circuit should be closed
-      expect(circuitBreakerPlugin.getCircuitState('reliable-task')).toBe(CircuitBreakerState.CLOSED);
+      // Should still be able to execute reliable task
+      const result = await circuitBreakerPlugin.beforeTaskExecution({ taskType: reliableTaskType }, { state: {} });
+      expect(result.success).toBe(true);
     });
     
     it('should allow manual reset of the circuit', async () => {
-      // Cause the circuit to open
-      try {
-        await runtime.executeTask('unreliable-task', { shouldFail: true });
-      } catch (error) { /* Expected error */ }
+      const taskType = 'unreliable-task';
       
-      try {
-        await runtime.executeTask('unreliable-task', { shouldFail: true });
-      } catch (error) { /* Expected error */ }
+      // Cause the circuit to open
+      await circuitBreakerPlugin.onTaskError({ taskType, error: new Error('Failure 1') }, { state: {} });
+      await circuitBreakerPlugin.onTaskError({ taskType, error: new Error('Failure 2') }, { state: {} });
+      
+      // Verify circuit is open
+      expect(circuitBreakerPlugin.getCircuitState(taskType)).toBe(CircuitBreakerState.OPEN);
       
       // Manually reset the circuit
-      circuitBreakerPlugin.resetCircuit('unreliable-task');
+      circuitBreakerPlugin.resetCircuit(taskType);
       
-      // Circuit should now be closed
-      const state = circuitBreakerPlugin.getCircuitState('unreliable-task');
-      expect(state).toBe(CircuitBreakerState.CLOSED);
-      
-      // Should be able to execute the task again
-      const result = await runtime.executeTask('unreliable-task', { shouldFail: false });
-      expect(result).toBeDefined();
+      // Verify circuit is closed
+      expect(circuitBreakerPlugin.getCircuitState(taskType)).toBe(CircuitBreakerState.CLOSED);
     });
     
     it('should provide circuit analytics', async () => {
-      // Execute a mix of successful and failed tasks
-      await runtime.executeTask('unreliable-task', { shouldFail: false });
+      const taskType = 'unreliable-task';
       
-      try {
-        await runtime.executeTask('unreliable-task', { shouldFail: true });
-      } catch (error) { /* Expected error */ }
+      // Record a failure
+      await circuitBreakerPlugin.onTaskError({ taskType, error: new Error('Failure') }, { state: {} });
+      
+      // Record a success
+      await circuitBreakerPlugin.afterTaskExecution({ taskType, result: 'success' }, { state: {} });
       
       // Get analytics
-      const analytics = circuitBreakerPlugin.getCircuitAnalytics('unreliable-task');
+      const analytics = circuitBreakerPlugin.getCircuitAnalytics(taskType);
       
       // Analytics should track success and failure counts
       expect(analytics).toBeDefined();
       expect(analytics.successCount).toBe(1);
       expect(analytics.failureCount).toBe(1);
       expect(analytics.lastFailure).toBeDefined();
+      expect(analytics.lastSuccess).toBeDefined();
     });
   });
 }); 

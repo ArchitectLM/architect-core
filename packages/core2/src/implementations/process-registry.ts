@@ -1,24 +1,18 @@
 import { 
-  ProcessDefinition, 
-  ProcessRegistry 
+  ProcessDefinition,
+  ProcessRegistry,
+  ProcessTransition 
 } from '../models/process-system';
 import {
-  Identifier,
   Result,
   DomainError
 } from '../models/core-types';
 
-// Add this type to track process by name
-interface ProcessDefinitionWithType extends ProcessDefinition<string, unknown> {
-  processType: string;
-}
-
 /**
- * Simple in-memory implementation of ProcessRegistry
+ * In-memory implementation of ProcessRegistry
  */
-export class SimpleProcessRegistry implements ProcessRegistry {
-  private processes = new Map<Identifier, ProcessDefinitionWithType>();
-  private processesByType = new Map<string, ProcessDefinitionWithType[]>();
+export class InMemoryProcessRegistry implements ProcessRegistry {
+  private processDefinitions = new Map<string, ProcessDefinition<string, unknown>>();
   
   /**
    * Register a process definition
@@ -28,210 +22,167 @@ export class SimpleProcessRegistry implements ProcessRegistry {
     definition: ProcessDefinition<TState, TData>
   ): Result<void> {
     try {
-      // Validate definition
-      if (!definition.id) {
+      if (!definition.type) {
         return {
           success: false,
-          error: new DomainError(
-            'Process definition must have an ID',
-            { definition }
-          )
+          error: new DomainError(`Process definition must have a type property`)
         };
       }
       
-      if (!definition.initialState) {
+      if (this.processDefinitions.has(definition.type)) {
         return {
           success: false,
-          error: new DomainError(
-            'Process definition must have an initial state',
-            { definition }
-          )
+          error: new DomainError(`Process definition for type '${definition.type}' is already registered`)
         };
       }
       
-      // Check if already registered
-      if (this.processes.has(definition.id)) {
-        return {
-          success: false,
-          error: new DomainError(
-            `Process definition with ID ${definition.id} is already registered`,
-            { processId: definition.id }
-          )
-        };
-      }
+      this.processDefinitions.set(definition.type, definition as ProcessDefinition<string, unknown>);
       
-      // Use the name as the process type if not otherwise specified
-      const processType = definition.name;
-      
-      // Store with the process type
-      const defWithType: ProcessDefinitionWithType = {
-        ...definition as unknown as ProcessDefinition<string, unknown>,
-        processType
+      return {
+        success: true,
+        value: undefined
       };
-      
-      // Register the definition
-      this.processes.set(definition.id, defWithType);
-      
-      // Add to process type index
-      if (!this.processesByType.has(processType)) {
-        this.processesByType.set(processType, []);
-      }
-      this.processesByType.get(processType)!.push(defWithType);
-      
-      return { success: true, value: undefined };
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error
-          ? error
-          : new Error(`Failed to register process: ${String(error)}`)
+        error: error instanceof Error ? error : new Error(String(error))
       };
     }
   }
   
   /**
    * Unregister a process definition
-   * @param processId The ID of the process definition to unregister
+   * @param processType The process type to unregister
    */
-  public unregisterProcess(processId: Identifier): Result<void> {
+  public unregisterProcess(processType: string): Result<void> {
     try {
-      const definition = this.processes.get(processId);
-      
-      if (!definition) {
+      if (!this.processDefinitions.has(processType)) {
         return {
           success: false,
-          error: new DomainError(
-            `Process definition with ID ${processId} is not registered`,
-            { processId }
-          )
+          error: new DomainError(`Process definition for type '${processType}' is not registered`)
         };
       }
       
-      // Remove from processes map
-      this.processes.delete(processId);
+      this.processDefinitions.delete(processType);
       
-      // Remove from process type index
-      const processType = definition.processType;
-      const typeDefinitions = this.processesByType.get(processType);
-      
-      if (typeDefinitions) {
-        const index = typeDefinitions.findIndex(def => def.id === processId);
-        if (index !== -1) {
-          typeDefinitions.splice(index, 1);
-        }
-        
-        if (typeDefinitions.length === 0) {
-          this.processesByType.delete(processType);
-        }
-      }
-      
-      return { success: true, value: undefined };
+      return {
+        success: true,
+        value: undefined
+      };
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error
-          ? error
-          : new Error(`Failed to unregister process: ${String(error)}`)
+        error: error instanceof Error ? error : new Error(String(error))
       };
     }
   }
   
   /**
-   * Get a process definition by ID
-   * @param processId The ID of the process definition to retrieve
+   * Get a process definition by type
+   * @param processType The process type
    */
   public getProcessDefinition<TState extends string, TData>(
-    processId: Identifier
+    processType: string
   ): Result<ProcessDefinition<TState, TData>> {
     try {
-      const definition = this.processes.get(processId);
+      const definition = this.processDefinitions.get(processType);
       
       if (!definition) {
         return {
           success: false,
-          error: new DomainError(
-            `Process definition with ID ${processId} not found`,
-            { processId }
-          )
+          error: new DomainError(`Process definition for type '${processType}' is not registered`)
         };
       }
       
-      // Remove the processType property when returning
-      const { processType, ...result } = definition;
-      
-      return { 
-        success: true, 
-        value: result as unknown as ProcessDefinition<TState, TData>
+      return {
+        success: true,
+        value: definition as ProcessDefinition<TState, TData>
       };
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error
-          ? error
-          : new Error(`Failed to get process definition: ${String(error)}`)
+        error: error instanceof Error ? error : new Error(String(error))
       };
     }
   }
   
   /**
-   * Check if a process definition exists
-   * @param processId The ID of the process definition to check
+   * Check if a process type is registered
+   * @param processType The process type
    */
-  public hasProcessDefinition(processId: Identifier): boolean {
-    return this.processes.has(processId);
+  public hasProcess(processType: string): boolean {
+    return this.processDefinitions.has(processType);
   }
   
+  /**
+   * Get all registered process types
+   */
+  public getProcessTypes(): string[] {
+    return Array.from(this.processDefinitions.keys());
+  }
+
   /**
    * Get all registered process definitions
    */
   public getAllProcessDefinitions(): ProcessDefinition<string, unknown>[] {
-    // Remove the processType property from all definitions
-    return Array.from(this.processes.values()).map(({ processType, ...def }) => def);
+    return Array.from(this.processDefinitions.values());
   }
-  
+
   /**
-   * Get a process definition by type and version
-   * @param processType The type of process to retrieve
-   * @param version Optional version
+   * Find a transition for a process type
+   * @param processType The process type
+   * @param fromState The source state
+   * @param eventType The event type
    */
-  public getProcessDefinitionByType(
+  public findTransition<TState extends string>(
     processType: string,
-    version?: string
-  ): ProcessDefinition<string, unknown> | undefined {
-    const definitions = this.processesByType.get(processType);
-    
-    if (!definitions || definitions.length === 0) {
-      return undefined;
-    }
-    
-    if (version) {
-      const matched = definitions.find(def => def.version === version);
+    fromState: TState,
+    eventType: string
+  ): ProcessTransition<TState> | undefined {
+    try {
+      const processDefResult = this.getProcessDefinition<TState, unknown>(processType);
       
-      if (matched) {
-        // Remove the processType property when returning
-        const { processType, ...result } = matched;
-        return result;
+      if (!processDefResult.success || !processDefResult.value) {
+        return undefined;
       }
       
+      const processDef = processDefResult.value;
+      return processDef.transitions.find(
+        t => t.from === fromState && t.event === eventType
+      ) as ProcessTransition<TState> | undefined;
+    } catch (error) {
       return undefined;
     }
+  }
+
+  /**
+   * Get a process definition by type and version
+   * Helper method used by the ProcessManager
+   * @param processType The type of process to get
+   * @param version Optional version
+   */
+  public getProcessDefinitionByType<TState extends string, TData>(
+    processType: string,
+    version?: string
+  ): Result<ProcessDefinition<TState, TData>> {
+    const processDefResult = this.getProcessDefinition<TState, TData>(processType);
     
-    // If no version specified, return the latest one
-    const sorted = [...definitions].sort((a, b) => {
-      const vA = a.version || '0.0.0';
-      const vB = b.version || '0.0.0';
-      
-      // Simple semver comparison (could be improved)
-      return vB.localeCompare(vA);
-    });
-    
-    if (sorted.length > 0) {
-      // Remove the processType property when returning
-      const { processType, ...result } = sorted[0];
-      return result;
+    if (!processDefResult.success || !processDefResult.value) {
+      return {
+        success: false,
+        error: new DomainError(`Process definition for type ${processType} not found`)
+      };
     }
     
-    return undefined;
+    // If version is specified and doesn't match, return error
+    if (version && processDefResult.value.version !== version) {
+      return {
+        success: false,
+        error: new DomainError(`Process definition for type ${processType} version ${version} not found`)
+      };
+    }
+    
+    return processDefResult;
   }
 }
 
@@ -239,5 +190,5 @@ export class SimpleProcessRegistry implements ProcessRegistry {
  * Factory function to create a new ProcessRegistry
  */
 export function createProcessRegistry(): ProcessRegistry {
-  return new SimpleProcessRegistry();
+  return new InMemoryProcessRegistry();
 } 

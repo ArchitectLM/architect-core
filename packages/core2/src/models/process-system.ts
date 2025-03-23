@@ -1,90 +1,151 @@
-import { Identifier, Metadata, Result, Timestamp } from './core-types';
+import { DomainEvent, Identifier, Metadata, Result, Timestamp } from './core-types';
 
 /**
- * Process transition definition
- */
-export interface ProcessTransition<TState extends string = string> {
-  /** Source state */
-  from: TState;
-  
-  /** Target state */
-  to: TState;
-  
-  /** Event that triggers this transition */
-  on: string;
-  
-  /** Optional guard condition for the transition */
-  guard?: (data: unknown, event: unknown) => boolean;
-}
-
-/**
- * Process definition with generic state type
+ * Process definition with states and transitions
  */
 export interface ProcessDefinition<TState extends string = string, TData = unknown> {
-  /** Unique process identifier */
-  id: Identifier;
+  /**
+   * Process type identifier
+   */
+  type: string;
   
-  /** Human-readable name */
+  /**
+   * Human-readable name
+   */
   name: string;
   
-  /** Detailed description */
+  /**
+   * Detailed description
+   */
   description: string;
-  
-  /** Initial state for new processes */
-  initialState: TState;
-  
-  /** Possible state transitions */
+
+  /**
+   * Valid process states
+   */
+  states: TState[];
+
+  /**
+   * Valid state transitions
+   */
   transitions: ProcessTransition<TState>[];
+
+  /**
+   * Initial state
+   */
+  initialState: TState;
+
+  /**
+   * Final states
+   */
+  finalStates: TState[];
   
-  /** Process version */
+  /**
+   * Process version
+   */
   version?: string;
   
-  /** Entry actions when entering states */
+  /**
+   * Entry actions when entering states
+   */
   entryActions?: Partial<Record<TState, (data: TData) => Promise<TData>>>;
   
-  /** Exit actions when leaving states */
+  /**
+   * Exit actions when leaving states
+   */
   exitActions?: Partial<Record<TState, (data: TData) => Promise<TData>>>;
   
-  /** Additional metadata */
+  /**
+   * Additional metadata
+   */
   metadata?: Metadata;
 }
 
 /**
- * Process instance with generic state and data types
+ * Process state transition definition
  */
-export interface ProcessInstance<
-  TState extends string = string,
-  TData = unknown
-> {
-  /** Unique instance identifier */
+export interface ProcessTransition<TState extends string = string> {
+  /**
+   * Source state
+   */
+  from: TState;
+  
+  /**
+   * Target state
+   */
+  to: TState;
+  
+  /**
+   * Event type that triggers this transition
+   */
+  event: string;
+  
+  /**
+   * Optional guard condition for the transition
+   */
+  guard?: (data: unknown, event: unknown) => boolean;
+}
+
+/**
+ * Process instance representation
+ */
+export interface ProcessInstance<TState extends string = string, TData = unknown> {
+  /**
+   * Process instance ID
+   */
   id: Identifier;
   
-  /** Process type */
+  /**
+   * Process type
+   */
   type: string;
   
-  /** Current state */
+  /**
+   * Current state
+   */
   state: TState;
   
-  /** Process data */
+  /**
+   * Process data
+   */
   data: TData;
   
-  /** When the process was created */
+  /**
+   * Creation timestamp
+   */
   createdAt: Timestamp;
   
-  /** When the process was last updated */
+  /**
+   * Last updated timestamp
+   */
   updatedAt: Timestamp;
   
-  /** Process version */
+  /**
+   * Process version
+   */
   version?: string;
   
-  /** Recovery information */
+  /**
+   * Process metadata
+   */
+  metadata?: Metadata;
+  
+  /**
+   * Recovery information
+   */
   recovery?: {
     checkpointId: Identifier;
     lastSavedAt: Timestamp;
   };
   
-  /** Additional metadata */
-  metadata?: Metadata;
+  /**
+   * State history for auditing
+   */
+  history?: Array<{
+    from: TState;
+    to: TState;
+    event: string;
+    timestamp: Timestamp;
+  }>;
 }
 
 /**
@@ -169,7 +230,7 @@ export interface ProcessManager {
   /**
    * Create a new process instance
    * @param processType The type of process to create
-   * @param data Initial process data
+   * @param data The initial process data
    * @param options Optional creation parameters
    */
   createProcess<TData, TState extends string>(
@@ -177,15 +238,7 @@ export interface ProcessManager {
     data: TData,
     options?: { version?: string; metadata?: Metadata }
   ): Promise<Result<ProcessInstance<TState, TData>>>;
-  
-  /**
-   * Get a process instance by ID
-   * @param processId The ID of the process to retrieve
-   */
-  getProcess<TData, TState extends string>(
-    processId: Identifier
-  ): Promise<Result<ProcessInstance<TState, TData>>>;
-  
+
   /**
    * Apply an event to transition a process
    * @param processId The ID of the process to transition
@@ -197,6 +250,40 @@ export interface ProcessManager {
     eventType: string,
     payload: TPayload
   ): Promise<Result<ProcessInstance<TState, TData>>>;
+
+  /**
+   * Get a process instance by ID
+   * @param processId The ID of the process to retrieve
+   */
+  getProcess<TData, TState extends string>(
+    processId: Identifier
+  ): Promise<Result<ProcessInstance<TState, TData>>>;
+
+  /**
+   * Get processes by type and state
+   * @param processType The process type
+   * @param state Optional state filter
+   */
+  getProcessesByType<TData, TState extends string>(
+    processType: string,
+    state?: TState
+  ): Promise<Result<ProcessInstance<TState, TData>[]>>;
+
+  /**
+   * Delete a process instance
+   * @param processId The process ID
+   */
+  deleteProcess(processId: Identifier): Promise<Result<void>>;
+
+  /**
+   * Check if a transition is valid
+   * @param processId The process ID
+   * @param eventType The event type
+   */
+  isTransitionValid(
+    processId: Identifier,
+    eventType: string
+  ): Promise<Result<boolean>>;
   
   /**
    * Save a process checkpoint for later recovery
@@ -228,26 +315,43 @@ export interface ProcessRegistry {
   registerProcess<TState extends string, TData>(
     definition: ProcessDefinition<TState, TData>
   ): Result<void>;
-  
+
   /**
    * Unregister a process definition
-   * @param processId The ID of the process definition to unregister
+   * @param processType The process type to unregister
    */
-  unregisterProcess(processId: Identifier): Result<void>;
-  
+  unregisterProcess(processType: string): Result<void>;
+
   /**
-   * Get a process definition by ID
-   * @param processId The ID of the process definition to retrieve
+   * Get a process definition by type
+   * @param processType The process type
    */
   getProcessDefinition<TState extends string, TData>(
-    processId: Identifier
+    processType: string
   ): Result<ProcessDefinition<TState, TData>>;
-  
+
   /**
-   * Check if a process definition exists
-   * @param processId The ID of the process definition to check
+   * Check if a process type is registered
+   * @param processType The process type
    */
-  hasProcessDefinition(processId: Identifier): boolean;
+  hasProcess(processType: string): boolean;
+
+  /**
+   * Get all registered process types
+   */
+  getProcessTypes(): string[];
+
+  /**
+   * Find a transition for a process type
+   * @param processType The process type
+   * @param fromState The source state
+   * @param eventType The event type
+   */
+  findTransition<TState extends string>(
+    processType: string,
+    fromState: TState,
+    eventType: string
+  ): ProcessTransition<TState> | undefined;
   
   /**
    * Get all registered process definitions

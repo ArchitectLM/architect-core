@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { v4 as uuidv4 } from 'uuid';
-import { InMemoryEventBus } from '../src/implementations/event-bus';
-import { DomainEvent, EventHandler } from '../src/models/index';
+import { InMemoryEventBus } from '../src/implementations/event-bus-impl';
+import { DomainEvent } from '../src/models/core-types';
+import { EventHandler } from '../src/models/event-system';
 
 // Helper to create test events
 function createTestEvent<T>(type: string, payload: T): DomainEvent<T> {
@@ -34,12 +35,12 @@ describe('InMemoryEventBus', () => {
   });
 
   describe('Given an event bus with a subscription', () => {
-    let handlerSpy: EventHandler<unknown>;
-    let subscription: { unsubscribe: () => void };
+    let eventHandler: any;
+    let subscription: any;
 
     beforeEach(() => {
-      handlerSpy = vi.fn().mockResolvedValue(undefined);
-      subscription = eventBus.subscribe('test-event', handlerSpy);
+      eventHandler = vi.fn();
+      subscription = eventBus.subscribe('test-event', eventHandler);
     });
 
     it('should have one subscriber for the event type', () => {
@@ -50,7 +51,7 @@ describe('InMemoryEventBus', () => {
       it('should call the handler with the event', async () => {
         const event = createTestEvent('test-event', { data: 'test' });
         await eventBus.publish(event);
-        expect(handlerSpy).toHaveBeenCalledWith(event);
+        expect(eventHandler).toHaveBeenCalledWith(event);
       });
     });
 
@@ -58,7 +59,7 @@ describe('InMemoryEventBus', () => {
       it('should not call the handler', async () => {
         const event = createTestEvent('other-event', { data: 'test' });
         await eventBus.publish(event);
-        expect(handlerSpy).not.toHaveBeenCalled();
+        expect(eventHandler).not.toHaveBeenCalled();
       });
     });
 
@@ -75,144 +76,128 @@ describe('InMemoryEventBus', () => {
         it('should not call the handler', async () => {
           const event = createTestEvent('test-event', { data: 'test' });
           await eventBus.publish(event);
-          expect(handlerSpy).not.toHaveBeenCalled();
+          expect(eventHandler).not.toHaveBeenCalled();
         });
       });
     });
   });
 
   describe('Given an event bus with a filtered subscription', () => {
-    let handlerSpy: EventHandler<any>;
-    let filter: (event: DomainEvent<any>) => boolean;
+    let eventHandler: any;
+    let eventFilter: any;
 
     beforeEach(() => {
-      handlerSpy = vi.fn().mockResolvedValue(undefined);
-      // Only pass events with even data values
-      filter = (event) => typeof event.payload.data === 'number' && event.payload.data % 2 === 0;
-      eventBus.subscribeWithFilter('test-event', filter, handlerSpy);
+      eventHandler = vi.fn();
+      eventFilter = (event: DomainEvent<any>) => event.payload.data === 'pass';
+      eventBus.subscribeWithFilter('test-event', eventFilter, eventHandler);
     });
 
     describe('when a matching event that passes the filter is published', () => {
       it('should call the handler', async () => {
-        const event = createTestEvent('test-event', { data: 2 });
+        const event = createTestEvent('test-event', { data: 'pass' });
         await eventBus.publish(event);
-        expect(handlerSpy).toHaveBeenCalledWith(event);
+        expect(eventHandler).toHaveBeenCalledWith(event);
       });
     });
 
     describe('when a matching event that does not pass the filter is published', () => {
       it('should not call the handler', async () => {
-        const event = createTestEvent('test-event', { data: 1 });
+        const event = createTestEvent('test-event', { data: 'fail' });
         await eventBus.publish(event);
-        expect(handlerSpy).not.toHaveBeenCalled();
+        expect(eventHandler).not.toHaveBeenCalled();
       });
     });
   });
 
   describe('Given an event bus with a once subscription', () => {
-    let handlerSpy: EventHandler<unknown>;
+    let eventHandler: any;
 
     beforeEach(() => {
-      handlerSpy = vi.fn().mockResolvedValue(undefined);
-      eventBus.subscribe('test-event', handlerSpy, { once: true });
+      eventHandler = vi.fn();
+      eventBus.subscribe('test-event', eventHandler, {
+        once: true
+      });
     });
 
     describe('when a matching event is published twice', () => {
-      it('should call the handler only once', async () => {
-        const event1 = createTestEvent('test-event', { data: 'test1' });
-        const event2 = createTestEvent('test-event', { data: 'test2' });
-        
+      beforeEach(async () => {
+        const event1 = createTestEvent('test-event', { data: 'first' });
+        const event2 = createTestEvent('test-event', { data: 'second' });
         await eventBus.publish(event1);
-        expect(handlerSpy).toHaveBeenCalledWith(event1);
-        expect(handlerSpy).toHaveBeenCalledTimes(1);
-        
         await eventBus.publish(event2);
-        expect(handlerSpy).not.toHaveBeenCalledWith(event2);
-        expect(handlerSpy).toHaveBeenCalledTimes(1);
       });
 
-      it('should have zero subscribers after the first event', async () => {
-        const event = createTestEvent('test-event', { data: 'test' });
-        await eventBus.publish(event);
+      it('should call the handler only once', () => {
+        expect(eventHandler).toHaveBeenCalledTimes(1);
+        expect(eventHandler.mock.calls[0][0].payload.data).toBe('first');
+      });
+
+      it('should have zero subscribers after the first event', () => {
         expect(eventBus.subscriberCount('test-event')).toBe(0);
       });
     });
   });
 
   describe('Given an event bus with priority subscriptions', () => {
-    let firstHandlerSpy: EventHandler<unknown>;
-    let secondHandlerSpy: EventHandler<unknown>;
-    let thirdHandlerSpy: EventHandler<unknown>;
+    let order: string[];
     
-    // Track the execution order
-    let executionOrder: number[];
-
     beforeEach(() => {
-      executionOrder = [];
-
-      firstHandlerSpy = vi.fn().mockImplementation(async () => {
-        executionOrder.push(1);
-      });
+      order = [];
       
-      secondHandlerSpy = vi.fn().mockImplementation(async () => {
-        executionOrder.push(2);
-      });
+      eventBus.subscribe('test-event', async () => {
+        order.push('low');
+      }, { priority: 1 });
       
-      thirdHandlerSpy = vi.fn().mockImplementation(async () => {
-        executionOrder.push(3);
-      });
+      eventBus.subscribe('test-event', async () => {
+        order.push('medium');
+      }, { priority: 5 });
       
-      // Register with different priorities (higher executed first)
-      eventBus.subscribe('test-event', secondHandlerSpy, { priority: 5 });
-      eventBus.subscribe('test-event', thirdHandlerSpy, { priority: 1 });
-      eventBus.subscribe('test-event', firstHandlerSpy, { priority: 10 });
+      eventBus.subscribe('test-event', async () => {
+        order.push('high');
+      }, { priority: 10 });
     });
 
     describe('when an event is published', () => {
       it('should call the handlers in priority order (highest first)', async () => {
         const event = createTestEvent('test-event', { data: 'test' });
         await eventBus.publish(event);
-        
-        expect(firstHandlerSpy).toHaveBeenCalled();
-        expect(secondHandlerSpy).toHaveBeenCalled();
-        expect(thirdHandlerSpy).toHaveBeenCalled();
-        
-        // Should be in order of priority: first (10), second (5), third (1)
-        expect(executionOrder).toEqual([1, 2, 3]);
+        expect(order).toEqual(['high', 'medium', 'low']);
       });
     });
   });
 
   describe('Given an event bus with multiple subscriptions', () => {
-    let handlerSpy1: EventHandler<unknown>;
-    let handlerSpy2: EventHandler<unknown>;
-
+    let handler1: any;
+    let handler2: any;
+    let handler3: any;
+    
     beforeEach(() => {
-      handlerSpy1 = vi.fn().mockResolvedValue(undefined);
-      handlerSpy2 = vi.fn().mockResolvedValue(undefined);
-      eventBus.subscribe('event-type-1', handlerSpy1);
-      eventBus.subscribe('event-type-2', handlerSpy2);
+      handler1 = vi.fn();
+      handler2 = vi.fn();
+      handler3 = vi.fn();
+      
+      eventBus.subscribe('event1', handler1);
+      eventBus.subscribe('event2', handler2);
+      eventBus.subscribe('event3', handler3);
     });
 
     describe('when clearSubscriptions is called for one event type', () => {
-      beforeEach(() => {
-        eventBus.clearSubscriptions('event-type-1');
-      });
-
       it('should remove all subscriptions for that event type', () => {
-        expect(eventBus.subscriberCount('event-type-1')).toBe(0);
-        expect(eventBus.subscriberCount('event-type-2')).toBe(1);
+        eventBus.clearSubscriptions('event1');
+        
+        expect(eventBus.subscriberCount('event1')).toBe(0);
+        expect(eventBus.subscriberCount('event2')).toBe(1);
+        expect(eventBus.subscriberCount('event3')).toBe(1);
       });
     });
 
     describe('when clearAllSubscriptions is called', () => {
-      beforeEach(() => {
-        eventBus.clearAllSubscriptions();
-      });
-
       it('should remove all subscriptions for all event types', () => {
-        expect(eventBus.subscriberCount('event-type-1')).toBe(0);
-        expect(eventBus.subscriberCount('event-type-2')).toBe(0);
+        eventBus.clearAllSubscriptions();
+        
+        expect(eventBus.subscriberCount('event1')).toBe(0);
+        expect(eventBus.subscriberCount('event2')).toBe(0);
+        expect(eventBus.subscriberCount('event3')).toBe(0);
       });
     });
   });

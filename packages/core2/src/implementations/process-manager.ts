@@ -20,7 +20,10 @@ import { TaskExecutor } from '../models/task-system';
  * SimpleProcessRegistry interface for getProcessDefinitionByType
  */
 interface SimpleProcessRegistry extends ProcessRegistry {
-  getProcessDefinitionByType(processType: string, version?: string): ProcessDefinition | undefined;
+  getProcessDefinitionByType<TState extends string, TData>(
+    processType: string, 
+    version?: string
+  ): Result<ProcessDefinition<TState, TData>>;
 }
 
 /**
@@ -55,10 +58,13 @@ export class SimpleProcessManager implements ProcessManager {
   ): Promise<Result<ProcessInstance<TState, TData>>> {
     try {
       // Get the process definition
-      const definitionResult = this.getProcessDefinitionByType(processType, options.version);
+      const definitionResult = this.getProcessDefinitionByType<TState, TData>(processType, options.version);
       
-      if (!definitionResult.success) {
-        return definitionResult;
+      if (!definitionResult.success || !definitionResult.value) {
+        return {
+          success: false,
+          error: definitionResult.error || new Error(`Process definition for ${processType} not found`)
+        };
       }
       
       const definition = definitionResult.value;
@@ -67,13 +73,7 @@ export class SimpleProcessManager implements ProcessManager {
       if (!definition.initialState) {
         return {
           success: false,
-          error: new DomainError(
-            `Process definition ${definition.id} does not have an initial state`,
-            { 
-              processType,
-              definitionId: definition.id 
-            }
-          )
+          error: new DomainError(`Process definition does not have an initial state`)
         };
       }
       
@@ -132,10 +132,7 @@ export class SimpleProcessManager implements ProcessManager {
       if (!process) {
         return {
           success: false,
-          error: new DomainError(
-            `Process with ID ${processId} not found`,
-            { processId }
-          )
+          error: new DomainError(`Process with ID ${processId} not found`)
         };
       }
       
@@ -168,27 +165,22 @@ export class SimpleProcessManager implements ProcessManager {
       // Get the process
       const processResult = await this.getProcess<TData, TState>(processId);
       
-      if (!processResult.success) {
+      if (!processResult.success || !processResult.value) {
         return processResult;
       }
       
       const process = processResult.value;
       
-      // Get the process definition
-      const definitionResult = this.processRegistry.getProcessDefinition<TState, TData>(
-        process.type
+      // Get the process definition - use getProcessDefinitionByType instead of direct registry call
+      const definitionResult = this.getProcessDefinitionByType<TState, TData>(
+        process.type,
+        process.version
       );
       
-      if (!definitionResult.success) {
+      if (!definitionResult.success || !definitionResult.value) {
         return {
           success: false,
-          error: new DomainError(
-            `Process definition for type ${process.type} not found`,
-            { 
-              processId,
-              processType: process.type 
-            }
-          )
+          error: new DomainError(`Process definition for type ${process.type} not found`)
         };
       }
       
@@ -196,20 +188,13 @@ export class SimpleProcessManager implements ProcessManager {
       
       // Find the transition for this event
       const transition = definition.transitions.find(t => 
-        t.from === process.state && t.on === eventType
+        t.from === process.state && t.event === eventType
       );
       
       if (!transition) {
         return {
           success: false,
-          error: new DomainError(
-            `No transition found for event ${eventType} from state ${process.state}`,
-            { 
-              processId,
-              currentState: process.state,
-              eventType 
-            }
-          )
+          error: new DomainError(`No transition found for event ${eventType} from state ${process.state}`)
         };
       }
       
@@ -270,6 +255,104 @@ export class SimpleProcessManager implements ProcessManager {
   }
   
   /**
+   * Get processes by type and state
+   * @param processType The process type
+   * @param state Optional state filter
+   */
+  public async getProcessesByType<TData, TState extends string>(
+    processType: string,
+    state?: TState
+  ): Promise<Result<ProcessInstance<TState, TData>[]>> {
+    try {
+      const matches: ProcessInstance<TState, TData>[] = [];
+      
+      for (const process of this.processes.values()) {
+        if (process.type === processType) {
+          if (state && process.state !== state) {
+            continue;
+          }
+          
+          matches.push(process as unknown as ProcessInstance<TState, TData>);
+        }
+      }
+      
+      return { success: true, value: matches };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error
+          ? error
+          : new Error(`Failed to get processes by type: ${String(error)}`)
+      };
+    }
+  }
+  
+  /**
+   * Delete a process instance
+   * @param processId The process ID
+   */
+  public async deleteProcess(processId: Identifier): Promise<Result<void>> {
+    try {
+      if (!this.processes.has(processId)) {
+        return {
+          success: false,
+          error: new DomainError(`Process with ID ${processId} not found`)
+        };
+      }
+      
+      this.processes.delete(processId);
+      return { success: true, value: undefined };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error
+          ? error
+          : new Error(`Failed to delete process: ${String(error)}`)
+      };
+    }
+  }
+  
+  /**
+   * Check if a transition is valid
+   * @param processId The process ID
+   * @param eventType The event type
+   */
+  public async isTransitionValid(
+    processId: Identifier,
+    eventType: string
+  ): Promise<Result<boolean>> {
+    try {
+      const processResult = await this.getProcess(processId);
+      
+      if (!processResult.success || !processResult.value) {
+        return { success: true, value: false };
+      }
+      
+      const process = processResult.value;
+      
+      const definitionResult = this.getProcessDefinitionByType(
+        process.type,
+        process.version
+      );
+      
+      if (!definitionResult.success || !definitionResult.value) {
+        return { success: true, value: false };
+      }
+      
+      const definition = definitionResult.value;
+      
+      // Find the transition for this event
+      const transition = definition.transitions.find(t => 
+        t.from === process.state && t.event === eventType
+      );
+      
+      return { success: true, value: !!transition };
+    } catch (error) {
+      return { success: true, value: false };
+    }
+  }
+  
+  /**
    * Save a process checkpoint for later recovery
    * @param processId The ID of the process to checkpoint
    */
@@ -279,7 +362,7 @@ export class SimpleProcessManager implements ProcessManager {
     try {
       const processResult = await this.getProcess<TData, string>(processId);
       
-      if (!processResult.success) {
+      if (!processResult.success || !processResult.value) {
         return {
           success: false,
           error: processResult.error
@@ -299,7 +382,8 @@ export class SimpleProcessManager implements ProcessManager {
         createdAt: now,
         metadata: {
           version: process.version,
-          processType: process.type
+          processType: process.type,
+          originalMetadata: { ...process.metadata }
         }
       };
       
@@ -342,10 +426,15 @@ export class SimpleProcessManager implements ProcessManager {
       if (!checkpoint) {
         return {
           success: false,
-          error: new DomainError(
-            `Checkpoint with ID ${checkpointId} not found`,
-            { checkpointId }
-          )
+          error: new DomainError(`Checkpoint with ID ${checkpointId} not found`)
+        };
+      }
+      
+      // Check if the checkpoint belongs to this process
+      if (checkpoint.processId !== processId) {
+        return {
+          success: false,
+          error: new DomainError(`Checkpoint ${checkpointId} does not belong to process ${processId}`)
         };
       }
       
@@ -353,8 +442,15 @@ export class SimpleProcessManager implements ProcessManager {
       const existingProcess = this.processes.get(processId);
       
       // Get the process type from the checkpoint metadata
-      const processType = checkpoint.metadata?.processType as string || '';
+      const processType = checkpoint.metadata?.processType as string;
       const version = checkpoint.metadata?.version as string;
+      
+      if (!processType) {
+        return {
+          success: false,
+          error: new DomainError(`Checkpoint ${checkpointId} has invalid metadata: missing process type`)
+        };
+      }
       
       // Restore the process
       const now = Date.now();
@@ -371,7 +467,9 @@ export class SimpleProcessManager implements ProcessManager {
           lastSavedAt: checkpoint.createdAt
         },
         metadata: {
-          ...(existingProcess?.metadata || {}),
+          // First, restore original metadata from checkpoint if available
+          ...(checkpoint.metadata?.originalMetadata || {}),
+          // Then add restoration information
           restoredFrom: checkpointId,
           restoredAt: now
         }
@@ -402,79 +500,29 @@ export class SimpleProcessManager implements ProcessManager {
   ): Result<ProcessDefinition<TState, TData>> {
     // Use the SimpleProcessRegistry's method if it exists
     if ('getProcessDefinitionByType' in this.processRegistry) {
-      const definition = (this.processRegistry as SimpleProcessRegistry)
-        .getProcessDefinitionByType(processType, version);
-      
-      if (!definition) {
-        return {
-          success: false,
-          error: new DomainError(
-            `Process definition for type ${processType} not found`,
-            { 
-              processType,
-              version 
-            }
-          )
-        };
-      }
-      
-      return { 
-        success: true, 
-        value: definition as ProcessDefinition<TState, TData> 
-      };
+      return (this.processRegistry as SimpleProcessRegistry)
+        .getProcessDefinitionByType<TState, TData>(processType, version);
     }
     
-    // Fallback: search through all definitions
-    const definitions = this.processRegistry.getAllProcessDefinitions()
-      .filter(def => def.name === processType);
+    // Fallback: get the definition directly from the registry
+    const processDefResult = this.processRegistry.getProcessDefinition<TState, TData>(processType);
     
-    if (definitions.length === 0) {
+    if (!processDefResult.success || !processDefResult.value) {
       return {
         success: false,
-        error: new DomainError(
-          `Process definition for type ${processType} not found`,
-          { 
-            processType,
-            version 
-          }
-        )
+        error: new DomainError(`Process definition for type ${processType} not found`)
       };
     }
     
-    if (version) {
-      const versionedDef = definitions.find(def => def.version === version);
-      
-      if (!versionedDef) {
-        return {
-          success: false,
-          error: new DomainError(
-            `Process definition for type ${processType} version ${version} not found`,
-            { 
-              processType,
-              version 
-            }
-          )
-        };
-      }
-      
-      return { 
-        success: true, 
-        value: versionedDef as ProcessDefinition<TState, TData> 
+    // If version is specified and doesn't match, return error
+    if (version && processDefResult.value.version !== version) {
+      return {
+        success: false,
+        error: new DomainError(`Process definition for type ${processType} version ${version} not found`)
       };
     }
     
-    // Sort by version, descending
-    const sorted = [...definitions].sort((a, b) => {
-      const vA = a.version || '0.0.0';
-      const vB = b.version || '0.0.0';
-      
-      return vB.localeCompare(vA);
-    });
-    
-    return { 
-      success: true, 
-      value: sorted[0] as ProcessDefinition<TState, TData> 
-    };
+    return processDefResult;
   }
 }
 

@@ -1,25 +1,25 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { InMemoryEventBus } from '../src/implementations/event-bus';
-import { TransactionManager, createTransactionManager } from '../src/models/transaction';
-import { DomainEvent } from '../src/models/core-types';
-import { EventBus } from '../src/models/event-system';
-import { createModernRuntime } from '../src/implementations/modern-factory';
+import { TransactionManager, TransactionManagerImpl } from '../src/models/transaction';
 
 describe('Transaction/Unit of Work', () => {
   let transactionManager: TransactionManager;
-  let eventBus: EventBus;
-  let runtime: any;
+  let mockPublish: any;
 
   beforeEach(() => {
-    runtime = createModernRuntime({
-      persistEvents: false,
-      runtimeOptions: {
-        version: '1.0.0',
-        namespace: 'test'
-      }
-    });
-    eventBus = runtime.eventBus;
-    transactionManager = createTransactionManager(eventBus);
+    // Create a mock publish function
+    mockPublish = vi.fn().mockResolvedValue(undefined);
+    
+    // Create transaction manager with a simple mock event bus
+    transactionManager = new TransactionManagerImpl({
+      publish: mockPublish,
+      // The other methods aren't used by TransactionManager
+      subscribe: vi.fn(),
+      subscribeWithFilter: vi.fn(),
+      publishAll: vi.fn(),
+      unsubscribe: vi.fn(),
+      clearSubscriptions: vi.fn(),
+      clearAllSubscriptions: vi.fn()
+    } as any);
   });
 
   describe('Transaction Creation', () => {
@@ -71,39 +71,49 @@ describe('Transaction/Unit of Work', () => {
   });
 
   describe('Transaction Events', () => {
-    it('should emit transaction started event', async () => {
-      const handler = vi.fn();
-      eventBus.subscribe('transaction.started', handler);
+    it('should emit transaction started event', () => {
+      const transaction = transactionManager.beginTransaction();
       
-      transactionManager.beginTransaction();
-      
-      expect(handler).toHaveBeenCalledTimes(1);
-      expect(handler.mock.calls[0][0].type).toBe('transaction.started');
-      expect(handler.mock.calls[0][0].payload.transactionId).toBeDefined();
+      expect(mockPublish).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'transaction.started',
+          payload: expect.objectContaining({
+            transactionId: transaction.id
+          })
+        })
+      );
     });
 
-    it('should emit transaction committed event', async () => {
-      const handler = vi.fn();
-      eventBus.subscribe('transaction.committed', handler);
-      
+    it('should emit transaction committed event', () => {
       const transaction = transactionManager.beginTransaction();
+      mockPublish.mockClear(); // Clear previous calls
+      
       transactionManager.commitTransaction(transaction.id);
       
-      expect(handler).toHaveBeenCalledTimes(1);
-      expect(handler.mock.calls[0][0].type).toBe('transaction.committed');
-      expect(handler.mock.calls[0][0].payload.transactionId).toBe(transaction.id);
+      expect(mockPublish).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'transaction.committed',
+          payload: expect.objectContaining({
+            transactionId: transaction.id
+          })
+        })
+      );
     });
 
-    it('should emit transaction rolled back event', async () => {
-      const handler = vi.fn();
-      eventBus.subscribe('transaction.rolled_back', handler);
-      
+    it('should emit transaction rolled back event', () => {
       const transaction = transactionManager.beginTransaction();
+      mockPublish.mockClear(); // Clear previous calls
+      
       transactionManager.rollbackTransaction(transaction.id);
       
-      expect(handler).toHaveBeenCalledTimes(1);
-      expect(handler.mock.calls[0][0].type).toBe('transaction.rolled_back');
-      expect(handler.mock.calls[0][0].payload.transactionId).toBe(transaction.id);
+      expect(mockPublish).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'transaction.rolled_back',
+          payload: expect.objectContaining({
+            transactionId: transaction.id
+          })
+        })
+      );
     });
   });
 

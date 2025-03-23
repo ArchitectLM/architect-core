@@ -413,9 +413,15 @@ export abstract class BasePlugin<TState extends PluginState = PluginState> imple
     priority: number = 0
   ): Result<void> {
     try {
-      // Create a type-safe wrapper for the hook
+      // Create a wrapper for the hook with proper type handling
       const wrappedHook: ExtensionHook<ExtensionPointName, TState['data']> = async (params, context) => {
-        return hook(params as ExtensionPointParameters[N], context);
+        // The params are already of the correct type for the specific extension point
+        // We just need to cast them appropriately for TypeScript to understand
+        // Using unknown as an intermediate step is safer than using any
+        return await hook(
+          params as unknown as (N extends keyof ExtensionPointParameters ? ExtensionPointParameters[N] : unknown), 
+          context
+        );
       };
 
       // Get or create the hooks array for this point

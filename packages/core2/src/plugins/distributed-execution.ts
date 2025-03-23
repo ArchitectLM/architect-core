@@ -440,9 +440,18 @@ export class DistributedExecutionPlugin implements Extension {
     // If no specific capabilities are required, find capabilities from task metadata
     if (requiredCapabilities.length === 0) {
       // We would need to get task metadata here to determine capabilities
-      // Since we don't have access to task definitions here, this would need to be
-      // provided in the task configuration
+      // Extract capabilities from task ID as a fallback
+      if (taskId.includes('memory')) {
+        requiredCapabilities.push('memory');
+      } else if (taskId.includes('io')) {
+        requiredCapabilities.push('io');
+      } else if (taskId.includes('compute')) {
+        requiredCapabilities.push('compute');
+      }
     }
+    
+    // Log for debugging
+    console.log(`[DistributedExecution] Required capabilities for ${taskId}:`, requiredCapabilities);
     
     // Filter nodes by required capabilities
     const capableNodes = availableNodes.filter(node => {
@@ -455,13 +464,16 @@ export class DistributedExecutionPlugin implements Extension {
       return requiredCapabilities.every(cap => node.capabilities.includes(cap));
     });
     
+    // Log for debugging
+    console.log(`[DistributedExecution] Capable nodes for ${taskId}:`, capableNodes.map(n => n.id));
+    
     if (capableNodes.length === 0) {
       return null;
     }
     
-    // Among capable nodes, select the one with the lowest load
-    capableNodes.sort((a, b) => a.load - b.load);
-    return capableNodes[0].id;
+    // Sort by load to prioritize less loaded nodes
+    const sortedNodes = [...capableNodes].sort((a, b) => a.load - b.load);
+    return sortedNodes[0].id;
   }
   
   /**

@@ -1,188 +1,239 @@
 import { v4 as uuidv4 } from 'uuid';
 import { Identifier, Result, Timestamp } from '../models/core-types';
-import { TaskScheduler, TaskExecutor } from '../models/task-system';
+import { 
+  TaskScheduler, 
+  TaskExecutor, 
+  TaskRegistry,
+  TaskExecution,
+  TaskStatus as SystemTaskStatus
+} from '../models/task-system';
+
+// Define a local DomainError class to avoid import issues
+class DomainError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'DomainError';
+  }
+}
+
+// Define local interfaces for internal implementation
+interface ScheduledTask {
+  id: Identifier;
+  taskType: string;
+  scheduledTime: number;
+  input: unknown;
+  createdAt: number;
+  updatedAt: number;
+  status: 'SCHEDULED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+  result?: unknown;
+  error?: Error;
+  completedAt?: number;
+  recurring: boolean;
+  cronExpression?: string;
+  metadata?: Record<string, unknown>;
+}
 
 /**
- * Simple in-memory implementation of TaskScheduler
+ * In-memory implementation of TaskScheduler
  */
-export class SimpleTaskScheduler implements TaskScheduler {
-  private scheduledTasks = new Map<string, {
-    id: string;
-    taskType: string;
-    input: unknown;
-    scheduledTime: number;
-    timeoutId: NodeJS.Timeout;
-  }>();
-  
+export class InMemoryTaskScheduler implements TaskScheduler {
+  private taskRegistry: TaskRegistry;
   private taskExecutor: TaskExecutor;
+  private scheduledTasks = new Map<Identifier, ScheduledTask>();
   
   /**
-   * Create a new SimpleTaskScheduler
-   * @param taskExecutor The task executor to use for executing scheduled tasks
+   * Create a new InMemoryTaskScheduler
+   * @param taskRegistry Registry of task definitions
+   * @param taskExecutor Executor for running tasks
    */
-  constructor(taskExecutor: TaskExecutor) {
+  constructor(taskRegistry: TaskRegistry, taskExecutor: TaskExecutor) {
+    this.taskRegistry = taskRegistry;
     this.taskExecutor = taskExecutor;
   }
   
   /**
-   * Schedule a task for execution at a specific time
+   * Schedule a task to run at a specific time
    * @param taskType The type of task to schedule
-   * @param input The input data for the task
-   * @param scheduledTime The time to execute the task (timestamp in ms)
+   * @param input The task input parameters
+   * @param scheduledTime The time to run the task
    */
-  public async scheduleTask<TInput>(
+  public async scheduleTask<TInput = unknown>(
     taskType: string,
     input: TInput,
-    scheduledTime: Timestamp
-  ): Promise<Result<Identifier>> {
+    scheduledTime: number
+  ): Promise<Identifier> {
     try {
+      // Verify task type exists
+      const taskDef = this.taskRegistry.getTask(taskType);
+      
+      if (!taskDef) {
+        throw new DomainError(`Task definition for type ${taskType} not found`);
+      }
+      
+      const now = Date.now();
       const taskId = uuidv4();
       
-      // Calculate delay in ms
-      const now = Date.now();
-      const delay = Math.max(0, scheduledTime - now);
-      
-      // Schedule the task
-      const timeoutId = setTimeout(() => {
-        this.executeScheduledTask(taskId);
-      }, delay);
-      
-      // Store the scheduled task
-      this.scheduledTasks.set(taskId, {
+      // Create scheduled task
+      const scheduledTask: ScheduledTask = {
         id: taskId,
         taskType,
-        input,
         scheduledTime,
-        timeoutId
-      });
-      
-      return { success: true, value: taskId };
-    } catch (error) {
-      return { 
-        success: false, 
-        error: error instanceof Error 
-          ? error 
-          : new Error(`Failed to schedule task: ${String(error)}`) 
+        input,
+        createdAt: now,
+        updatedAt: now,
+        status: 'SCHEDULED',
+        recurring: false,
       };
+      
+      // Store the task
+      this.scheduledTasks.set(taskId, scheduledTask);
+      
+      return taskId;
+    } catch (error) {
+      throw error instanceof Error
+        ? error
+        : new Error(`Failed to schedule task: ${String(error)}`);
+    }
+  }
+  
+  /**
+   * Schedule a recurring task
+   * @param taskType The type of task to schedule
+   * @param input The task input parameters
+   * @param cronExpression The cron expression for recurrence
+   */
+  public async scheduleRecurringTask<TInput = unknown>(
+    taskType: string,
+    input: TInput,
+    cronExpression: string
+  ): Promise<Identifier> {
+    try {
+      // Verify task type exists
+      const taskDef = this.taskRegistry.getTask(taskType);
+      
+      if (!taskDef) {
+        throw new DomainError(`Task definition for type ${taskType} not found`);
+      }
+      
+      const now = Date.now();
+      const taskId = uuidv4();
+      
+      // Calculate next execution time based on cron expression
+      const nextExecutionTime = this.calculateNextExecutionTime(cronExpression);
+      
+      if (!nextExecutionTime) {
+        throw new DomainError(`Invalid cron expression: ${cronExpression}`);
+      }
+      
+      // Create scheduled task
+      const scheduledTask: ScheduledTask = {
+        id: taskId,
+        taskType,
+        scheduledTime: nextExecutionTime,
+        input,
+        createdAt: now,
+        updatedAt: now,
+        status: 'SCHEDULED',
+        recurring: true,
+        cronExpression,
+      };
+      
+      // Store the task
+      this.scheduledTasks.set(taskId, scheduledTask);
+      
+      return taskId;
+    } catch (error) {
+      throw error instanceof Error
+        ? error
+        : new Error(`Failed to schedule recurring task: ${String(error)}`);
     }
   }
   
   /**
    * Cancel a scheduled task
-   * @param taskId The ID of the task to cancel
+   * @param scheduleId The ID of the scheduled task
    */
-  public async cancelScheduledTask(taskId: Identifier): Promise<Result<boolean>> {
+  public async cancelScheduledTask(scheduleId: Identifier): Promise<boolean> {
     try {
-      const task = this.scheduledTasks.get(taskId);
+      const task = this.scheduledTasks.get(scheduleId);
       
       if (!task) {
-        return { success: true, value: false };
+        return false;
       }
       
-      // Clear the timeout
-      clearTimeout(task.timeoutId);
-      
-      // Remove the task
-      this.scheduledTasks.delete(taskId);
-      
-      return { success: true, value: true };
-    } catch (error) {
-      return { 
-        success: false, 
-        error: error instanceof Error 
-          ? error 
-          : new Error(`Failed to cancel task: ${String(error)}`) 
-      };
-    }
-  }
-  
-  /**
-   * Reschedule a task to a new execution time
-   * @param taskId The ID of the task to reschedule
-   * @param newScheduledTime The new time to execute the task
-   */
-  public async rescheduleTask(
-    taskId: Identifier,
-    newScheduledTime: Timestamp
-  ): Promise<Result<boolean>> {
-    try {
-      const task = this.scheduledTasks.get(taskId);
-      
-      if (!task) {
-        return { success: true, value: false };
+      if (task.status === 'RUNNING') {
+        // Can't cancel a running task
+        return false;
       }
       
-      // Clear the existing timeout
-      clearTimeout(task.timeoutId);
+      if (task.status === 'COMPLETED' || task.status === 'FAILED') {
+        // Can't cancel a task that has already completed or failed
+        return false;
+      }
       
-      // Calculate new delay
-      const now = Date.now();
-      const delay = Math.max(0, newScheduledTime - now);
+      task.status = 'CANCELLED';
+      task.updatedAt = Date.now();
       
-      // Schedule the task with new time
-      const timeoutId = setTimeout(() => {
-        this.executeScheduledTask(taskId);
-      }, delay);
+      // Update in storage
+      this.scheduledTasks.set(scheduleId, task);
       
-      // Update the scheduled task
-      this.scheduledTasks.set(taskId, {
-        ...task,
-        scheduledTime: newScheduledTime,
-        timeoutId
-      });
-      
-      return { success: true, value: true };
+      return true;
     } catch (error) {
-      return { 
-        success: false, 
-        error: error instanceof Error 
-          ? error 
-          : new Error(`Failed to reschedule task: ${String(error)}`) 
-      };
+      throw error instanceof Error
+        ? error
+        : new Error(`Failed to cancel scheduled task: ${String(error)}`);
     }
   }
   
   /**
    * Get all scheduled tasks
    */
-  public async getScheduledTasks(): Promise<Result<Array<{ id: string; taskType: string; scheduledTime: number }>>> {
+  public async getScheduledTasks(): Promise<Array<{
+    id: Identifier;
+    taskType: string;
+    input: Record<string, unknown>;
+    scheduledTime: number;
+    recurring: boolean;
+    cronExpression?: string;
+  }>> {
     try {
-      const tasks = Array.from(this.scheduledTasks.values()).map(task => ({
-        id: task.id,
-        taskType: task.taskType,
-        scheduledTime: task.scheduledTime
-      }));
+      const result = [];
       
-      return { success: true, value: tasks };
+      for (const task of this.scheduledTasks.values()) {
+        if (task.status === 'SCHEDULED') {
+          result.push({
+            id: task.id,
+            taskType: task.taskType,
+            input: task.input as Record<string, unknown>,
+            scheduledTime: task.scheduledTime,
+            recurring: task.recurring,
+            cronExpression: task.cronExpression
+          });
+        }
+      }
+      
+      return result;
     } catch (error) {
-      return { 
-        success: false, 
-        error: error instanceof Error 
-          ? error 
-          : new Error(`Failed to get scheduled tasks: ${String(error)}`) 
-      };
+      throw error instanceof Error
+        ? error
+        : new Error(`Failed to get scheduled tasks: ${String(error)}`);
     }
   }
-  
+
   /**
-   * Execute a scheduled task
-   * @param taskId The ID of the task to execute
+   * Calculate the next execution time based on a cron expression
+   * @param cronExpression Cron expression for scheduling
+   * @private
    */
-  private async executeScheduledTask(taskId: string): Promise<void> {
-    const task = this.scheduledTasks.get(taskId);
+  private calculateNextExecutionTime(cronExpression: string): number | null {
+    // This is a simplified implementation
+    // In a real implementation, you would use a cron parser library
     
-    if (!task) {
-      return;
-    }
-    
-    // Remove the task from scheduled tasks
-    this.scheduledTasks.delete(taskId);
-    
-    // Execute the task
     try {
-      await this.taskExecutor.executeTask(task.taskType, task.input);
+      // For now, just schedule one hour from now as a placeholder
+      return Date.now() + 60 * 60 * 1000;
     } catch (error) {
-      console.error(`Error executing scheduled task ${taskId}:`, error);
+      return null;
     }
   }
 }
@@ -190,6 +241,9 @@ export class SimpleTaskScheduler implements TaskScheduler {
 /**
  * Factory function to create a new TaskScheduler
  */
-export function createTaskScheduler(taskExecutor: TaskExecutor): TaskScheduler {
-  return new SimpleTaskScheduler(taskExecutor);
+export function createTaskScheduler(
+  taskRegistry: TaskRegistry,
+  taskExecutor: TaskExecutor
+): TaskScheduler {
+  return new InMemoryTaskScheduler(taskRegistry, taskExecutor);
 } 

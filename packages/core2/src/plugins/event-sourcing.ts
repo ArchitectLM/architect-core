@@ -147,12 +147,7 @@ export class EventSourcingPluginImpl implements EventSourcingPlugin {
 
     // Publish events to the event bus
     for (const event of uncommittedEvents) {
-      this.eventBus.publish({
-        id: uuidv4(),
-        type: event.type,
-        timestamp: event.timestamp,
-        payload: event
-      });
+      (this.eventBus as any).publish(`event.${event.type}`, event);
     }
 
     // Clear uncommitted events
@@ -171,7 +166,8 @@ export class EventSourcingPluginImpl implements EventSourcingPlugin {
     // Find the aggregate type by searching through all registered factories
     let aggregateType: string | undefined;
     for (const [type, factory] of this.aggregateFactories.entries()) {
-      if (aggregate instanceof Object.getPrototypeOf(factory('dummy')).constructor) {
+      const testAggregate = factory('dummy');
+      if (aggregate.constructor === testAggregate.constructor) {
         aggregateType = type;
         break;
       }
@@ -199,15 +195,10 @@ export class EventSourcingPluginImpl implements EventSourcingPlugin {
 
     const handler = this.commandHandlers.get(commandType);
     if (!handler) {
-      this.eventBus.publish({
-        id: uuidv4(),
-        type: 'command.rejected',
-        timestamp: Date.now(),
-        payload: {
-          commandType,
-          aggregateId: command.aggregateId,
-          reason: `No handler registered for command type ${commandType}`
-        }
+      (this.eventBus as any).publish('command.rejected', {
+        commandType,
+        aggregateId: command.aggregateId,
+        reason: `No handler registered for command type ${commandType}`
       });
       return;
     }
@@ -220,15 +211,10 @@ export class EventSourcingPluginImpl implements EventSourcingPlugin {
       await this.saveAggregate(aggregate);
     } catch (error) {
       // Handle command errors
-      this.eventBus.publish({
-        id: uuidv4(),
-        type: 'command.rejected',
-        timestamp: Date.now(),
-        payload: {
-          commandType,
-          aggregateId: command.aggregateId,
-          reason: error instanceof Error ? error.message : String(error)
-        }
+      (this.eventBus as any).publish('command.rejected', {
+        commandType,
+        aggregateId: command.aggregateId,
+        reason: error instanceof Error ? error.message : String(error)
       });
     }
   }

@@ -1,4 +1,4 @@
-import { Identifier, Metadata, Result, Timestamp } from './core-types';
+import { DomainEvent, Identifier, Metadata, Result, Timestamp } from './core-types';
 
 /**
  * Task status representing the lifecycle of a task
@@ -29,6 +29,12 @@ export interface TaskRetryPolicy {
   
   /** Types of errors that should trigger a retry */
   retryableErrorTypes?: string[];
+  
+  /** Whether to retry on timeout errors */
+  retryOnTimeout?: boolean;
+  
+  /** For exponential backoff, the exponent to use */
+  exponent?: number;
 }
 
 /**
@@ -69,35 +75,238 @@ export interface TaskContext<TInput = unknown, TState = unknown> {
 }
 
 /**
- * Task definition with generic input and output types
+ * Task definition interface
  */
-export interface TaskDefinition<TInput = unknown, TOutput = unknown, TState = unknown> {
-  /** Unique identifier for this task type */
-  id: Identifier;
+export interface TaskDefinition<TInput = unknown, TOutput = unknown> {
+  /**
+   * Task type identifier
+   */
+  type: string;
+
+  /**
+   * Task execution handler
+   */
+  handler: TaskHandler<TInput, TOutput>;
+
+  /**
+   * Task dependencies
+   */
+  dependencies?: string[];
+
+  /**
+   * Task retry policy
+   */
+  retryPolicy?: TaskRetryPolicy;
   
-  /** Human-readable name */
-  name: string;
+  /**
+   * Task description
+   */
+  description?: string;
   
-  /** Detailed description */
-  description: string;
+  /**
+   * Task version
+   */
+  version?: string;
   
-  /** Implementation function */
-  handler: (context: TaskContext<TInput, TState>) => Promise<TOutput>;
-  
-  /** Optional retry configuration */
-  retry?: TaskRetryPolicy;
-  
-  /** Optional timeout in milliseconds */
-  timeout?: number;
-  
-  /** Required resources for this task */
-  resources?: string[];
-  
-  /** Task dependencies */
-  dependencies?: Identifier[];
-  
-  /** Additional metadata */
+  /**
+   * Task metadata
+   */
   metadata?: Metadata;
+}
+
+/**
+ * Task handler function type
+ */
+export type TaskHandler<TInput = unknown, TOutput = unknown> = 
+  (input: TInput) => Promise<TOutput>;
+
+/**
+ * Task execution result interface
+ */
+export interface TaskExecutionResult<TInput = unknown, TOutput = unknown> {
+  /**
+   * Task ID
+   */
+  id: Identifier;
+
+  /**
+   * Task type
+   */
+  taskType: string;
+
+  /**
+   * Task execution status
+   */
+  status: TaskStatus;
+
+  /**
+   * Task input parameters
+   */
+  input: TInput;
+
+  /**
+   * Task creation timestamp
+   */
+  createdAt: number;
+
+  /**
+   * Current attempt number
+   */
+  attemptNumber: number;
+
+  /**
+   * Task start timestamp
+   */
+  startedAt?: number;
+
+  /**
+   * Task completion timestamp
+   */
+  completedAt?: number;
+
+  /**
+   * Task result value (if completed)
+   */
+  result?: TOutput;
+
+  /**
+   * Task error (if failed)
+   */
+  error?: Error;
+}
+
+/**
+ * Task executor interface for executing tasks
+ */
+export interface TaskExecutor {
+  /**
+   * Execute a task
+   * @param taskType The type of task to execute
+   * @param input The task input parameters
+   */
+  executeTask<TInput = unknown, TOutput = unknown>(
+    taskType: string, 
+    input: TInput
+  ): Promise<Result<TaskExecutionResult<TInput, TOutput>>>;
+
+  /**
+   * Execute a task with dependencies
+   * @param taskType The type of task to execute
+   * @param input The task input parameters
+   * @param dependencies The dependency task types
+   */
+  executeTaskWithDependencies<TInput = unknown, TOutput = unknown>(
+    taskType: string,
+    input: TInput,
+    dependencies: string[]
+  ): Promise<Result<TaskExecutionResult<TInput, TOutput>>>;
+
+  /**
+   * Cancel a running task
+   * @param taskId The ID of the task to cancel
+   */
+  cancelTask(taskId: Identifier): Promise<Result<void>>;
+
+  /**
+   * Get the status of a task
+   * @param taskId The ID of the task
+   */
+  getTaskStatus<TInput = unknown, TOutput = unknown>(
+    taskId: Identifier
+  ): Promise<Result<TaskExecutionResult<TInput, TOutput>>>;
+}
+
+/**
+ * Task registry interface for registering task handlers
+ */
+export interface TaskRegistry {
+  /**
+   * Register a task definition
+   * @param taskDefinition The task definition to register
+   */
+  registerTask<TInput = unknown, TOutput = unknown>(
+    taskDefinition: TaskDefinition<TInput, TOutput>
+  ): void;
+
+  /**
+   * Unregister a task
+   * @param taskType The type of task to unregister
+   */
+  unregisterTask(taskType: string): void;
+
+  /**
+   * Get a task definition by type
+   * @param taskType The task type
+   */
+  getTask<TInput = unknown, TOutput = unknown>(
+    taskType: string
+  ): TaskDefinition<TInput, TOutput> | undefined;
+
+  /**
+   * Get a task definition by type with a Result wrapper
+   * @param taskType The task type
+   */
+  getTaskDefinition<TInput = unknown, TOutput = unknown>(
+    taskType: string
+  ): Promise<Result<TaskDefinition<TInput, TOutput>>>;
+
+  /**
+   * Check if a task type is registered
+   * @param taskType The task type to check
+   */
+  hasTask(taskType: string): boolean;
+
+  /**
+   * Get all registered task types
+   */
+  getTaskTypes(): string[];
+}
+
+/**
+ * Task scheduler interface for scheduling tasks
+ */
+export interface TaskScheduler {
+  /**
+   * Schedule a task to run at a specific time
+   * @param taskType The type of task to schedule
+   * @param input The task input parameters
+   * @param scheduledTime The time to run the task
+   */
+  scheduleTask<TInput = unknown>(
+    taskType: string,
+    input: TInput,
+    scheduledTime: number
+  ): Promise<Identifier>;
+
+  /**
+   * Schedule a recurring task
+   * @param taskType The type of task to schedule
+   * @param input The task input parameters
+   * @param cronExpression The cron expression for recurrence
+   */
+  scheduleRecurringTask<TInput = unknown>(
+    taskType: string,
+    input: TInput,
+    cronExpression: string
+  ): Promise<Identifier>;
+
+  /**
+   * Cancel a scheduled task
+   * @param scheduleId The ID of the scheduled task
+   */
+  cancelScheduledTask(scheduleId: Identifier): Promise<boolean>;
+
+  /**
+   * Get all scheduled tasks
+   */
+  getScheduledTasks(): Promise<Array<{
+    id: Identifier;
+    taskType: string;
+    input: Record<string, unknown>;
+    scheduledTime: number;
+    recurring: boolean;
+    cronExpression?: string;
+  }>>;
 }
 
 /**
@@ -121,9 +330,15 @@ export interface TaskExecution<TInput = unknown, TOutput = unknown> {
   
   /** Error information if failed */
   error?: {
+    /** Error message */
     message: string;
+    /** Error name property (required for Error objects) */
+    name: string;
+    /** Optional stack trace */
     stack?: string;
+    /** Optional error code */
     code?: string;
+    /** Additional error details */
     details?: unknown;
   };
   
@@ -148,108 +363,4 @@ export interface TaskExecution<TInput = unknown, TOutput = unknown> {
   
   /** Additional metadata */
   metadata?: Metadata;
-}
-
-/**
- * Task scheduler for deferred execution
- */
-export interface TaskScheduler {
-  /**
-   * Schedule a task for future execution
-   * @param taskType The type of task to schedule
-   * @param input The input for the task
-   * @param scheduledTime When to execute the task
-   */
-  scheduleTask<TInput>(
-    taskType: string,
-    input: TInput,
-    scheduledTime: Timestamp
-  ): Promise<Result<Identifier>>;
-  
-  /**
-   * Cancel a scheduled task
-   * @param taskId The ID of the task to cancel
-   */
-  cancelScheduledTask(taskId: Identifier): Promise<Result<boolean>>;
-  
-  /**
-   * Reschedule a task 
-   * @param taskId The ID of the task to reschedule
-   * @param newScheduledTime The new execution time
-   */
-  rescheduleTask(
-    taskId: Identifier,
-    newScheduledTime: Timestamp
-  ): Promise<Result<boolean>>;
-}
-
-/**
- * Task executor for running tasks
- */
-export interface TaskExecutor {
-  /**
-   * Execute a task immediately
-   * @param taskType The type of task to execute
-   * @param input The input for the task
-   */
-  executeTask<TInput, TOutput>(
-    taskType: string,
-    input: TInput
-  ): Promise<Result<TaskExecution<TInput, TOutput>>>;
-  
-  /**
-   * Cancel a running task
-   * @param taskId The ID of the task to cancel
-   */
-  cancelTask(taskId: Identifier): Promise<Result<boolean>>;
-  
-  /**
-   * Execute a task with dependencies
-   * @param taskType The type of task to execute
-   * @param input The input for the task
-   * @param dependencies IDs of tasks that must complete first
-   */
-  executeTaskWithDependencies<TInput, TOutput>(
-    taskType: string,
-    input: TInput,
-    dependencies: Identifier[]
-  ): Promise<Result<TaskExecution<TInput, TOutput>>>;
-}
-
-/**
- * Task registry for managing task definitions
- */
-export interface TaskRegistry {
-  /**
-   * Register a task definition
-   * @param definition The task definition to register
-   */
-  registerTask<TInput, TOutput, TState>(
-    definition: TaskDefinition<TInput, TOutput, TState>
-  ): Result<void>;
-  
-  /**
-   * Unregister a task definition
-   * @param taskId The ID of the task definition to unregister
-   */
-  unregisterTask(taskId: string): Result<void>;
-  
-  /**
-   * Get a task definition by ID
-   * @param taskId The ID of the task definition to retrieve
-   */
-  getTaskDefinition<TInput, TOutput, TState>(
-    taskId: string
-  ): Result<TaskDefinition<TInput, TOutput, TState>>;
-  
-  /**
-   * Check if a task definition exists
-   * @param taskId The ID of the task definition to check
-   */
-  hasTaskDefinition(taskId: string): boolean;
-  
-  /**
-   * Get all registered task definitions
-   */
-  getAllTaskDefinitions(): TaskDefinition<unknown, unknown, unknown>[];
 } 

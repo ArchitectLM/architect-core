@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Runtime } from '../../src/models/runtime';
 import { RuntimeInstance } from '../../src/implementations/runtime';
 import { ExtensionSystemImpl } from '../../src/implementations/extension-system';
-import { EventBusImpl } from '../../src/implementations/event-bus';
+import { EventBusImpl } from '../../src/implementations/event-bus-impl';
 import { InMemoryEventStorage } from '../../src/implementations/event-storage-impl';
 import { ProcessDefinition, TaskDefinition, Extension } from '../../src/models/index';
 import { performance } from 'perf_hooks';

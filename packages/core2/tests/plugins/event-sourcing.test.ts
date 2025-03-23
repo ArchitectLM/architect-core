@@ -1,77 +1,17 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { EventBus } from '../../src/models/event';
+import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { 
+  EventBus 
+} from '../../src/models/event-system';
+import {
+  AggregateRoot, 
+  Command, 
+  DomainEvent, 
   EventSourcingPlugin, 
   EventStore, 
   EventStoreEntry,
-  AggregateRoot,
-  Command,
-  DomainEvent,
   createEventSourcingPlugin
 } from '../../src/plugins/event-sourcing';
-
-// Test aggregate implementation
-class TestAggregate implements AggregateRoot {
-  private _id: string;
-  private _version: number = 0;
-  private _state: { value: number } = { value: 0 };
-  private _events: DomainEvent[] = [];
-
-  constructor(id: string) {
-    this._id = id;
-  }
-
-  get id(): string {
-    return this._id;
-  }
-
-  get version(): number {
-    return this._version;
-  }
-
-  get state(): { value: number } {
-    return this._state;
-  }
-
-  applyEvent(event: DomainEvent): void {
-    if (event.type === 'VALUE_INCREMENTED') {
-      this._state.value += event.payload.amount;
-    } else if (event.type === 'VALUE_DECREMENTED') {
-      this._state.value -= event.payload.amount;
-    }
-    this._version++;
-    this._events.push(event);
-  }
-
-  getUncommittedEvents(): DomainEvent[] {
-    return [...this._events];
-  }
-
-  clearUncommittedEvents(): void {
-    this._events = [];
-  }
-
-  // Commands
-  increment(amount: number): void {
-    this.applyEvent({
-      aggregateId: this._id,
-      type: 'VALUE_INCREMENTED',
-      payload: { amount },
-      version: this._version + 1,
-      timestamp: Date.now()
-    });
-  }
-
-  decrement(amount: number): void {
-    this.applyEvent({
-      aggregateId: this._id,
-      type: 'VALUE_DECREMENTED',
-      payload: { amount },
-      version: this._version + 1,
-      timestamp: Date.now()
-    });
-  }
-}
+import { TestAggregate } from '../helpers/test-aggregate';
 
 describe('Event Sourcing Plugin', () => {
   let eventBus: EventBus;
@@ -84,7 +24,7 @@ describe('Event Sourcing Plugin', () => {
       unsubscribe: vi.fn(),
       publish: vi.fn(),
       applyBackpressure: vi.fn()
-    };
+    } as any;
 
     eventStore = {
       saveEvents: vi.fn().mockResolvedValue(undefined),
@@ -202,7 +142,7 @@ describe('Event Sourcing Plugin', () => {
       plugin.registerAggregateFactory('TestAggregate', (id) => new TestAggregate(id));
 
       // Load the aggregate
-      const aggregate = await plugin.loadAggregate('TestAggregate', 'aggregate-1');
+      const aggregate = await plugin.loadAggregate<TestAggregate>('TestAggregate', 'aggregate-1');
 
       // Verify the aggregate state was properly reconstituted
       expect(aggregate).toBeInstanceOf(TestAggregate);
@@ -218,7 +158,7 @@ describe('Event Sourcing Plugin', () => {
       plugin.registerAggregateFactory('TestAggregate', (id) => new TestAggregate(id));
 
       // Try to load a non-existent aggregate
-      const aggregate = await plugin.loadAggregate('TestAggregate', 'nonexistent-id');
+      const aggregate = await plugin.loadAggregate<TestAggregate>('TestAggregate', 'nonexistent-id');
 
       // Should return a new aggregate with default state
       expect(aggregate).toBeInstanceOf(TestAggregate);
@@ -312,10 +252,10 @@ describe('Event Sourcing Plugin', () => {
       plugin.registerAggregateFactory('TestAggregate', (id) => new TestAggregate(id));
 
       // Load the aggregate
-      const aggregate = await plugin.loadAggregate('TestAggregate', 'aggregate-3');
+      const aggregate = await plugin.loadAggregate<TestAggregate>('TestAggregate', 'aggregate-3');
       
       // Modify the aggregate
-      aggregate.increment(10);
+      (aggregate as TestAggregate).increment(10);
 
       // Try to save, should fail due to concurrency issue
       await expect(plugin.saveAggregate(aggregate)).rejects.toThrow('Concurrency conflict');
@@ -334,11 +274,14 @@ describe('Event Sourcing Plugin', () => {
       eventStore.saveSnapshot = saveSnapshot;
       eventStore.getLatestSnapshot = getLatestSnapshot;
 
+      // Register aggregate factory
+      plugin.registerAggregateFactory('TestAggregate', (id) => new TestAggregate(id));
+
       // Create and modify an aggregate
       const aggregate = new TestAggregate('aggregate-4');
-      aggregate.increment(5);
-      aggregate.increment(10);
-      aggregate.decrement(3);
+      (aggregate as TestAggregate).increment(5);
+      (aggregate as TestAggregate).increment(10);
+      (aggregate as TestAggregate).decrement(3);
 
       // Save the aggregate first
       await plugin.saveAggregate(aggregate);

@@ -40,7 +40,6 @@
  *     });
  *   }
  * }
- * ```
  */
 
 import { Metadata, Result } from './core-types';
@@ -57,81 +56,40 @@ export interface ExtensionContext<T = unknown> {
 }
 
 /**
- * Base extension point name
+ * Extension point names
  */
-export const ExtensionPointNames = {
-  // Task lifecycle events
-  TASK_BEFORE_EXECUTION: 'task:beforeExecution',
-  TASK_AFTER_EXECUTION: 'task:afterExecution',
-  TASK_EXECUTION_ERROR: 'task:onError',
-  
-  // Process lifecycle events
-  PROCESS_BEFORE_CREATE: 'process:beforeCreate',
-  PROCESS_AFTER_CREATE: 'process:afterCreate',
-  PROCESS_BEFORE_TRANSITION: 'process:beforeTransition',
-  PROCESS_AFTER_TRANSITION: 'process:afterTransition',
-  
-  // System lifecycle events
-  SYSTEM_INIT: 'system:init',
-  SYSTEM_SHUTDOWN: 'system:shutdown',
-  SYSTEM_ERROR: 'system:error',
-  
-  // Event lifecycle events
-  EVENT_BEFORE_PUBLISH: 'event:beforePublish',
-  EVENT_AFTER_PUBLISH: 'event:afterPublish',
-  EVENT_BEFORE_REPLAY: 'event:beforeReplay',
-  EVENT_AFTER_REPLAY: 'event:afterReplay'
-} as const;
+export enum ExtensionPointNames {
+  SYSTEM_INIT = 'system:init',
+  SYSTEM_SHUTDOWN = 'system:shutdown',
+  SYSTEM_ERROR = 'system:error',
+  TASK_BEFORE_EXECUTE = 'task:beforeExecute',
+  TASK_AFTER_EXECUTE = 'task:afterExecute',
+  PROCESS_CREATED = 'process:created',
+  PROCESS_UPDATED = 'process:updated',
+  EVENT_BEFORE_PUBLISH = 'event:beforePublish',
+  EVENT_AFTER_PUBLISH = 'event:afterPublish'
+}
 
 /**
  * Extension point name type
  */
-export type ExtensionPointName = typeof ExtensionPointNames[keyof typeof ExtensionPointNames];
+export type ExtensionPointName = string;
 
 /**
  * Type-safe extension point parameters
  */
-export type ExtensionPointParameters = {
-  [ExtensionPointNames.TASK_BEFORE_EXECUTION]: {
+export interface ExtensionPointParameters {
+  [ExtensionPointNames.TASK_BEFORE_EXECUTE]: {
     taskId: string;
     taskType: string;
     input: unknown;
   };
-  [ExtensionPointNames.TASK_AFTER_EXECUTION]: {
+  [ExtensionPointNames.TASK_AFTER_EXECUTE]: {
     taskId: string;
     taskType: string;
     input: unknown;
     result: unknown;
     executionTime: number;
-  };
-  [ExtensionPointNames.TASK_EXECUTION_ERROR]: {
-    taskId: string;
-    taskType: string;
-    input: unknown;
-    error: Error;
-  };
-  [ExtensionPointNames.PROCESS_BEFORE_CREATE]: {
-    processType: string;
-    data: unknown;
-  };
-  [ExtensionPointNames.PROCESS_AFTER_CREATE]: {
-    processId: string;
-    processType: string;
-    data: unknown;
-  };
-  [ExtensionPointNames.PROCESS_BEFORE_TRANSITION]: {
-    processId: string;
-    processType: string;
-    fromState: string;
-    toState: string;
-    event: string;
-  };
-  [ExtensionPointNames.PROCESS_AFTER_TRANSITION]: {
-    processId: string;
-    processType: string;
-    fromState: string;
-    toState: string;
-    event: string;
   };
   [ExtensionPointNames.SYSTEM_INIT]: {
     version: string;
@@ -144,6 +102,15 @@ export type ExtensionPointParameters = {
     error: Error;
     source: string;
   };
+  [ExtensionPointNames.PROCESS_CREATED]: {
+    processType: string;
+    data: unknown;
+  };
+  [ExtensionPointNames.PROCESS_UPDATED]: {
+    processId: string;
+    processType: string;
+    data: unknown;
+  };
   [ExtensionPointNames.EVENT_BEFORE_PUBLISH]: {
     eventType: string;
     payload: unknown;
@@ -153,18 +120,9 @@ export type ExtensionPointParameters = {
     eventType: string;
     payload: unknown;
   };
-  [ExtensionPointNames.EVENT_BEFORE_REPLAY]: {
-    eventType: string;
-    fromTimestamp: number;
-    toTimestamp: number;
-  };
-  [ExtensionPointNames.EVENT_AFTER_REPLAY]: {
-    eventType: string;
-    eventCount: number;
-    fromTimestamp: number;
-    toTimestamp: number;
-  };
-};
+  // Add string index signature to allow using arbitrary string keys
+  [key: string]: unknown;
+}
 
 /**
  * Type-safe extension point with parameters and context
@@ -174,7 +132,7 @@ export type ExtensionPoint<
   S = unknown
 > = {
   name: N;
-  params: ExtensionPointParameters[N];
+  params: N extends keyof ExtensionPointParameters ? ExtensionPointParameters[N] : unknown;
   context: ExtensionContext<S>;
 };
 
@@ -185,9 +143,9 @@ export type ExtensionHook<
   N extends ExtensionPointName,
   S = unknown
 > = (
-  params: ExtensionPointParameters[N],
+  params: N extends keyof ExtensionPointParameters ? ExtensionPointParameters[N] : unknown,
   context: ExtensionContext<S>
-) => Promise<Result<ExtensionPointParameters[N]>>;
+) => Promise<Result<N extends keyof ExtensionPointParameters ? ExtensionPointParameters[N] : unknown>>;
 
 /**
  * Type-safe extension hook registration
@@ -233,51 +191,54 @@ export interface Extension {
 }
 
 /**
- * Extension system for managing extensions and hooks
+ * Extension system interface
  */
 export interface ExtensionSystem {
   /**
-   * Register an extension
-   * @param extension The extension to register
+   * Register an extension point
    */
-  registerExtension(extension: Extension): Result<void>;
+  registerExtensionPoint(name: string): void;
+  
+  /**
+   * Execute an extension point
+   */
+  executeExtensionPoint<T, R>(
+    name: ExtensionPointName,
+    params: T
+  ): Promise<Result<R>>;
+  
+  /**
+   * Register an extension
+   */
+  registerExtension(
+    extension: Extension
+  ): Result<void>;
   
   /**
    * Unregister an extension
-   * @param extensionId The ID of the extension to unregister
    */
   unregisterExtension(extensionId: string): Result<void>;
   
   /**
+   * Get all registered extension points
+   */
+  getExtensionPoints(): ExtensionPointName[];
+  
+  /**
    * Get all registered extensions
    */
-  getExtensions(): Extension[];
+  getExtensions(): string[];
   
   /**
-   * Execute a specific extension point
-   * @param pointName The name of the extension point
-   * @param params The parameters for the extension point
+   * Get all handlers for a specific extension point
    */
-  executeExtensionPoint<N extends ExtensionPointName>(
-    pointName: N,
-    params: ExtensionPointParameters[N]
-  ): Promise<Result<ExtensionPointParameters[N]>>;
-  
-  /**
-   * Get extension by ID
-   * @param extensionId The ID of the extension to retrieve
-   */
-  getExtension(extensionId: string): Extension | undefined;
-  
-  /**
-   * Check if an extension is registered
-   * @param extensionId The ID of the extension to check
-   */
-  hasExtension(extensionId: string): boolean;
+  getExtensionHandlers(
+    extensionPointName: ExtensionPointName
+  ): { extensionId: string; handler: Function }[];
 }
 
 /**
- * Type-safe hook registration helper
+ * Helper function to create a hook registration
  */
 export function createHookRegistration<N extends ExtensionPointName, S = unknown>(
   pointName: N,
@@ -289,116 +250,4 @@ export function createHookRegistration<N extends ExtensionPointName, S = unknown
     hook,
     priority
   };
-}
-
-/**
- * Concrete implementation of the extension system
- */
-export class ExtensionSystemImpl implements ExtensionSystem {
-  private extensions = new Map<string, Extension>();
-  private hooks = new Map<ExtensionPointName, Array<ExtensionHookRegistration<ExtensionPointName, unknown>>>();
-
-  registerExtension(extension: Extension): Result<void> {
-    try {
-      if (this.extensions.has(extension.id)) {
-        return {
-          success: false,
-          error: new Error(`Extension ${extension.id} is already registered`)
-        };
-      }
-
-      // Register the extension
-      this.extensions.set(extension.id, extension);
-
-      // Register all hooks from the extension
-      const extensionHooks = extension.getHooks();
-      for (const hook of extensionHooks) {
-        const hooks = this.hooks.get(hook.pointName) || [];
-        hooks.push(hook);
-        this.hooks.set(hook.pointName, hooks);
-      }
-
-      return { success: true, value: undefined };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error : new Error(String(error))
-      };
-    }
-  }
-
-  unregisterExtension(extensionId: string): Result<void> {
-    try {
-      const extension = this.extensions.get(extensionId);
-      if (!extension) {
-        return {
-          success: false,
-          error: new Error(`Extension ${extensionId} not found`)
-        };
-      }
-
-      // Remove all hooks from this extension
-      const extensionHooks = extension.getHooks();
-      for (const hook of extensionHooks) {
-        const hooks = this.hooks.get(hook.pointName) || [];
-        const filteredHooks = hooks.filter(h => h.hook !== hook.hook);
-        this.hooks.set(hook.pointName, filteredHooks);
-      }
-
-      // Remove the extension
-      this.extensions.delete(extensionId);
-
-      return { success: true, value: undefined };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error : new Error(String(error))
-      };
-    }
-  }
-
-  getExtensions(): Extension[] {
-    return Array.from(this.extensions.values());
-  }
-
-  async executeExtensionPoint<N extends ExtensionPointName>(
-    pointName: N,
-    params: ExtensionPointParameters[N]
-  ): Promise<Result<ExtensionPointParameters[N]>> {
-    try {
-      // Get all hooks for this extension point
-      const hooks = this.hooks.get(pointName) || [];
-      
-      // Sort hooks by priority (higher priority first)
-      const sortedHooks = [...hooks].sort((a, b) => (b.priority || 0) - (a.priority || 0));
-      
-      // Execute hooks in sequence
-      let currentParams = params;
-      for (const { hook } of sortedHooks) {
-        // First cast to unknown, then to the specific hook type
-        const typedHook = (hook as unknown) as ExtensionHook<N, unknown>;
-        const result = await typedHook(currentParams, { state: {} });
-        if (!result.success) {
-          return result;
-        }
-        // The result value should match the input type for this extension point
-        currentParams = result.value as ExtensionPointParameters[N];
-      }
-
-      return { success: true, value: currentParams };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error : new Error(String(error))
-      };
-    }
-  }
-
-  getExtension(extensionId: string): Extension | undefined {
-    return this.extensions.get(extensionId);
-  }
-
-  hasExtension(extensionId: string): boolean {
-    return this.extensions.has(extensionId);
-  }
 } 

@@ -19,8 +19,8 @@ describe('SimpleTaskScheduler', () => {
     // Create the task scheduler with the mock executor
     taskScheduler = new SimpleTaskScheduler(mockTaskExecutor);
     
-    // Mock timers
-    vi.useFakeTimers();
+    // Mock timers with shouldAdvanceTime to handle setTimeout correctly
+    vi.useFakeTimers({ shouldAdvanceTime: true });
   });
   
   afterEach(() => {
@@ -40,31 +40,44 @@ describe('SimpleTaskScheduler', () => {
     });
     
     it('should execute a task at the scheduled time', async () => {
+      // Create a promise that will resolve when the task executor is called
+      let taskExecuted = false;
+      (mockTaskExecutor.executeTask as any).mockImplementationOnce(async () => {
+        taskExecuted = true;
+        return { success: true, value: { id: 'task-1', status: 'completed' } };
+      });
+      
       const scheduledTime = Date.now() + 1000;
       const result = await taskScheduler.scheduleTask('test-task', { data: 'test' }, scheduledTime);
       
       expect(result.success).toBe(true);
       
-      // Advance time
-      vi.advanceTimersByTime(1100);
+      // Advance time asynchronously to allow the timeout to trigger
+      await vi.advanceTimersByTimeAsync(1100);
       
-      // Give async operations a chance to complete
-      await new Promise(resolve => setTimeout(resolve, 0));
-      
-      // Check if task executor was called
+      // Task executor should have been called by now
+      expect(taskExecuted).toBe(true);
       expect(mockTaskExecutor.executeTask).toHaveBeenCalledWith('test-task', { data: 'test' });
     });
     
     it('should handle scheduling a task in the past', async () => {
+      // Create a promise that will resolve when the task executor is called
+      let taskExecuted = false;
+      (mockTaskExecutor.executeTask as any).mockImplementationOnce(async () => {
+        taskExecuted = true;
+        return { success: true, value: { id: 'task-1', status: 'completed' } };
+      });
+      
       const pastTime = Date.now() - 1000;
       const result = await taskScheduler.scheduleTask('test-task', { data: 'test' }, pastTime);
       
       expect(result.success).toBe(true);
       
-      // Give async operations a chance to complete
-      await new Promise(resolve => setTimeout(resolve, 0));
+      // Allow the task to execute (should be immediate for past tasks)
+      await vi.runOnlyPendingTimersAsync();
       
       // Task should execute immediately
+      expect(taskExecuted).toBe(true);
       expect(mockTaskExecutor.executeTask).toHaveBeenCalledWith('test-task', { data: 'test' });
     });
   });
@@ -87,10 +100,7 @@ describe('SimpleTaskScheduler', () => {
       }
       
       // Advance time past when the task would have executed
-      vi.advanceTimersByTime(1100);
-      
-      // Give async operations a chance to complete
-      await new Promise(resolve => setTimeout(resolve, 0));
+      await vi.advanceTimersByTimeAsync(1100);
       
       // Task executor should not have been called
       expect(mockTaskExecutor.executeTask).not.toHaveBeenCalled();
@@ -108,6 +118,13 @@ describe('SimpleTaskScheduler', () => {
   
   describe('Rescheduling Tasks', () => {
     it('should reschedule a task to a new time', async () => {
+      // Create a promise that will resolve when the task executor is called
+      let taskExecuted = false;
+      (mockTaskExecutor.executeTask as any).mockImplementationOnce(async () => {
+        taskExecuted = true;
+        return { success: true, value: { id: 'task-1', status: 'completed' } };
+      });
+      
       // Schedule a task
       const initialScheduledTime = Date.now() + 1000;
       const scheduleResult = await taskScheduler.scheduleTask('test-task', { data: 'test' }, initialScheduledTime);
@@ -125,21 +142,17 @@ describe('SimpleTaskScheduler', () => {
       }
       
       // Advance time past the initial scheduled time but before the new time
-      vi.advanceTimersByTime(1500);
-      
-      // Give async operations a chance to complete
-      await new Promise(resolve => setTimeout(resolve, 0));
+      await vi.advanceTimersByTimeAsync(1500);
       
       // Task should not have executed yet
+      expect(taskExecuted).toBe(false);
       expect(mockTaskExecutor.executeTask).not.toHaveBeenCalled();
       
       // Advance time to after the new scheduled time
-      vi.advanceTimersByTime(1000);
-      
-      // Give async operations a chance to complete
-      await new Promise(resolve => setTimeout(resolve, 0));
+      await vi.advanceTimersByTimeAsync(1000);
       
       // Task should have executed
+      expect(taskExecuted).toBe(true);
       expect(mockTaskExecutor.executeTask).toHaveBeenCalledWith('test-task', { data: 'test' });
     });
     
@@ -164,18 +177,23 @@ describe('SimpleTaskScheduler', () => {
     });
     
     it('should handle errors in task execution', async () => {
+      // Set up error handling mock
+      let errorHandled = false;
+      (mockTaskExecutor.executeTask as any).mockRejectedValueOnce(new Error('Task execution failed'));
+      (console.error as any).mockImplementationOnce(() => {
+        errorHandled = true;
+      });
+      
       const scheduledTime = Date.now() + 500;
       const result = await taskScheduler.scheduleTask('failing-task', { data: 'test' }, scheduledTime);
       
       expect(result.success).toBe(true);
       
       // Advance time
-      vi.advanceTimersByTime(600);
-      
-      // Give async operations a chance to complete
-      await new Promise(resolve => setTimeout(resolve, 0));
+      await vi.advanceTimersByTimeAsync(600);
       
       // Error should be caught and logged
+      expect(errorHandled).toBe(true);
       expect(console.error).toHaveBeenCalled();
     });
   });

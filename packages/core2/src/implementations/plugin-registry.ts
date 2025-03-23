@@ -9,12 +9,22 @@ import {
   PluginRegistry, 
   PluginState 
 } from '../models/plugin-system';
+import { ExtensionSystem } from '../models/extension-system';
 
 /**
- * Simple in-memory implementation of the PluginRegistry
+ * In-memory implementation of PluginRegistry
  */
-export class SimplePluginRegistry implements PluginRegistry {
+export class InMemoryPluginRegistry implements PluginRegistry {
   private plugins = new Map<string, Plugin<PluginState>>();
+  private extensionSystem?: ExtensionSystem;
+
+  /**
+   * Set the extension system instance
+   * @param extensionSystem The extension system to use
+   */
+  public setExtensionSystem(extensionSystem: ExtensionSystem): void {
+    this.extensionSystem = extensionSystem;
+  }
 
   /**
    * Register a plugin definition
@@ -25,7 +35,7 @@ export class SimplePluginRegistry implements PluginRegistry {
       if (!plugin.getState().id) {
         return {
           success: false,
-          error: new DomainError('Plugin must have an ID', { plugin })
+          error: new DomainError('Plugin must have an ID')
         };
       }
 
@@ -33,11 +43,23 @@ export class SimplePluginRegistry implements PluginRegistry {
       if (this.plugins.has(pluginId)) {
         return {
           success: false,
-          error: new DomainError(`Plugin with ID ${pluginId} already registered`, { pluginId })
+          error: new DomainError(`Plugin with ID ${pluginId} already registered`)
         };
       }
 
+      // Register the plugin
       this.plugins.set(pluginId, plugin);
+      
+      // Register with extension system if available
+      if (this.extensionSystem) {
+        const extensionResult = this.extensionSystem.registerExtension(plugin);
+        if (!extensionResult.success) {
+          // If extension registration fails, unregister the plugin
+          this.plugins.delete(pluginId);
+          return extensionResult;
+        }
+      }
+
       return { success: true, value: undefined };
     } catch (error) {
       return {
@@ -58,8 +80,16 @@ export class SimplePluginRegistry implements PluginRegistry {
       if (!this.plugins.has(pluginId)) {
         return {
           success: false,
-          error: new DomainError(`Plugin with ID ${pluginId} not found`, { pluginId })
+          error: new DomainError(`Plugin with ID ${pluginId} not found`)
         };
+      }
+
+      // Unregister from extension system if available
+      if (this.extensionSystem) {
+        const extensionResult = this.extensionSystem.unregisterExtension(pluginId);
+        if (!extensionResult.success) {
+          return extensionResult;
+        }
       }
 
       this.plugins.delete(pluginId);
@@ -85,7 +115,7 @@ export class SimplePluginRegistry implements PluginRegistry {
       if (!plugin) {
         return {
           success: false,
-          error: new DomainError(`Plugin with ID ${pluginId} not found`, { pluginId })
+          error: new DomainError(`Plugin with ID ${pluginId} not found`)
         };
       }
 
@@ -140,5 +170,5 @@ export class SimplePluginRegistry implements PluginRegistry {
  * Factory function to create a new PluginRegistry
  */
 export function createPluginRegistry(): PluginRegistry {
-  return new SimplePluginRegistry();
+  return new InMemoryPluginRegistry();
 } 

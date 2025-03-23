@@ -5,7 +5,7 @@ import { DomainEvent, Result } from '../src/models/core-types';
 import { InMemoryExtensionSystem } from '../src/implementations/extension-system';
 import { ExtensionEventBus } from '../src/implementations/event-bus';
 import { InMemoryEventStorage } from '../src/implementations/event-storage-impl';
-import { createEventSource } from '../src/implementations/event-source';
+import { createEventSource, InMemoryEventSource } from '../src/implementations/event-source';
 import { EventSource } from '../src/models/event-system';
 
 describe('Event Persistence and Correlation', () => {
@@ -16,19 +16,26 @@ describe('Event Persistence and Correlation', () => {
   let eventSource: EventSource;
 
   beforeEach(() => {
+    // Create all components in the correct order with proper dependencies
     extensionSystem = new InMemoryExtensionSystem();
     eventBus = new ExtensionEventBus(extensionSystem);
     storage = new InMemoryEventStorage();
     eventSource = createEventSource(storage, eventBus);
     
-    runtime = createModernRuntime({
-      persistEvents: true,
-      extensions: {
-        processManagement: true,
-        taskManagement: true,
-        pluginManagement: true
-      }
-    });
+    // Create runtime with persistence enabled
+    try {
+      runtime = createModernRuntime({
+        persistEvents: true,
+        extensions: {
+          processManagement: true,
+          taskManagement: true,
+          pluginManagement: true
+        }
+      });
+    } catch (error) {
+      console.error('Error creating runtime:', error);
+      throw error;
+    }
   });
 
   describe('Event Persistence', () => {
@@ -181,7 +188,19 @@ describe('Event Persistence and Correlation', () => {
       const result = await eventSource.replayEvents('test-event', now - 500, now + 500);
       expect(result.success).toBe(true);
       expect(handler).toHaveBeenCalledTimes(1);
-      expect(handler).toHaveBeenCalledWith(events[1]); // Only the 'present' event
+      
+      // Expect replayed event to match original event ID, type, and payload
+      // but may have additional metadata
+      const calledEvent = handler.mock.calls[0][0];
+      expect(calledEvent.id).toBe(events[1].id);
+      expect(calledEvent.type).toBe(events[1].type);
+      expect(calledEvent.payload).toBe(events[1].payload);
+      expect(calledEvent.timestamp).toBe(events[1].timestamp);
+      
+      // Verify metadata contains replayed flag
+      expect(calledEvent.metadata).toBeDefined();
+      expect(calledEvent.metadata.replayed).toBe(true);
+      expect(calledEvent.metadata.replayTimestamp).toBeGreaterThan(0);
     });
   });
 }); 

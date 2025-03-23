@@ -1,4 +1,5 @@
-import { EventBus } from './event';
+import { EventBus } from './event-system';
+import { DomainEvent } from './core-types';
 
 export interface StreamSubscription<T> {
   unsubscribe(): void;
@@ -29,13 +30,25 @@ export function createStream<T>(eventType: string, eventBus: EventBus): Stream<T
 
 class StreamImpl<T> implements Stream<T> {
   private subscribers: Set<StreamObserver<T>> = new Set();
-  private operators: ((value: any) => any)[] = [];
+  private operators: Array<(value: unknown) => Promise<unknown>> = [];
   private isCompleted = false;
 
   constructor(private eventType: string, private eventBus: EventBus) {
-    this.eventBus.subscribe(eventType, (event: any) => {
-      this.handleEvent(event.payload);
+    this.eventBus.subscribe(eventType, async (payload: unknown) => {
+      // Extract payload from DomainEvent object if needed
+      const eventData = this.isDomainEvent(payload) ? payload.payload : payload;
+      await this.handleEvent(eventData as T);
+      return;
     });
+  }
+
+  // Type guard to check if an object is a DomainEvent
+  private isDomainEvent(obj: unknown): obj is DomainEvent<unknown> {
+    return obj !== null && 
+      typeof obj === 'object' && 
+      'type' in obj && 
+      'payload' in obj &&
+      'timestamp' in obj;
   }
 
   subscribe(observer: StreamObserver<T> | ((value: T) => void)): StreamSubscription<T> {
@@ -54,13 +67,13 @@ class StreamImpl<T> implements Stream<T> {
 
   map<R>(fn: (value: T) => R | Promise<R>): Stream<R> {
     const newStream = new StreamImpl<R>(this.eventType, this.eventBus);
-    newStream.operators = [...this.operators, async (value: any) => await fn(value as T)];
+    newStream.operators = [...this.operators, async (value: unknown) => await fn(value as T)];
     return newStream;
   }
 
   filter(predicate: (value: T) => boolean | Promise<boolean>): Stream<T> {
     const newStream = new StreamImpl<T>(this.eventType, this.eventBus);
-    newStream.operators = [...this.operators, async (value: any) => {
+    newStream.operators = [...this.operators, async (value: unknown) => {
       const shouldKeep = await predicate(value as T);
       return shouldKeep ? value : undefined;
     }];
@@ -102,7 +115,7 @@ class StreamImpl<T> implements Stream<T> {
   take(count: number): Stream<T> {
     let taken = 0;
     const newStream = new StreamImpl<T>(this.eventType, this.eventBus);
-    newStream.operators = [...this.operators, (value: any) => {
+    newStream.operators = [...this.operators, async (value: unknown) => {
       if (taken >= count) {
         this.complete();
         return undefined;
@@ -116,7 +129,7 @@ class StreamImpl<T> implements Stream<T> {
   skip(count: number): Stream<T> {
     let skipped = 0;
     const newStream = new StreamImpl<T>(this.eventType, this.eventBus);
-    newStream.operators = [...this.operators, (value: any) => {
+    newStream.operators = [...this.operators, async (value: unknown) => {
       if (skipped < count) {
         skipped++;
         return undefined;
@@ -127,13 +140,15 @@ class StreamImpl<T> implements Stream<T> {
   }
 
   distinct(): Stream<T> {
-    const seen = new Set<T>();
+    const seen = new Set<unknown>();
     const newStream = new StreamImpl<T>(this.eventType, this.eventBus);
-    newStream.operators = [...this.operators, (value: any) => {
-      if (seen.has(value as T)) {
+    newStream.operators = [...this.operators, async (value: unknown) => {
+      // We need to use JSON.stringify for complex objects to ensure proper comparison
+      const serialized = JSON.stringify(value);
+      if (seen.has(serialized)) {
         return undefined;
       }
-      seen.add(value as T);
+      seen.add(serialized);
       return value;
     }];
     return newStream;
@@ -142,9 +157,9 @@ class StreamImpl<T> implements Stream<T> {
   debounce(ms: number): Stream<T> {
     let timeout: NodeJS.Timeout;
     const newStream = new StreamImpl<T>(this.eventType, this.eventBus);
-    newStream.operators = [...this.operators, (value: any) => {
-      clearTimeout(timeout);
-      return new Promise(resolve => {
+    newStream.operators = [...this.operators, async (value: unknown) => {
+      return new Promise<unknown>(resolve => {
+        clearTimeout(timeout);
         timeout = setTimeout(() => resolve(value), ms);
       });
     }];
@@ -154,7 +169,7 @@ class StreamImpl<T> implements Stream<T> {
   throttle(ms: number): Stream<T> {
     let lastEmit = 0;
     const newStream = new StreamImpl<T>(this.eventType, this.eventBus);
-    newStream.operators = [...this.operators, (value: any) => {
+    newStream.operators = [...this.operators, async (value: unknown) => {
       const now = Date.now();
       if (now - lastEmit < ms) {
         return undefined;
@@ -169,7 +184,7 @@ class StreamImpl<T> implements Stream<T> {
     if (this.isCompleted) return;
 
     try {
-      let processedValue = value;
+      let processedValue: unknown = value;
       
       // Apply operators
       for (const operator of this.operators) {
@@ -183,10 +198,11 @@ class StreamImpl<T> implements Stream<T> {
         }
       }
 
-      // Notify subscribers
+      // Notify subscribers with the properly typed value
       for (const subscriber of this.subscribers) {
         if (subscriber.next) {
-          await subscriber.next(processedValue);
+          // Safe to cast back to T as that's the contract of our operators
+          await subscriber.next(processedValue as T);
         }
       }
     } catch (error) {

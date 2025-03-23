@@ -1,9 +1,9 @@
-import { Identifier, Result, Timestamp } from './core-types';
-import { EventBus, EventStorage, EventSource } from './event-system';
+import { DomainEvent, Identifier, Result, Timestamp, DomainError, Metadata } from './core-types';
+import { EventBus, EventStorage, EventSource, EventHandler, Subscription } from './event-system';
 import { ExtensionSystem } from './extension-system';
 import { PluginRegistry } from './plugin-system';
-import { ProcessManager, ProcessRegistry } from './process-system';
 import { TaskExecutor, TaskRegistry, TaskScheduler } from './task-system';
+import { ProcessRegistry, ProcessManager, ProcessInstance, ProcessDefinition } from './process-system';
 
 /**
  * Runtime configuration options
@@ -125,98 +125,123 @@ export interface RuntimeMetrics {
 }
 
 /**
- * Core runtime interface that composes all domain components
+ * Runtime interface for process and task management
  */
 export interface Runtime {
-  /** Unique runtime identifier */
-  readonly id: Identifier;
-  
-  /** Runtime version */
-  readonly version: string;
-  
-  /** Runtime namespace */
-  readonly namespace: string;
-  
-  /** Event bus for pub/sub communication */
-  readonly eventBus: EventBus;
-  
-  /** Extension system for plugins */
-  readonly extensionSystem: ExtensionSystem;
-  
-  /** Plugin registry for managing plugins */
-  readonly pluginRegistry: PluginRegistry;
-  
-  /** Task registry for managing task definitions */
-  readonly taskRegistry: TaskRegistry;
-  
-  /** Task executor for running tasks */
-  readonly taskExecutor: TaskExecutor;
-  
-  /** Task scheduler for deferred execution */
-  readonly taskScheduler: TaskScheduler;
-  
-  /** Process registry for managing process definitions */
-  readonly processRegistry: ProcessRegistry;
-  
-  /** Process manager for process instances */
-  readonly processManager: ProcessManager;
-  
-  /** Event storage for persistence */
-  readonly eventStorage?: EventStorage;
-  
-  /** Event source for replay */
-  readonly eventSource?: EventSource;
+  /**
+   * Create a new process instance
+   * @param processType The process type
+   * @param data The process data
+   */
+  createProcess<TData = Record<string, unknown>, TState extends string = string>(
+    processType: string, 
+    data: TData
+  ): Promise<ProcessInstance<TState, TData>>;
   
   /**
-   * Initialize the runtime
-   * @param options Runtime configuration options
+   * Transition a process instance to a new state
+   * @param processId The process ID
+   * @param eventType The event type that triggers the transition
+   * @param payload Additional payload for the transition
    */
-  initialize(options: RuntimeOptions): Promise<Result<void>>;
+  transitionProcess<TData = Record<string, unknown>, TState extends string = string>(
+    processId: Identifier,
+    eventType: string,
+    payload?: Record<string, unknown>
+  ): Promise<ProcessInstance<TState, TData>>;
   
   /**
-   * Start the runtime
+   * Execute a task
+   * @param taskType The task type
+   * @param input The task input
    */
-  start(): Promise<Result<void>>;
+  executeTask<TInput = Record<string, unknown>, TOutput = unknown>(
+    taskType: string, 
+    input: TInput
+  ): Promise<any>;
   
-  /**
-   * Stop the runtime
-   */
-  stop(): Promise<Result<void>>;
-  
-  /**
-   * Reset the runtime state
-   */
-  reset(): Promise<Result<void>>;
-  
-  /**
-   * Get runtime health status
-   */
-  getHealth(): Promise<Result<SystemHealth>>;
-  
-  /**
-   * Get runtime metrics
-   */
-  getMetrics(): Promise<Result<RuntimeMetrics>>;
-  
-  /**
-   * Run a health check on all components
-   */
-  checkHealth(): Promise<Result<void>>;
-
-  /**
-   * Execute a task with the given type and input
-   * @param taskType The type of task to execute
-   * @param input The input data for the task
-   * @returns A promise that resolves with the task execution result
-   */
-  executeTask(taskType: string, input: any): Promise<Result<any>>;
-
   /**
    * Execute a task with dependencies
-   * @param taskType The type of task to execute
-   * @param input The input data for the task
-   * @param dependencies Array of task IDs that this task depends on
-   * @returns A promise that resolves with the task execution result
+   * @param taskType The task type
+   * @param input The task input
+   * @param dependencies The task dependencies
    */
-  executeTaskWithDependencies(taskType: string, input: any, dependencies: Identifier[]): Promise<Result<any>>;
-} 
+  executeTaskWithDependencies<TInput = Record<string, unknown>, TOutput = unknown>(
+    taskType: string, 
+    input: TInput, 
+    dependencies: string[]
+  ): Promise<any>;
+  
+  /**
+   * Subscribe to events
+   * @param eventType The event type
+   * @param handler The event handler
+   */
+  subscribe<T = unknown>(
+    eventType: string, 
+    handler: EventHandler<T>
+  ): Subscription;
+  
+  /**
+   * Publish an event
+   * @param eventType The event type
+   * @param payload The event payload
+   */
+  publish<T = unknown>(
+    eventType: string, 
+    payload: T
+  ): void;
+  
+  /**
+   * Persist an event
+   * @param event The event to persist
+   */
+  persistEvent<T = unknown>(
+    event: DomainEvent<T>
+  ): Promise<void>;
+  
+  /**
+   * Replay events from a time range
+   * @param startTime The start time
+   * @param endTime The end time
+   * @param eventTypes Optional event types to filter
+   */
+  replayEvents(
+    startTime: number, 
+    endTime: number, 
+    eventTypes?: string[]
+  ): Promise<void>;
+  
+  /**
+   * Correlate events by correlation ID
+   * @param correlationId The correlation ID
+   */
+  correlateEvents(
+    correlationId: string
+  ): Promise<DomainEvent<unknown>[]>;
+  
+  /**
+   * Get process metrics
+   */
+  getProcessMetrics(): Promise<any[]>;
+  
+  /**
+   * Get task metrics
+   */
+  getTaskMetrics(): Promise<any[]>;
+  
+  /**
+   * Get event metrics
+   */
+  getEventMetrics(): Promise<any[]>;
+  
+  /**
+   * Get health status
+   */
+  getHealthStatus(): Promise<{ status: string; details: Record<string, any> }>;
+}
+
+/**
+ * Re-export EventHandler and Subscription from event-system
+ */
+export { EventHandler, Subscription }; 

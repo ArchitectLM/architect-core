@@ -14,7 +14,7 @@ import { createTransactionPluginInstance } from '../../src/factories';
 import { BackoffStrategy } from '../../src/plugins/retry';
 import { InMemoryExtensionSystem } from '../../src/implementations/extension-system';
 import { InMemoryEventBus } from '../../src/implementations/event-bus';
-import { createModernRuntime } from '../../src/runtime';
+import { createModernRuntime } from '../../src/implementations/modern-factory';
 
 describe('Rate Limiting Plugin', () => {
   let runtime: ReactiveRuntime;

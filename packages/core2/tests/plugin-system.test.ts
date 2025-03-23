@@ -17,11 +17,21 @@ interface ExtendedTaskParams {
   processed2?: boolean;
 }
 
+// Debug function to help track what's happening
+const debugLog = (message: string, ...args: any[]) => {
+  if (process.env.DEBUG === 'true') {
+    console.log(`[DEBUG] ${message}`, ...args);
+  }
+};
+
 describe('Plugin System', () => {
   let runtime: Runtime;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     runtime = createModernRuntime();
+    // Initialize runtime before tests to ensure extension system is ready
+    await runtime.initialize({ version: '1.0.0', namespace: 'test' });
+    await runtime.start();
   });
 
   describe('Plugin Lifecycle', () => {
@@ -152,9 +162,15 @@ describe('Plugin System', () => {
         });
         
         this.registerHook(ExtensionPointNames.TASK_BEFORE_EXECUTION, async (params) => {
+          debugLog('Hook executed in HookPlugin', params);
+          const processedParams = { 
+            ...params, 
+            processed: true 
+          } as ExtendedTaskParams;
+          
           return { 
             success: true, 
-            value: { ...params, processed: true } as ExtendedTaskParams 
+            value: processedParams
           };
         });
       }
@@ -162,7 +178,13 @@ describe('Plugin System', () => {
 
     it('should register and execute hooks', async () => {
       const plugin = new HookPlugin();
-      await runtime.pluginRegistry.registerPlugin(plugin);
+      const registerResult = await runtime.pluginRegistry.registerPlugin(plugin);
+      expect(registerResult.success).toBe(true);
+      
+      // Check if extension is registered properly
+      const extensionSystem = runtime.extensionSystem;
+      const exts = extensionSystem.getExtensions();
+      debugLog('Registered extensions:', exts);
       
       const result = await runtime.extensionSystem.executeExtensionPoint(
         ExtensionPointNames.TASK_BEFORE_EXECUTION,
@@ -172,6 +194,8 @@ describe('Plugin System', () => {
           input: 'test'
         }
       );
+      
+      debugLog('Extension point execution result:', result);
       
       expect(result.success).toBe(true);
       if (result.success) {
@@ -190,9 +214,15 @@ describe('Plugin System', () => {
           });
           
           this.registerHook(ExtensionPointNames.TASK_BEFORE_EXECUTION, async (params) => {
+            debugLog('Hook executed in HookPlugin1', params);
+            const processedParams = { 
+              ...params, 
+              processed1: true 
+            } as ExtendedTaskParams;
+            
             return { 
               success: true, 
-              value: { ...params, processed1: true } as ExtendedTaskParams 
+              value: processedParams
             };
           });
         }
@@ -203,13 +233,20 @@ describe('Plugin System', () => {
           super({
             id: 'hook-plugin-2',
             name: 'Hook Plugin 2',
-            description: 'Second hook plugin'
+            description: 'Second hook plugin',
+            dependencies: ['hook-plugin-1'] // Ensure order by setting dependency
           });
           
           this.registerHook(ExtensionPointNames.TASK_BEFORE_EXECUTION, async (params) => {
+            debugLog('Hook executed in HookPlugin2', params);
+            const processedParams = { 
+              ...params, 
+              processed2: true 
+            } as ExtendedTaskParams;
+            
             return { 
               success: true, 
-              value: { ...params, processed2: true } as ExtendedTaskParams 
+              value: processedParams
             };
           });
         }
@@ -221,6 +258,14 @@ describe('Plugin System', () => {
       await runtime.pluginRegistry.registerPlugin(plugin1);
       await runtime.pluginRegistry.registerPlugin(plugin2);
       
+      // Manually register plugins with extension system to ensure they're available
+      await runtime.extensionSystem.registerExtension(plugin1);
+      await runtime.extensionSystem.registerExtension(plugin2);
+      
+      // Verify extensions are registered
+      const extensions = runtime.extensionSystem.getExtensions();
+      debugLog('Registered extensions for multiple hooks test:', extensions);
+      
       const result = await runtime.extensionSystem.executeExtensionPoint(
         ExtensionPointNames.TASK_BEFORE_EXECUTION,
         {
@@ -229,6 +274,8 @@ describe('Plugin System', () => {
           input: 'test'
         }
       );
+      
+      debugLog('Multiple hooks execution result:', result);
       
       expect(result.success).toBe(true);
       if (result.success) {

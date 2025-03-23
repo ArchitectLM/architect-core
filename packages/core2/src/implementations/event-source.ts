@@ -24,21 +24,23 @@ export class InMemoryEventSource implements EventSource {
    * @param startTime Start of the time range
    * @param endTime End of the time range
    */
-  public async replayEvents<T>(
+  public async replayEvents(
     eventType: string,
     startTime?: number,
     endTime?: number
   ): Promise<Result<void>> {
     try {
       // Get events from storage
-      const eventsResult = await this.eventStorage.getEventsByType<T>(
+      const eventsResult = await this.eventStorage.getEventsByType(
         eventType,
         startTime,
         endTime
       );
       
-      if (!eventsResult.success) {
-        return eventsResult;
+      if (!eventsResult.success || !eventsResult.value) {
+        return eventsResult.success 
+          ? { success: false, error: new Error('No events found or empty result value') }
+          : { success: false, error: eventsResult.error };
       }
       
       // Sort by timestamp to maintain order
@@ -61,12 +63,17 @@ export class InMemoryEventSource implements EventSource {
       
       return { success: true, value: undefined };
     } catch (error) {
-      return { 
-        success: false, 
-        error: error instanceof Error 
-          ? error 
-          : new Error(`Failed to replay events: ${String(error)}`) 
-      };
+      if (error instanceof Error) {
+        return { success: false, error };
+      } else {
+        const newError = new Error(`Failed to replay events: ${String(error)}`);
+        // Store the original error using a more type-safe approach
+        Object.defineProperty(newError, 'cause', { value: error });
+        return { 
+          success: false, 
+          error: newError
+        };
+      }
     }
   }
   
@@ -74,15 +81,17 @@ export class InMemoryEventSource implements EventSource {
    * Replay events by correlation ID
    * @param correlationId The correlation ID to replay events for
    */
-  public async replayByCorrelationId<T>(
+  public async replayCorrelatedEvents(
     correlationId: string
   ): Promise<Result<void>> {
     try {
       // Get events by correlation ID
-      const eventsResult = await this.eventStorage.getEventsByCorrelationId<T>(correlationId);
+      const eventsResult = await this.eventStorage.getEventsByCorrelationId(correlationId);
       
-      if (!eventsResult.success) {
-        return eventsResult;
+      if (!eventsResult.success || !eventsResult.value) {
+        return eventsResult.success 
+          ? { success: false, error: new Error('No events found or empty result value') }
+          : { success: false, error: eventsResult.error };
       }
       
       // Sort by timestamp to maintain order
@@ -105,13 +114,31 @@ export class InMemoryEventSource implements EventSource {
       
       return { success: true, value: undefined };
     } catch (error) {
-      return { 
-        success: false, 
-        error: error instanceof Error 
-          ? error 
-          : new Error(`Failed to replay events by correlation ID: ${String(error)}`) 
-      };
+      if (error instanceof Error) {
+        return { success: false, error };
+      } else {
+        const newError = new Error(`Failed to replay events by correlation ID: ${String(error)}`);
+        // Store the original error using a more type-safe approach
+        Object.defineProperty(newError, 'cause', { value: error });
+        return { 
+          success: false, 
+          error: newError
+        };
+      }
     }
+  }
+
+  /**
+   * Helper method to replay all events within a time range
+   * This is an extension beyond the required interface
+   * @param startTime Start of the time range
+   * @param endTime End of the time range
+   */
+  public async replayAllEvents(
+    startTime?: number,
+    endTime?: number
+  ): Promise<Result<void>> {
+    return this.replayEvents('*', startTime, endTime);
   }
 }
 

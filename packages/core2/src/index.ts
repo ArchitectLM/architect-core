@@ -1,13 +1,14 @@
-// Only export the specific types and implementations needed
+// Only export the specific types and models needed
 
-// Core types
+// Core types and models
 export {
   Identifier,
   Timestamp,
   Metadata,
   Result,
   State,
-  DomainError
+  DomainError,
+  DomainEvent
 } from './models/core-types';
 
 // Event system
@@ -20,7 +21,11 @@ export {
   EventSubscriber,
   EventBus,
   EventStorage,
-  EventSource
+  EventSource,
+  EventFactory,
+  EventHandlerRegistry,
+  EventReplayManager,
+  EventMetricsCollector
 } from './models/event-system';
 
 // Extension system
@@ -33,8 +38,14 @@ export {
   ExtensionHook,
   ExtensionHookRegistration,
   Extension,
-  ExtensionSystem
+  ExtensionSystem,
+  createHookRegistration
 } from './models/extension-system';
+
+// Backpressure
+export {
+  BackpressureStrategy
+} from './models/backpressure';
 
 // Task system
 export {
@@ -81,24 +92,94 @@ export {
   Runtime
 } from './models/runtime';
 
-// Implementations
-export { InMemoryEventBus } from './implementations/event-bus-impl';
-export { InMemoryEventStorage, createEventStorage } from './implementations/event-storage-impl';
-export { InMemoryExtensionSystem } from './implementations/extension-system';
-export { CancellationTokenImpl } from './implementations/cancellation-token';
-export { RuntimeInstance } from './implementations/runtime';
-export { InMemoryTaskRegistry } from './implementations/task-registry';
-export { InMemoryTaskExecutor } from './implementations/task-executor';
+// Core runtime (consolidated implementations)
+export {
+  CoreRuntimeConfig,
+  createCoreRuntime,
+  createRuntime,
+  RuntimeFactoryOptions
+} from './implementations/factory';
 
-// Factory functions
+// Implementations (event system)
 export { 
-  createEventBusInstance,
-  createExtensionSystemInstance,
-  createTransactionPluginInstance,
-  createTaskPrioritizationPluginInstance,
-  createRetryPluginInstance,
-  createPerformanceMonitoringPluginInstance,
-  createValidationPluginInstance,
-  createWorkflowOptimizationPluginInstance,
-  createRateLimitingPluginInstance
-} from './factories'; 
+  ExtensionEventBusImpl,
+  InMemoryEventBus,
+  createInMemoryEventBus,
+  createEventBus
+} from './implementations/event-bus';
+
+export { 
+  InMemoryEventStorage,
+  createEventStorage 
+} from './implementations/event-storage';
+
+export {
+  InMemoryEventSource,
+  createEventSource
+} from './implementations/event-source';
+
+// Implementations (extension system)
+export { 
+  InMemoryExtensionSystem,
+  createExtensionSystem
+} from './implementations/extension-system';
+
+// Implementations (task system)
+export { 
+  CancellationTokenImpl 
+} from './implementations/cancellation-token';
+
+export { 
+  InMemoryTaskRegistry,
+  createTaskRegistry
+} from './implementations/task-registry';
+
+export { 
+  InMemoryTaskExecutor,
+  createTaskExecutor
+} from './implementations/task-executor';
+
+export {
+  SimpleTaskScheduler,
+  createTaskScheduler
+} from './implementations/task-scheduler';
+
+// Implementations (process system)
+export {
+  SimpleProcessRegistry,
+  createProcessRegistry
+} from './implementations/process-registry';
+
+export {
+  SimpleProcessManager,
+  createProcessManager
+} from './implementations/process-manager';
+
+// Implementations (plugin system)
+export {
+  SimplePluginRegistry,
+  createPluginRegistry
+} from './implementations/plugin-registry';
+
+// Implementations (runtime)
+export { 
+  RuntimeInstance,
+  RuntimeConfig
+} from './implementations/runtime';
+
+// Plugins - direct exports
+export { 
+  createCircuitBreakerPlugin, 
+  CircuitBreakerPlugin, 
+  CircuitBreakerState 
+} from './plugins/circuit-breaker';
+
+export { 
+  TaskPrioritizationPlugin, 
+  TaskPriority,
+  SchedulingPolicy
+} from './plugins/task-prioritization';
+
+export {
+  EventBusExtensionPlugin
+} from './plugins/event-bus-extension-plugin'; 
