@@ -14,7 +14,8 @@ import { createTransactionPluginInstance } from '../../src/factories';
 import { BackoffStrategy } from '../../src/plugins/retry';
 import { InMemoryExtensionSystem } from '../../src/implementations/extension-system';
 import { InMemoryEventBus } from '../../src/implementations/event-bus';
-import { createModernRuntime } from '../../src/implementations/modern-factory';
+import { createRuntime } from '../../src/implementations/factory';
+import { RuntimeInstance } from '../../src/implementations/runtime';
 
 describe('Rate Limiting Plugin', () => {
   let runtime: ReactiveRuntime;
@@ -68,7 +69,7 @@ describe('Rate Limiting Plugin', () => {
     }
   };
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.useFakeTimers();
     
     // Create fresh instances for each test
@@ -96,18 +97,13 @@ describe('Rate Limiting Plugin', () => {
       }
     }, eventBus);
     
-    // Create runtime with all plugins
-    runtime = createModernRuntime({
-      extensions: {
-        processManagement: true,
-        taskManagement: true,
-        pluginManagement: true
-      },
+    // Create a runtime with the rate limiting plugin
+    runtime = createRuntime({
       runtimeOptions: {
         version: '1.0.0',
-        namespace: 'test'
+        namespace: 'test-rate-limiting'
       }
-    });
+    }) as RuntimeInstance;
 
     // Register plugins with the plugin registry
     runtime.pluginRegistry.registerPlugin(processManagementPlugin);

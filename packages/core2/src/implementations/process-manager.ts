@@ -13,6 +13,7 @@ import {
   TaskExecutor
 } from '../models';
 import { DomainError } from '../utils';
+import { ExtensionSystem, ExtensionPointNames, ExtensionPointParameters } from '../models/extension-system';
 
 /**
  * InMemoryProcessRegistry interface for getProcessDefinitionByType
@@ -30,6 +31,7 @@ interface InMemoryProcessRegistry extends ProcessRegistry {
 export class InMemoryProcessManager implements ProcessManager {
   private processRegistry: ProcessRegistry;
   private taskExecutor: TaskExecutor;
+  private extensionSystem?: ExtensionSystem;
   private processes = new Map<Identifier, ProcessInstance<string, unknown>>();
   private checkpoints = new Map<Identifier, ProcessCheckpoint<unknown>>();
   
@@ -37,10 +39,12 @@ export class InMemoryProcessManager implements ProcessManager {
    * Create a new InMemoryProcessManager
    * @param processRegistry Registry of process definitions
    * @param taskExecutor Executor for running tasks
+   * @param extensionSystem Extension system for executing extension points
    */
-  constructor(processRegistry: ProcessRegistry, taskExecutor: TaskExecutor) {
+  constructor(processRegistry: ProcessRegistry, taskExecutor: TaskExecutor, extensionSystem?: ExtensionSystem) {
     this.processRegistry = processRegistry;
     this.taskExecutor = taskExecutor;
+    this.extensionSystem = extensionSystem;
   }
   
   /**
@@ -73,6 +77,25 @@ export class InMemoryProcessManager implements ProcessManager {
           success: false,
           error: new DomainError(`Process definition does not have an initial state`)
         };
+      }
+
+      // Execute the extension point for process creation, if available
+      if (this.extensionSystem) {
+        const extensionResult = await this.extensionSystem.executeExtensionPoint<
+          ExtensionPointParameters[typeof ExtensionPointNames.PROCESS_CREATED],
+          ExtensionPointParameters[typeof ExtensionPointNames.PROCESS_CREATED]
+        >(
+          ExtensionPointNames.PROCESS_CREATED,
+          {
+            processType,
+            data
+          }
+        );
+
+        // If we got a successful result from the extension point, use the modified data
+        if (extensionResult && extensionResult.success && extensionResult.value) {
+          data = extensionResult.value.data as TData;
+        }
       }
       
       // Create the process instance

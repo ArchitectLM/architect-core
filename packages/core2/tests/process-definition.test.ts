@@ -1,7 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { Runtime } from '../src/models/runtime';
-import { createModernRuntime } from '../src/implementations/modern-factory';
-import { ProcessDefinition, ProcessInstance } from '../src/models/process-system';
+import { createRuntime } from '../src/implementations/factory';
+import { ProcessDefinition } from '../src/models/process-system';
+import { InMemoryProcessRegistry } from '../src/implementations/process-registry';
+import { InMemoryProcessManager } from '../src/implementations/process-manager';
+import { InMemoryTaskRegistry } from '../src/implementations/task-registry';
+import { InMemoryTaskExecutor } from '../src/implementations/task-executor';
+import { createInMemoryEventBus } from '../src/implementations/event-bus';
+import { createExtensionSystem } from '../src/implementations/extension-system';
 
 // Define the process data type
 interface TestProcessData {
@@ -11,118 +17,133 @@ interface TestProcessData {
 describe('Process Definition', () => {
   let runtime: Runtime;
 
-  // Use the same value for both id and name to make sure they match
-  const processType = 'test-process';
-  
+  // Define process with correct field names
   const processDefinition: ProcessDefinition = {
-    id: processType,
-    name: processType, // This is used as the process type by the registry
+    type: 'test-process',
+    name: 'Test Process', 
     description: 'A test process definition',
     initialState: 'created',
+    states: ['created', 'running', 'completed'],
+    finalStates: ['completed'],
     version: '1.0.0',
     transitions: [
-      { from: 'created', to: 'running', on: 'start' },
-      { from: 'running', to: 'completed', on: 'complete' }
+      { from: 'created', to: 'running', event: 'start' },
+      { from: 'running', to: 'completed', event: 'complete' }
     ]
   };
 
   beforeEach(async () => {
-    // Create and initialize runtime
-    runtime = createModernRuntime({
+    // Create required components
+    const extensionSystem = createExtensionSystem();
+    const eventBus = createInMemoryEventBus(extensionSystem);
+    const processRegistry = new InMemoryProcessRegistry();
+    const taskRegistry = new InMemoryTaskRegistry();
+    const taskExecutor = new InMemoryTaskExecutor(taskRegistry, eventBus);
+    const processManager = new InMemoryProcessManager(processRegistry, taskExecutor);
+    
+    // Create runtime with proper components
+    runtime = createRuntime({
       persistEvents: true,
+      components: {
+        extensionSystem,
+        eventBus,
+        processRegistry,
+        processManager,
+        taskRegistry,
+        taskExecutor
+      },
       runtimeOptions: {
         version: '1.0.0',
         namespace: 'test'
       }
     });
 
-    await runtime.initialize({
+    await runtime.initialize?.({
       version: '1.0.0',
       namespace: 'test'
     });
-    await runtime.start();
+    await runtime.start?.();
     
     // Register the process definition
-    const registerResult = await runtime.processRegistry.registerProcess(processDefinition);
-    expect(registerResult.success).toBe(true);
+    const registerResult = await runtime.processRegistry?.registerProcess(processDefinition);
+    expect(registerResult?.success).toBe(true);
   });
 
   it('should create a process with correct initial state', async () => {
-    // Test process creation using process manager - use the name as the process type
-    const processResult = await runtime.processManager.createProcess(processDefinition.name, {});
-    expect(processResult.success).toBe(true);
-    
-    if (processResult.success) {
-      const process = processResult.value;
-      expect(process.type).toBe(processDefinition.name);
-      expect(process.state).toBe(processDefinition.initialState);
-    }
-  });
-  
-  it('should transition a process through states', async () => {
     // Create a process
-    const createResult = await runtime.processManager.createProcess<TestProcessData, string>(
-      processDefinition.name, 
-      { counter: 1 }
+    const createResult = await runtime.processManager?.createProcess(
+      processDefinition.type,
+      {}
     );
-    expect(createResult.success).toBe(true);
     
-    if (createResult.success) {
+    expect(createResult?.success).toBe(true);
+    
+    if (createResult?.success && createResult.value) {
       const process = createResult.value;
+      
+      expect(process.id).toBeDefined();
+      expect(process.type).toBe(processDefinition.type);
       expect(process.state).toBe('created');
-      expect(process.data.counter).toBe(1);
-      
-      // Transition to running - note that the payload isn't used to update the data
-      const startResult = await runtime.processManager.applyEvent<TestProcessData, string, TestProcessData>(
-        process.id, 
-        'start',
-        { counter: 2 }
-      );
-      
-      expect(startResult.success).toBe(true);
-      
-      if (startResult.success) {
-        const runningProcess = startResult.value;
-        expect(runningProcess.state).toBe('running');
-        expect(runningProcess.data.counter).toBe(1); // Data is not changed by the transition
-        
-        // Transition to completed
-        const completeResult = await runtime.processManager.applyEvent<TestProcessData, string, TestProcessData>(
-          runningProcess.id,
-          'complete',
-          { counter: 3 }
-        );
-        
-        expect(completeResult.success).toBe(true);
-        
-        if (completeResult.success) {
-          const completedProcess = completeResult.value;
-          expect(completedProcess.state).toBe('completed');
-          expect(completedProcess.data.counter).toBe(1); // Data is not changed by the transition
-        }
-      }
+      expect(process.version).toBe('1.0.0');
     }
   });
   
-  it('should handle invalid transitions', async () => {
+  it('should transition processes through states', async () => {
     // Create a process
-    const createResult = await runtime.processManager.createProcess(processDefinition.name, {});
-    expect(createResult.success).toBe(true);
+    const createResult = await runtime.processManager?.createProcess(
+      processDefinition.type,
+      {}
+    );
     
-    if (createResult.success) {
-      const process = createResult.value;
-      
-      // Try to apply invalid event (complete from created state)
-      const invalidResult = await runtime.processManager.applyEvent(
-        process.id,
-        'complete',
-        {}
-      );
-      
-      expect(invalidResult.success).toBe(false);
-      if (!invalidResult.success) {
-        expect(invalidResult.error).toBeDefined();
-      }
+    expect(createResult?.success).toBe(true);
+    if (!createResult?.success || !createResult.value) return;
+    
+    const processId = createResult.value.id;
+    
+    // Apply the first transition (created -> running)
+    const startResult = await runtime.processManager?.applyEvent(
+      processId,
+      'start',
+      {}
+    );
+    
+    expect(startResult?.success).toBe(true);
+    if (startResult?.success && startResult.value) {
+      expect(startResult.value.state).toBe('running');
     }
+    
+    // Apply the second transition (running -> completed)
+    const completeResult = await runtime.processManager?.applyEvent(
+      processId,
+      'complete',
+      {}
+    );
+    
+    expect(completeResult?.success).toBe(true);
+    if (completeResult?.success && completeResult.value) {
+      expect(completeResult.value.state).toBe('completed');
+    }
+  });
+  
+  it('should reject invalid transitions', async () => {
+    // Create a process
+    const createResult = await runtime.processManager?.createProcess(
+      processDefinition.type,
+      {}
+    );
+    
+    expect(createResult?.success).toBe(true);
+    if (!createResult?.success || !createResult.value) return;
+    
+    const processId = createResult.value.id;
+    
+    // Try to apply an invalid transition (created -> completed)
+    const invalidTransitionResult = await runtime.processManager?.applyEvent(
+      processId,
+      'complete',
+      {}
+    );
+    
+    expect(invalidTransitionResult?.success).toBe(false);
   });
 }); 

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Runtime } from '../src/models/runtime';
-import { createModernRuntime } from '../src/implementations/modern-factory';
+import { createRuntime } from '../src/implementations/factory';
+import { RuntimeInstance } from '../src/implementations/runtime';
 import { DomainEvent, Result } from '../src/models/core-types';
 import { InMemoryExtensionSystem } from '../src/implementations/extension-system';
 import { ExtensionEventBus } from '../src/implementations/event-bus';
@@ -9,33 +9,26 @@ import { createEventSource, InMemoryEventSource } from '../src/implementations/e
 import { EventSource } from '../src/models/event-system';
 
 describe('Event Persistence and Correlation', () => {
-  let runtime: Runtime;
+  let runtime: RuntimeInstance;
   let eventBus: ExtensionEventBus;
   let storage: InMemoryEventStorage;
   let extensionSystem: InMemoryExtensionSystem;
   let eventSource: EventSource;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    runtime = createRuntime({
+      persistEvents: true,
+      runtimeOptions: {
+        version: '1.0.0',
+        namespace: 'test-event-persistence'
+      }
+    }) as RuntimeInstance;
+    
     // Create all components in the correct order with proper dependencies
     extensionSystem = new InMemoryExtensionSystem();
     eventBus = new ExtensionEventBus(extensionSystem);
     storage = new InMemoryEventStorage();
     eventSource = createEventSource(storage, eventBus);
-    
-    // Create runtime with persistence enabled
-    try {
-      runtime = createModernRuntime({
-        persistEvents: true,
-        extensions: {
-          processManagement: true,
-          taskManagement: true,
-          pluginManagement: true
-        }
-      });
-    } catch (error) {
-      console.error('Error creating runtime:', error);
-      throw error;
-    }
   });
 
   describe('Event Persistence', () => {

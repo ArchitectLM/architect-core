@@ -53,6 +53,9 @@ export interface ExtensionContext<T = unknown> {
   
   /** Contextual metadata for this invocation */
   metadata?: Metadata;
+  
+  /** @deprecated Data field for backward compatibility */
+  data?: Record<string, unknown>;
 }
 
 /**
@@ -235,6 +238,11 @@ export interface ExtensionSystem {
   getExtensionHandlers(
     extensionPointName: ExtensionPointName
   ): { extensionId: string; handler: Function }[];
+  
+  /**
+   * Set the context for extensions
+   */
+  setContext(context: Record<string, unknown>): void;
 }
 
 /**

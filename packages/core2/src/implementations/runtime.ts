@@ -512,6 +512,57 @@ export class RuntimeInstance implements Runtime {
   getAllPlugins(): Plugin[] {
     return Array.from(this.plugins.values());
   }
+
+  /**
+   * Initialize the runtime with the provided options
+   */
+  public async initialize(options: {
+    version: string;
+    namespace: string;
+    [key: string]: any;
+  }): Promise<Result<void>> {
+    try {
+      this._version = options.version;
+      this._namespace = options.namespace;
+      
+      // Set the context in the extension system
+      this.extensionSystem.setContext({
+        version: this._version,
+        namespace: this._namespace,
+        runtimeId: this.id,
+        data: {
+          ...options
+        }
+      });
+      
+      // Initialize extension system and propagate to event bus
+      const result = await this.extensionSystem.executeExtensionPoint(
+        'system.init',
+        {
+          version: this._version,
+          namespace: this._namespace,
+          config: options
+        }
+      );
+      
+      if (!result.success) {
+        this.state = 'error';
+        return {
+          success: false,
+          error: result.error || new Error('Failed to initialize extension system')
+        };
+      }
+      
+      this.state = 'running';
+      return { success: true, value: undefined };
+    } catch (error) {
+      this.state = 'error';
+      return {
+        success: false,
+        error: error instanceof Error ? error : new Error(String(error))
+      };
+    }
+  }
 }
 
 /**

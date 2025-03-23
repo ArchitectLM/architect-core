@@ -174,21 +174,6 @@ export function createCoreRuntime(config: CoreRuntimeConfig = {}): RuntimeInstan
 }
 
 /**
- * @deprecated Use createRuntime instead - this function is maintained for backward compatibility
- * @param options Configuration options for the runtime
- * @returns An initialized Runtime instance
- */
-export function createModernRuntime(options: RuntimeFactoryOptions = {}): Runtime {
-  console.warn(
-    'WARNING: createModernRuntime is deprecated. ' +
-    'Please use createRuntime instead. ' +
-    'This function will be removed in a future version.'
-  );
-  
-  return createRuntime(options);
-}
-
-/**
  * Create an empty plugin registry
  */
 export function createEmptyPluginRegistry(): PluginRegistry {

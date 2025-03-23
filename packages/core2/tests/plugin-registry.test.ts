@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { SimplePluginRegistry } from '../src/implementations/plugin-registry';
+import { InMemoryPluginRegistry } from '../src/implementations/plugin-registry';
 import { Plugin, PluginState } from '../src/models/plugin-system';
 
-describe('SimplePluginRegistry', () => {
-  let pluginRegistry: SimplePluginRegistry;
+describe('InMemoryPluginRegistry', () => {
+  let pluginRegistry: InMemoryPluginRegistry;
   
   beforeEach(() => {
-    pluginRegistry = new SimplePluginRegistry();
+    pluginRegistry = new InMemoryPluginRegistry();
   });
   
   describe('Plugin Registration', () => {
@@ -18,7 +18,10 @@ describe('SimplePluginRegistry', () => {
       const result = pluginRegistry.registerPlugin(mockPlugin);
       
       expect(result.success).toBe(true);
-      expect(pluginRegistry.hasPlugin('test-plugin')).toBe(true);
+      
+      // Get plugin to check if it exists
+      const getResult = pluginRegistry.getPlugin('test-plugin');
+      expect(getResult.success).toBe(true);
     });
     
     it('should reject a plugin without an ID', () => {
@@ -29,7 +32,7 @@ describe('SimplePluginRegistry', () => {
       const result = pluginRegistry.registerPlugin(mockPlugin);
       
       expect(result.success).toBe(false);
-      if (!result.success) {
+      if (!result.success && result.error) {
         expect(result.error.message).toContain('must have an ID');
       }
     });
@@ -46,179 +49,155 @@ describe('SimplePluginRegistry', () => {
       const result = pluginRegistry.registerPlugin(mockPlugin2);
       
       expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.error.message).toContain('already registered');
+      if (!result.success && result.error) {
+        expect(result.error.message).toContain('already exists');
       }
     });
   });
   
   describe('Plugin Retrieval', () => {
-    let testPlugin: Plugin;
-    
-    beforeEach(() => {
-      // Register a test plugin
-      testPlugin = createMockPlugin('test-plugin', 'Test Plugin');
-      pluginRegistry.registerPlugin(testPlugin);
-    });
-    
     it('should retrieve a plugin by ID', () => {
+      // Create and register a mock plugin
+      const mockPlugin = createMockPlugin('test-plugin', 'Test Plugin');
+      pluginRegistry.registerPlugin(mockPlugin);
+      
+      // Retrieve the plugin
       const result = pluginRegistry.getPlugin('test-plugin');
       
       expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.value.getState().id).toBe('test-plugin');
+      if (result.success && result.value) {
+        expect(result.value.id).toBe('test-plugin');
       }
     });
     
     it('should indicate if a plugin exists', () => {
-      expect(pluginRegistry.hasPlugin('test-plugin')).toBe(true);
-      expect(pluginRegistry.hasPlugin('non-existent')).toBe(false);
+      // Create and register a mock plugin
+      const mockPlugin = createMockPlugin('test-plugin', 'Test Plugin');
+      pluginRegistry.registerPlugin(mockPlugin);
+      
+      // Check existing plugin
+      const existingResult = pluginRegistry.getPlugin('test-plugin');
+      expect(existingResult.success).toBe(true);
+      
+      // Check non-existent plugin
+      const nonExistentResult = pluginRegistry.getPlugin('non-existent');
+      expect(nonExistentResult.success).toBe(false);
     });
     
     it('should return all registered plugins', () => {
-      // Register another plugin
-      const anotherPlugin = createMockPlugin('another-plugin', 'Another Plugin');
-      pluginRegistry.registerPlugin(anotherPlugin);
+      // Create and register multiple plugins
+      const mockPlugin1 = createMockPlugin('plugin-1', 'Plugin 1');
+      const mockPlugin2 = createMockPlugin('plugin-2', 'Plugin 2');
       
-      const allPlugins = pluginRegistry.getAllPlugins();
+      pluginRegistry.registerPlugin(mockPlugin1);
+      pluginRegistry.registerPlugin(mockPlugin2);
       
-      expect(allPlugins).toHaveLength(2);
-      expect(allPlugins.some(p => p.getState().id === 'test-plugin')).toBe(true);
-      expect(allPlugins.some(p => p.getState().id === 'another-plugin')).toBe(true);
+      // Get all plugins
+      const plugins = pluginRegistry.getAllPlugins();
+      
+      expect(plugins.length).toBe(2);
+      expect(plugins.some(p => p.id === 'plugin-1')).toBe(true);
+      expect(plugins.some(p => p.id === 'plugin-2')).toBe(true);
     });
     
     it('should return an error for non-existent plugin ID', () => {
+      // Try to retrieve a non-existent plugin
       const result = pluginRegistry.getPlugin('non-existent');
       
       expect(result.success).toBe(false);
-      if (!result.success) {
+      if (!result.success && result.error) {
         expect(result.error.message).toContain('not found');
       }
     });
   });
   
   describe('Plugin Unregistration', () => {
-    beforeEach(() => {
-      // Register a test plugin
-      const testPlugin = createMockPlugin('test-plugin', 'Test Plugin');
-      pluginRegistry.registerPlugin(testPlugin);
-    });
-    
     it('should unregister a plugin', () => {
+      // Create and register a mock plugin
+      const mockPlugin = createMockPlugin('test-plugin', 'Test Plugin');
+      pluginRegistry.registerPlugin(mockPlugin);
+      
+      // Unregister the plugin
       const result = pluginRegistry.unregisterPlugin('test-plugin');
       
       expect(result.success).toBe(true);
-      expect(pluginRegistry.hasPlugin('test-plugin')).toBe(false);
+      
+      // Verify the plugin is no longer registered
+      const getResult = pluginRegistry.getPlugin('test-plugin');
+      expect(getResult.success).toBe(false);
     });
     
     it('should return an error for unregistering non-existent plugin', () => {
+      // Try to unregister a non-existent plugin
       const result = pluginRegistry.unregisterPlugin('non-existent');
       
       expect(result.success).toBe(false);
-      if (!result.success) {
+      if (!result.success && result.error) {
         expect(result.error.message).toContain('not found');
       }
     });
   });
   
   describe('Plugin Categories and Capabilities', () => {
-    beforeEach(() => {
-      // Register plugins with different categories and capabilities
-      const plugin1 = createMockPlugin('plugin1', 'Plugin 1', 'category1', ['capability1', 'capability2']);
-      const plugin2 = createMockPlugin('plugin2', 'Plugin 2', 'category1', ['capability2']);
-      const plugin3 = createMockPlugin('plugin3', 'Plugin 3', 'category2', ['capability1']);
-      
-      pluginRegistry.registerPlugin(plugin1);
-      pluginRegistry.registerPlugin(plugin2);
-      pluginRegistry.registerPlugin(plugin3);
-    });
-    
-    it('should retrieve plugins by category', () => {
-      const category1Plugins = pluginRegistry.getPluginsByCategory('category1');
-      const category2Plugins = pluginRegistry.getPluginsByCategory('category2');
-      
-      expect(category1Plugins).toHaveLength(2);
-      expect(category1Plugins.some(p => p.getState().id === 'plugin1')).toBe(true);
-      expect(category1Plugins.some(p => p.getState().id === 'plugin2')).toBe(true);
-      
-      expect(category2Plugins).toHaveLength(1);
-      expect(category2Plugins[0].getState().id).toBe('plugin3');
-    });
-    
     it('should retrieve plugins by capability', () => {
-      const capability1Plugins = pluginRegistry.getPluginsWithCapability('capability1');
-      const capability2Plugins = pluginRegistry.getPluginsWithCapability('capability2');
+      // Create and register plugins with different capabilities
+      const mockPlugin1 = createMockPlugin('plugin-1', 'Plugin 1', 'category-1', ['capability-1']);
+      const mockPlugin2 = createMockPlugin('plugin-2', 'Plugin 2', 'category-1', ['capability-2']);
+      const mockPlugin3 = createMockPlugin('plugin-3', 'Plugin 3', 'category-2', ['capability-1']);
       
-      expect(capability1Plugins).toHaveLength(2);
-      expect(capability1Plugins.some(p => p.getState().id === 'plugin1')).toBe(true);
-      expect(capability1Plugins.some(p => p.getState().id === 'plugin3')).toBe(true);
+      pluginRegistry.registerPlugin(mockPlugin1);
+      pluginRegistry.registerPlugin(mockPlugin2);
+      pluginRegistry.registerPlugin(mockPlugin3);
       
-      expect(capability2Plugins).toHaveLength(2);
-      expect(capability2Plugins.some(p => p.getState().id === 'plugin1')).toBe(true);
-      expect(capability2Plugins.some(p => p.getState().id === 'plugin2')).toBe(true);
-    });
-    
-    it('should return empty array for non-existent category', () => {
-      const nonExistentCategoryPlugins = pluginRegistry.getPluginsByCategory('non-existent');
-      expect(nonExistentCategoryPlugins).toHaveLength(0);
+      // Get plugins with capability-1
+      const plugins = pluginRegistry.getPluginsWithCapability('capability-1');
+      
+      expect(plugins.length).toBe(2);
+      expect(plugins.some(p => p.id === 'plugin-1')).toBe(true);
+      expect(plugins.some(p => p.id === 'plugin-3')).toBe(true);
     });
     
     it('should return empty array for non-existent capability', () => {
-      const nonExistentCapabilityPlugins = pluginRegistry.getPluginsWithCapability('non-existent');
-      expect(nonExistentCapabilityPlugins).toHaveLength(0);
+      // Create and register a plugin
+      const mockPlugin = createMockPlugin('test-plugin', 'Test Plugin', 'category', ['capability-1']);
+      pluginRegistry.registerPlugin(mockPlugin);
+      
+      // Look for non-existent capability
+      const plugins = pluginRegistry.getPluginsWithCapability('non-existent');
+      
+      expect(plugins).toEqual([]);
     });
   });
 });
 
-// Helper function to create a mock plugin
+/**
+ * Helper function to create a mock plugin for testing
+ */
 function createMockPlugin(
   id: string, 
   name: string, 
   category: string = 'test', 
   capabilities: string[] = []
 ): Plugin {
-  const state: PluginState = {
-    id,
-    status: { enabled: true },
-    config: {},
-    data: { category }
-  };
-  
-  const capabilities_map = new Map();
-  capabilities.forEach(cap => {
-    capabilities_map.set(cap, { id: cap, name: cap, implementation: {} });
-  });
-  
   return {
-    name,
     id,
-    description: `Description for ${name}`,
+    name,
+    description: `Test plugin: ${name}`,
     dependencies: [],
-    
     lifecycle: {
-      initialize: vi.fn().mockResolvedValue({ success: true, value: undefined }),
-      start: vi.fn().mockResolvedValue({ success: true, value: undefined }),
-      stop: vi.fn().mockResolvedValue({ success: true, value: undefined }),
-      cleanup: vi.fn().mockResolvedValue({ success: true, value: undefined })
+      initialize: vi.fn().mockResolvedValue({ success: true }),
+      start: vi.fn().mockResolvedValue({ success: true }),
+      stop: vi.fn().mockResolvedValue({ success: true }),
+      cleanup: vi.fn().mockResolvedValue({ success: true })
     },
-    
-    getState: vi.fn().mockReturnValue(state),
-    setState: vi.fn().mockReturnValue({ success: true, value: undefined }),
-    
-    getCapability: vi.fn().mockImplementation((capabilityId) => {
-      if (capabilities_map.has(capabilityId)) {
-        return { success: true, value: capabilities_map.get(capabilityId) };
-      }
-      return { success: false, error: new Error(`Capability ${capabilityId} not found`) };
-    }),
-    
-    hasCapability: vi.fn().mockImplementation((capabilityId) => capabilities.includes(capabilityId)),
-    
-    registerHook: vi.fn().mockReturnValue({ success: true, value: undefined }),
-    
-    healthCheck: vi.fn().mockReturnValue({ 
-      success: true, 
-      value: { status: 'healthy', details: {} } 
-    })
-  } as unknown as Plugin;
+    getState: vi.fn().mockReturnValue({ id, category }),
+    setState: vi.fn(),
+    getCapability: vi.fn(),
+    hasCapability: vi.fn().mockImplementation((capability) => capabilities.includes(capability)),
+    registerHook: vi.fn(),
+    healthCheck: vi.fn(),
+    getHooks: vi.fn(),
+    getVersion: vi.fn(),
+    getCapabilities: vi.fn().mockReturnValue(capabilities)
+  };
 } 

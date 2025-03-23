@@ -129,6 +129,81 @@ export interface RuntimeMetrics {
  */
 export interface Runtime {
   /**
+   * Runtime version
+   */
+  readonly version?: string;
+
+  /**
+   * Runtime namespace
+   */
+  readonly namespace?: string;
+
+  /**
+   * Event bus for pub/sub communication
+   */
+  readonly eventBus?: EventBus;
+
+  /**
+   * Extension system for plugins
+   */
+  readonly extensionSystem?: ExtensionSystem;
+
+  /**
+   * Plugin registry for managing plugins
+   */
+  readonly pluginRegistry?: PluginRegistry;
+
+  /**
+   * Task registry for managing task definitions
+   */
+  readonly taskRegistry?: TaskRegistry;
+
+  /**
+   * Task executor for running tasks
+   */
+  readonly taskExecutor?: TaskExecutor;
+
+  /**
+   * Task scheduler for deferred execution
+   */
+  readonly taskScheduler?: TaskScheduler;
+
+  /**
+   * Process registry for managing process definitions
+   */
+  readonly processRegistry?: ProcessRegistry;
+
+  /**
+   * Process manager for process instances
+   */
+  readonly processManager?: ProcessManager;
+
+  /**
+   * Event storage for persistence
+   */
+  readonly eventStorage?: EventStorage;
+
+  /**
+   * Event source for replay
+   */
+  readonly eventSource?: EventSource;
+
+  /**
+   * Initialize the runtime with provided options
+   */
+  initialize?(options: RuntimeOptions): Promise<Result<void>>;
+
+  /**
+   * Start the runtime
+   */
+  start?(): Promise<Result<void>>;
+
+  /**
+   * Stop the runtime
+   */
+  stop?(): Promise<Result<void>>;
+
+  /**
    * Create a new process instance
    * @param processType The process type
    * @param data The process data

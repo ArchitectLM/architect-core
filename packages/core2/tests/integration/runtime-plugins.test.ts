@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { EventBus } from '../../src/models/event';
+import { EventBus } from '../../src/models/event-system';
 import { Runtime } from '../../src/models/runtime';
-import { createRuntime } from '../../src/implementations/runtime';
-import { ExtensionSystem } from '../../src/models/extension';
+import { createRuntime } from '../../src/implementations/factory';
+import { ExtensionSystem } from '../../src/models/extension-system';
 import { 
   EventSourcingPlugin, 
   createEventSourcingPlugin,
@@ -23,11 +23,13 @@ import {
 } from '../../src/plugins/content-based-routing';
 import { RuntimeInstance } from '../../src/implementations/runtime';
 import { ProcessDefinition, TaskDefinition } from '../../src/models/index';
-import { EventStorage } from '../../src/models/event';
+import { EventStorage } from '../../src/models/event-system';
 import { TaskDependenciesPlugin, createTaskDependenciesPlugin } from '../../src/plugins/task-dependencies';
 import { RetryPlugin, createRetryPlugin, RetryPluginOptions, BackoffStrategy } from '../../src/plugins/retry';
 import { ProcessRecoveryPlugin, createProcessRecoveryPlugin } from '../../src/plugins/process-recovery';
 import { EventPersistencePlugin, createEventPersistencePlugin } from '../../src/plugins/event-persistence';
+import { TestRuntime } from '../helpers/test-runtime';
+import { createProcessDefinition } from '../helpers/process-testing-utils';
 
 // Test aggregate implementation
 class TestAggregate implements AggregateRoot {
@@ -91,42 +93,43 @@ describe('Runtime Plugin Integration', () => {
   let eventStorage: EventStorage;
 
   const processDefinitions: Record<string, ProcessDefinition> = {
-    'test-process': {
+    'test-process': createProcessDefinition({
       id: 'test-process',
       name: 'Test Process',
       description: 'A test process for integration tests',
       version: '1.0.0',
+      states: ['created', 'running', 'completed'] as const,
       initialState: 'created',
       transitions: [
         { from: 'created', to: 'running', on: 'start' },
         { from: 'running', to: 'completed', on: 'complete' }
       ]
-    }
+    })
   };
 
   const taskDefinitions: Record<string, TaskDefinition> = {
     'test-task': {
-      id: 'test-task',
+      type: 'test-task',
       name: 'Test Task',
       description: 'A test task for integration tests',
-      handler: async (context) => {
+      handler: async (input: any) => {
         return { result: 'success' };
       }
     },
     'dependent-task': {
-      id: 'dependent-task',
+      type: 'dependent-task',
       name: 'Dependent Task',
       description: 'A task that depends on test-task',
-      handler: async (context) => {
+      handler: async (input: any) => {
         return { result: 'dependent-success' };
       },
       dependencies: ['test-task']
     },
     'retryable-task': {
-      id: 'retryable-task',
+      type: 'retryable-task',
       name: 'Retryable Task',
       description: 'A task that fails on first attempt',
-      handler: async (context) => {
+      handler: async (input: any, context: { attemptNumber?: number }) => {
         if (context.attemptNumber === 1) {
           throw new Error('First attempt fails');
         }
@@ -182,17 +185,17 @@ describe('Runtime Plugin Integration', () => {
     } as unknown as EventStorage;
 
     // Create plugins
-    eventSourcingPlugin = createEventSourcingPlugin(eventBus, eventStore);
-    outboxPattern = createOutboxPattern(eventBus, outboxRepository);
+    eventSourcingPlugin = createEventSourcingPlugin({ eventBus, eventStore, extensionSystem });
+    outboxPattern = createOutboxPattern({ eventBus, outboxRepository });
     contentBasedRouter = createContentBasedRouter(eventBus);
 
-    // Create runtime with empty definitions for testing
-    runtime = createRuntime({}, {}, { extensionSystem, eventBus });
-
-    runtime = new RuntimeInstance(processDefinitions, taskDefinitions, {
-      extensionSystem,
-      eventBus,
-      eventStorage
+    // Create runtime with provided components
+    runtime = createRuntime({
+      components: {
+        extensionSystem,
+        eventBus,
+        eventStorage
+      }
     });
   });
 

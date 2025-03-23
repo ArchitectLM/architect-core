@@ -11,6 +11,7 @@ import {
 } from '../models/task-system';
 import { Identifier, Result, DomainEvent } from '../models/core-types';
 import { EventBus } from '../models/event-system';
+import { ExtensionSystem, ExtensionPointNames, ExtensionPointParameters } from '../models/extension-system';
 
 // Define task statuses as const to avoid casting
 const TASK_STATUS = {
@@ -106,13 +107,27 @@ function executionToResult<TInput, TOutput>(execution: TaskExecution<TInput, TOu
  * Executes tasks with proper error handling, cancellation support, and dependency tracking
  */
 export class InMemoryTaskExecutor implements TaskExecutor {
+  private taskRegistry: TaskRegistry;
+  private eventBus: EventBus;
+  private extensionSystem?: ExtensionSystem;
   private runningTasks = new Map<Identifier, RunningTask<unknown, unknown>>();
   private taskExecutions = new Map<Identifier, TaskExecution<unknown, unknown>>();
+  private retryConfig: { maxRetries: number; backoffFactor: number } = {
+    maxRetries: 3,
+    backoffFactor: 1.5
+  };
   
-  constructor(
-    private taskRegistry: TaskRegistry,
-    private eventBus: EventBus
-  ) {}
+  /**
+   * Create a new InMemoryTaskExecutor
+   * @param taskRegistry Registry of task definitions
+   * @param eventBus Event bus for task events
+   * @param extensionSystem Optional extension system for extension points
+   */
+  constructor(taskRegistry: TaskRegistry, eventBus: EventBus, extensionSystem?: ExtensionSystem) {
+    this.taskRegistry = taskRegistry;
+    this.eventBus = eventBus;
+    this.extensionSystem = extensionSystem;
+  }
 
   /**
    * Execute a task immediately
@@ -124,6 +139,26 @@ export class InMemoryTaskExecutor implements TaskExecutor {
     input: TInput
   ): Promise<Result<TaskExecutionResult<TInput, TOutput>>> {
     try {
+      // Execute the extension point for task execution, if available
+      if (this.extensionSystem) {
+        const extensionResult = await this.extensionSystem.executeExtensionPoint<
+          ExtensionPointParameters[typeof ExtensionPointNames.TASK_BEFORE_EXECUTE],
+          ExtensionPointParameters[typeof ExtensionPointNames.TASK_BEFORE_EXECUTE]
+        >(
+          ExtensionPointNames.TASK_BEFORE_EXECUTE,
+          {
+            taskId: uuidv4(), // Generate a temporary ID for the execution
+            taskType,
+            input
+          }
+        );
+
+        // If we got a successful result from the extension point, use the modified input
+        if (extensionResult && extensionResult.success && extensionResult.value) {
+          input = extensionResult.value.input as TInput;
+        }
+      }
+      
       // Get the task definition
       const task = this.taskRegistry.getTask<TInput, TOutput>(taskType);
       if (!task) {

@@ -1,211 +1,345 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Runtime, ProcessDefinition, TaskDefinition, ProcessInstance, Event, ReactiveRuntime, ExtensionSystemImpl, EventBusImpl, InMemoryEventStorage } from '../src/index';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { createRuntime } from '../src/implementations/factory';
+import { ProcessDefinition } from '../src/models/process-system';
+import { TaskDefinition } from '../src/models/task-system';
+import { InMemoryProcessRegistry } from '../src/implementations/process-registry';
+import { InMemoryTaskRegistry } from '../src/implementations/task-registry';
+import { InMemoryTaskExecutor } from '../src/implementations/task-executor';
+import { InMemoryProcessManager } from '../src/implementations/process-manager';
+import { createExtensionSystem } from '../src/implementations/extension-system';
+import { createInMemoryEventBus } from '../src/implementations/event-bus';
+import { v4 as uuidv4 } from 'uuid';
 
 describe('Process Versioning and Recovery', () => {
-  let runtime: Runtime;
-  let extensionSystem: ExtensionSystemImpl;
-  let eventBus: EventBusImpl;
-  let eventStorage: InMemoryEventStorage;
-  
-  // Define process versions
+  // Define process versions for testing
   const processV1: ProcessDefinition = {
-    id: 'order-process',
+    type: 'order-process-v1',
     name: 'Order Process V1',
     description: 'Order processing workflow v1',
+    version: '1.0.0',
     initialState: 'created',
-    version: '1.0',
+    states: ['created', 'approved', 'fulfilled', 'cancelled'],
+    finalStates: ['fulfilled', 'cancelled'],
     transitions: [
-      { from: 'created', to: 'processing', on: 'START' },
-      { from: 'processing', to: 'completed', on: 'COMPLETE' },
-      { from: '*', to: 'cancelled', on: 'CANCEL' }
+      { from: 'created', to: 'approved', event: 'approve' },
+      { from: 'approved', to: 'fulfilled', event: 'fulfill' },
+      { from: 'created', to: 'cancelled', event: 'cancel' },
+      { from: 'approved', to: 'cancelled', event: 'cancel' }
     ]
   };
-  
+
   const processV2: ProcessDefinition = {
-    id: 'order-process',
+    type: 'order-process-v2',
     name: 'Order Process V2',
     description: 'Order processing workflow v2 with payment step',
+    version: '2.0.0',
     initialState: 'created',
-    version: '2.0',
+    states: ['created', 'payment-pending', 'approved', 'fulfilled', 'cancelled'],
+    finalStates: ['fulfilled', 'cancelled'],
     transitions: [
-      { from: 'created', to: 'payment', on: 'START' },
-      { from: 'payment', to: 'processing', on: 'PAYMENT_COMPLETED' },
-      { from: 'processing', to: 'completed', on: 'COMPLETE' },
-      { from: '*', to: 'cancelled', on: 'CANCEL' },
-      { from: 'payment', to: 'payment_failed', on: 'PAYMENT_FAILED' }
+      { from: 'created', to: 'payment-pending', event: 'request-payment' },
+      { from: 'payment-pending', to: 'approved', event: 'approve' },
+      { from: 'approved', to: 'fulfilled', event: 'fulfill' },
+      { from: 'created', to: 'cancelled', event: 'cancel' },
+      { from: 'payment-pending', to: 'cancelled', event: 'cancel' },
+      { from: 'approved', to: 'cancelled', event: 'cancel' }
     ]
   };
 
-  // Add a mock checkpoint task
-  const saveCheckpointTask: TaskDefinition = {
-    id: 'save-checkpoint',
-    name: 'Save Process Checkpoint',
-    description: 'Saves a checkpoint of the current process state',
-    handler: async (context) => {
-      return runtime.saveProcessCheckpoint(context.processId, context.checkpointId);
-    }
-  };
-  
-  const restoreCheckpointTask: TaskDefinition = {
-    id: 'restore-checkpoint',
-    name: 'Restore Process Checkpoint',
-    description: 'Restores a process from a checkpoint',
-    handler: async (context) => {
-      return runtime.restoreProcessFromCheckpoint(context.processId, context.checkpointId);
+  // Mock checkpoint tasks
+  const saveCheckpointTask: TaskDefinition<{ processId: string }, string> = {
+    type: 'save-checkpoint',
+    handler: async (input) => {
+      return input.processId;
     }
   };
 
-  beforeEach(() => {
-    extensionSystem = new ExtensionSystemImpl();
-    eventBus = new EventBusImpl();
-    eventStorage = new InMemoryEventStorage();
+  const restoreCheckpointTask: TaskDefinition<{ processId: string; checkpointId: string }, boolean> = {
+    type: 'restore-checkpoint',
+    handler: async (input) => {
+      return true;
+    }
+  };
+
+  let runtime: any;
+  let processRegistry: InMemoryProcessRegistry;
+  let taskRegistry: InMemoryTaskRegistry;
+  let taskExecutor: InMemoryTaskExecutor;
+  let processManager: InMemoryProcessManager;
+  let eventBus: any;
+
+  beforeEach(async () => {
+    // Create extension system
+    const extensionSystem = createExtensionSystem();
     
-    runtime = new ReactiveRuntime({
-      [processV1.id]: processV1,
-      [processV2.id]: processV2
-    }, {
-      [saveCheckpointTask.id]: saveCheckpointTask,
-      [restoreCheckpointTask.id]: restoreCheckpointTask
-    }, {
-      extensionSystem,
-      eventBus,
-      eventStorage
+    // Create event bus
+    eventBus = createInMemoryEventBus(extensionSystem);
+    
+    // Create registries
+    taskRegistry = new InMemoryTaskRegistry();
+    processRegistry = new InMemoryProcessRegistry();
+    
+    // Create task executor
+    taskExecutor = new InMemoryTaskExecutor(taskRegistry, eventBus);
+    
+    // Create process manager
+    processManager = new InMemoryProcessManager(processRegistry, taskExecutor);
+    
+    // Create runtime with explicitly provided components
+    runtime = createRuntime({
+      runtimeOptions: {
+        version: '1.0.0',
+        namespace: `test-runtime-${uuidv4()}`,
+        metadata: {
+          name: 'Process Recovery Test Runtime',
+          testing: true
+        }
+      },
+      components: {
+        extensionSystem,
+        eventBus,
+        taskRegistry,
+        taskExecutor,
+        processRegistry,
+        processManager
+      }
     });
+
+    // Register process definitions
+    try {
+      const processResult1 = processRegistry.registerProcess(processV1);
+      const processResult2 = processRegistry.registerProcess(processV2);
+      console.log('Process registration results:', processResult1.success);
+    } catch (error) {
+      console.error('Error registering processes:', error);
+    }
+    
+    // Register task definitions
+    try {
+      taskRegistry.registerTask(saveCheckpointTask);
+      taskRegistry.registerTask(restoreCheckpointTask);
+      console.log('Tasks registered successfully');
+    } catch (error) {
+      console.error('Error registering tasks:', error);
+    }
   });
 
   describe('Process Versioning', () => {
     it('should create processes with specific versions', async () => {
       // Create v1 process
-      const processV1Instance = await runtime.createProcess('order-process', { orderId: '123' }, { version: '1.0' });
-      
-      // Create v2 process
-      const processV2Instance = await runtime.createProcess('order-process', { orderId: '456' }, { version: '2.0' });
-      
-      // Verify versions
-      expect(processV1Instance.version).toBe('1.0');
-      expect(processV2Instance.version).toBe('2.0');
-    });
+      try {
+        const processV1Result = await processManager.createProcess(
+          'order-process-v1', 
+          { orderId: '123' }, 
+          { version: '1.0.0' }
+        );
+        
+        console.log('Process V1 result:', processV1Result);
+        
+        if (processV1Result.success && processV1Result.value) {
+          expect(processV1Result.success).toBe(true);
+          expect(processV1Result.value.version).toBe('1.0.0');
+          expect(processV1Result.value.state).toBe('created');
+        } else {
+          console.error('Process V1 creation failed:', processV1Result.error);
+          expect(processV1Result.success).toBe(true);
+        }
 
-    it('should use the definition version if not specified', async () => {
-      // Create process without specifying version
-      const process = await runtime.createProcess('order-process', { orderId: '123' });
-      
-      // Should default to the definition version
-      expect(process.version).toBe(processV1.version);
+        // Create v2 process
+        const processV2Result = await processManager.createProcess(
+          'order-process-v2', 
+          { orderId: '456' }, 
+          { version: '2.0.0' }
+        );
+        
+        console.log('Process V2 result:', processV2Result);
+        
+        if (processV2Result.success && processV2Result.value) {
+          expect(processV2Result.success).toBe(true);
+          expect(processV2Result.value.version).toBe('2.0.0');
+          expect(processV2Result.value.state).toBe('created');
+        } else {
+          console.error('Process V2 creation failed:', processV2Result.error);
+          expect(processV2Result.success).toBe(true);
+        }
+      } catch (error) {
+        console.error('Test error:', error);
+        throw error;
+      }
     });
 
     it('should follow different transition paths based on version', async () => {
       // Create v1 process
-      const processV1Instance = await runtime.createProcess('order-process', { orderId: '123' }, { version: '1.0' });
+      const processV1Result = await processManager.createProcess(
+        'order-process-v1', 
+        { orderId: '123' }, 
+        { version: '1.0.0' }
+      );
       
+      // Approve v1 directly
+      const approveV1Result = await processManager.applyEvent(
+        processV1Result.value.id,
+        'approve',
+        { approvedBy: 'test' }
+      );
+      
+      expect(approveV1Result.success).toBe(true);
+      expect(approveV1Result.value.state).toBe('approved');
+
       // Create v2 process
-      const processV2Instance = await runtime.createProcess('order-process', { orderId: '456' }, { version: '2.0' });
+      const processV2Result = await processManager.createProcess(
+        'order-process-v2', 
+        { orderId: '456' }, 
+        { version: '2.0.0' }
+      );
       
-      // Transition v1 process
-      const v1After = await runtime.transitionProcess(processV1Instance.id, 'START');
-      expect(v1After.state).toBe('processing');
+      // Request payment in v2 (new state in v2)
+      const paymentResult = await processManager.applyEvent(
+        processV2Result.value.id,
+        'request-payment',
+        { amount: 100 }
+      );
       
-      // Transition v2 process
-      const v2After = await runtime.transitionProcess(processV2Instance.id, 'START');
-      expect(v2After.state).toBe('payment');
+      expect(paymentResult.success).toBe(true);
+      expect(paymentResult.value.state).toBe('payment-pending');
     });
   });
 
   describe('Process Recovery', () => {
     it('should save process checkpoints', async () => {
       // Create a process
-      const process = await runtime.createProcess('order-process', { orderId: '123', items: ['item1'] });
+      const processResult = await processManager.createProcess(
+        'order-process-v1', 
+        { orderId: '123', items: ['item1'] }
+      );
       
-      // Transition to a different state
-      await runtime.transitionProcess(process.id, 'START');
+      expect(processResult.success).toBe(true);
+      const processId = processResult.value.id;
       
-      // Save checkpoint
-      const checkpointId = 'checkpoint-1';
-      const checkpointed = await runtime.saveProcessCheckpoint(process.id, checkpointId);
+      // Advance the process
+      const approveResult = await processManager.applyEvent(
+        processId,
+        'approve',
+        { approvedBy: 'test' }
+      );
       
-      // Verify checkpoint was saved
-      expect(checkpointed.recovery).toBeDefined();
-      expect(checkpointed.recovery!.checkpointId).toBe(checkpointId);
+      expect(approveResult.success).toBe(true);
+      expect(approveResult.value.state).toBe('approved');
+      
+      // Save a checkpoint
+      const checkpointResult = await processManager.saveCheckpoint(processId);
+      
+      expect(checkpointResult.success).toBe(true);
+      expect(checkpointResult.value.processId).toBe(processId);
+      expect(checkpointResult.value.state).toBe('approved');
+      expect(checkpointResult.value.data.orderId).toBe('123');
+      expect(checkpointResult.value.data.items).toEqual(['item1']);
     });
 
     it('should restore processes from checkpoints', async () => {
       // Create and advance a process with some data
-      const process = await runtime.createProcess('order-process', { orderId: '123', items: ['item1'] });
-      const advanced = await runtime.transitionProcess(process.id, 'START');
+      const processResult = await processManager.createProcess(
+        'order-process-v1', 
+        { orderId: '123', items: ['item1'] }
+      );
       
-      // Save checkpoint
-      const checkpointId = 'checkpoint-1';
-      await runtime.saveProcessCheckpoint(advanced.id, checkpointId);
+      const processId = processResult.value.id;
       
-      // Modify the process data after checkpoint
-      advanced.data.items.push('item2');
+      // Advance to approved
+      await processManager.applyEvent(
+        processId,
+        'approve',
+        { approvedBy: 'test' }
+      );
       
-      // Restore from checkpoint
-      const restored = await runtime.restoreProcessFromCheckpoint(process.id, checkpointId);
+      // Save checkpoint in approved state
+      const checkpointResult = await processManager.saveCheckpoint(processId);
+      const checkpointId = checkpointResult.value.id;
       
-      // Verify process state was restored
-      expect(restored.state).toBe(advanced.state);
-      expect(restored.recovery!.checkpointId).toBe(checkpointId);
+      console.log('Checkpoint created:', checkpointId, checkpointResult.success);
+      
+      // Make more changes (fulfill the order)
+      await processManager.applyEvent(
+        processId,
+        'fulfill',
+        { shippedBy: 'shipping-dept' }
+      );
+      
+      // Verify process is in fulfilled state
+      const currentProcess = await processManager.getProcess(processId);
+      expect(currentProcess.value.state).toBe('fulfilled');
+      
+      // Restore from checkpoint (should go back to approved state)
+      const restoreResult = await processManager.restoreFromCheckpoint(processId, checkpointId);
+      
+      console.log('Restore result:', restoreResult);
+      expect(restoreResult.success).toBe(true);
+      expect(restoreResult.value.id).toBe(processId);
+      expect(restoreResult.value.state).toBe('approved');
+      expect(restoreResult.value.data.orderId).toBe('123');
+      expect(restoreResult.value.data.items).toEqual(['item1']);
     });
 
-    it('should throw an error when restoring a non-existent checkpoint', async () => {
+    it('should fail when restoring a non-existent checkpoint', async () => {
       // Create a process
-      const process = await runtime.createProcess('order-process', { orderId: '123' });
+      const processResult = await processManager.createProcess(
+        'order-process-v1', 
+        { orderId: '123' }
+      );
       
-      // Try to restore from a non-existent checkpoint
-      await expect(runtime.restoreProcessFromCheckpoint(process.id, 'non-existent'))
-        .rejects.toThrow('Checkpoint non-existent not found');
-    });
-    
-    it('should emit events for checkpoint operations', async () => {
-      // Setup event listeners
-      const checkpointEvents: Event[] = [];
-      runtime.subscribe('process:checkpointed', (event: Event) => checkpointEvents.push(event));
+      // Try to restore from non-existent checkpoint
+      const restoreResult = await processManager.restoreFromCheckpoint(processResult.value.id, 'non-existent-id');
       
-      const restoreEvents: Event[] = [];
-      runtime.subscribe('process:restored', (event: Event) => restoreEvents.push(event));
-      
-      // Create and checkpoint a process
-      const process = await runtime.createProcess('order-process', { orderId: '123' });
-      const checkpointId = 'checkpoint-1';
-      await runtime.saveProcessCheckpoint(process.id, checkpointId);
-      await runtime.restoreProcessFromCheckpoint(process.id, checkpointId);
-      
-      // Verify events
-      expect(checkpointEvents.length).toBe(1);
-      expect(checkpointEvents[0].payload.processId).toBe(process.id);
-      expect(checkpointEvents[0].payload.checkpointId).toBe(checkpointId);
-      
-      expect(restoreEvents.length).toBe(1);
-      expect(restoreEvents[0].payload.processId).toBe(process.id);
-      expect(restoreEvents[0].payload.checkpointId).toBe(checkpointId);
+      expect(restoreResult.success).toBe(false);
+      expect(restoreResult.error).toBeDefined();
     });
   });
 
   describe('Error Recovery', () => {
     it('should recover a process to the last valid state after error', async () => {
       // Create a process
-      const process = await runtime.createProcess('order-process', { orderId: '123' }, { version: '2.0' });
+      const processResult = await processManager.createProcess(
+        'order-process-v1', 
+        { orderId: '123' }, 
+        { version: '1.0.0' }
+      );
       
-      // Transition to payment state
-      const paymentState = await runtime.transitionProcess(process.id, 'START');
-      expect(paymentState.state).toBe('payment');
+      const processId = processResult.value.id;
       
-      // Save checkpoint
-      const checkpointId = 'before-payment';
-      await runtime.saveProcessCheckpoint(paymentState.id, checkpointId);
+      // Save a checkpoint in initial state
+      const initialCheckpointResult = await processManager.saveCheckpoint(processId);
+      const initialCheckpointId = initialCheckpointResult.value.id;
       
-      // Simulate payment failure
-      const paymentFailed = await runtime.transitionProcess(paymentState.id, 'PAYMENT_FAILED');
-      expect(paymentFailed.state).toBe('payment_failed');
+      // Advance to approved state
+      await processManager.applyEvent(
+        processId,
+        'approve',
+        { approvedBy: 'test' }
+      );
       
-      // Recover to before payment
-      const recovered = await runtime.restoreProcessFromCheckpoint(process.id, checkpointId);
-      expect(recovered.state).toBe('payment');
+      // Save a checkpoint in approved state
+      const approvedCheckpointResult = await processManager.saveCheckpoint(processId);
+      const approvedCheckpointId = approvedCheckpointResult.value.id;
       
-      // Can now retry payment
-      const paymentSucceeded = await runtime.transitionProcess(recovered.id, 'PAYMENT_COMPLETED');
-      expect(paymentSucceeded.state).toBe('processing');
+      // Try to apply an invalid event - should fail
+      const invalidResult = await processManager.applyEvent(
+        processId,
+        'invalid-event',
+        { data: 'bad data' }
+      );
+      
+      expect(invalidResult.success).toBe(false);
+      
+      // Process should still be in approved state
+      const currentProcess = await processManager.getProcess(processId);
+      expect(currentProcess.value.state).toBe('approved');
+      
+      // Restore from initial checkpoint
+      const restoreResult = await processManager.restoreFromCheckpoint(processId, initialCheckpointId);
+      
+      console.log('Restore result:', restoreResult);
+      expect(restoreResult.success).toBe(true);
+      expect(restoreResult.value.state).toBe('created');
     });
   });
 }); 

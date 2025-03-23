@@ -10,7 +10,8 @@ import {
   createObservabilityPlugin
 } from '../../src/plugins/observability';
 import { createTaskManagementPlugin } from '../../src/plugins/task-management';
-import { createModernRuntime } from '../../src/implementations/modern-factory';
+import { createRuntime } from '../../src/implementations/factory';
+import { RuntimeInstance } from '../../src/implementations/runtime';
 import { v4 as uuidv4 } from 'uuid';
 import { 
   Extension, 
@@ -241,6 +242,14 @@ describe('Observability Plugin', () => {
   const memoryIntensiveTask = createTrackedTaskDefinition('memory-task', 30);
   
   beforeEach(async () => {
+    // Create runtime with observability plugin
+    runtime = createRuntime({
+      runtimeOptions: {
+        version: '1.0.0',
+        namespace: 'test-observability'
+      }
+    }) as RuntimeInstance;
+    
     // Mock Date.now for consistent testing
     vi.spyOn(Date, 'now').mockImplementation(() => mockNow);
     
@@ -297,18 +306,6 @@ describe('Observability Plugin', () => {
       getVersion: () => '1.0.0',
       getCapabilities: () => ['debugging']
     };
-    
-    // Create a complete runtime with task management enabled
-    runtime = createModernRuntime({
-      extensions: {
-        taskManagement: true, // Explicitly enable task management
-        processManagement: true
-      },
-      runtimeOptions: {
-        version: '1.0.0',
-        namespace: 'test-namespace'
-      }
-    });
     
     // Register both extensions with the runtime's extension system
     runtime.extensionSystem.registerExtension(observabilityPluginExtension);
@@ -869,6 +866,14 @@ describe('Observability Plugin', () => {
   // Test the integration with the runtime and extension system
   describe('Extension System Integration', () => {
     beforeEach(async () => {
+      // Create runtime with customized metrics
+      runtime = createRuntime({
+        runtimeOptions: {
+          version: '2.0.0',
+          namespace: 'test-custom-metrics'
+        }
+      }) as RuntimeInstance;
+      
       // Mock Date.now for consistent testing
       vi.spyOn(Date, 'now').mockImplementation(() => mockNow);
       
@@ -904,7 +909,7 @@ describe('Observability Plugin', () => {
       };
       
       // Create a complete runtime with task management enabled
-      runtime = createModernRuntime({
+      runtime = createRuntime({
         extensions: {
           taskManagement: true,
           processManagement: true
@@ -913,7 +918,7 @@ describe('Observability Plugin', () => {
           version: '1.0.0',
           namespace: 'test-namespace'
         }
-      });
+      }) as RuntimeInstance;
       
       // Register the plugin with the runtime's extension system
       runtime.extensionSystem.registerExtension(observabilityPluginExtension);
