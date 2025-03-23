@@ -1,8 +1,8 @@
-import { DomainEvent, Identifier, Result, Timestamp, DomainError, Metadata } from './core-types';
+import { DomainEvent, Identifier, Result, Timestamp, Metadata } from './core-types';
 import { EventBus, EventStorage, EventSource, EventHandler, Subscription } from './event-system';
 import { ExtensionSystem } from './extension-system';
 import { PluginRegistry } from './plugin-system';
-import { TaskExecutor, TaskRegistry, TaskScheduler } from './task-system';
+import { TaskExecutor, TaskRegistry, TaskScheduler, TaskExecutionResult } from './task-system';
 import { ProcessRegistry, ProcessManager, ProcessInstance, ProcessDefinition } from './process-system';
 
 /**
@@ -158,7 +158,7 @@ export interface Runtime {
   executeTask<TInput = Record<string, unknown>, TOutput = unknown>(
     taskType: string, 
     input: TInput
-  ): Promise<any>;
+  ): Promise<Result<TaskExecutionResult<TInput, TOutput>>>;
   
   /**
    * Execute a task with dependencies
@@ -170,7 +170,7 @@ export interface Runtime {
     taskType: string, 
     input: TInput, 
     dependencies: string[]
-  ): Promise<any>;
+  ): Promise<Result<TaskExecutionResult<TInput, TOutput>>>;
   
   /**
    * Subscribe to events
@@ -223,22 +223,22 @@ export interface Runtime {
   /**
    * Get process metrics
    */
-  getProcessMetrics(): Promise<any[]>;
+  getProcessMetrics(): Promise<RuntimeMetrics['processes']>;
   
   /**
    * Get task metrics
    */
-  getTaskMetrics(): Promise<any[]>;
+  getTaskMetrics(): Promise<RuntimeMetrics['tasks']>;
   
   /**
    * Get event metrics
    */
-  getEventMetrics(): Promise<any[]>;
+  getEventMetrics(): Promise<RuntimeMetrics['events']>;
   
   /**
    * Get health status
    */
-  getHealthStatus(): Promise<{ status: string; details: Record<string, any> }>;
+  getHealthStatus(): Promise<SystemHealth>;
 }
 
 /**

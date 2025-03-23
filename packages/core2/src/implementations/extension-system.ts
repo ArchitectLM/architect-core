@@ -8,7 +8,8 @@ import {
   ExtensionPointParameters,
   ExtensionSystem
 } from '../models/extension-system';
-import { Identifier, DomainError, Result } from '../models/core-types';
+import { Identifier } from '../models/core-types';
+import { DomainError, Result } from '../utils';
 import { DomainEvent } from '../models/core-types';
 
 /**

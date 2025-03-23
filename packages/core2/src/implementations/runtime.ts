@@ -4,6 +4,7 @@ import {
   RuntimeOptions,
   SystemHealth,
   ComponentHealth,
+  RuntimeMetrics,
   EventHandler,
   Subscription
 } from '../models/runtime';
@@ -320,41 +321,49 @@ export class RuntimeInstance implements Runtime {
   /**
    * Get process metrics
    */
-  public async getProcessMetrics(): Promise<any[]> {
-    return [];
+  public async getProcessMetrics(): Promise<RuntimeMetrics['processes']> {
+    return {
+      total: 0,
+      active: 0,
+      completed: 0,
+      stateDistribution: {}
+    };
   }
   
   /**
    * Get task metrics
    */
-  public async getTaskMetrics(): Promise<any[]> {
-    return [];
+  public async getTaskMetrics(): Promise<RuntimeMetrics['tasks']> {
+    return {
+      total: 0,
+      running: 0,
+      completed: 0,
+      failed: 0,
+      scheduled: 0
+    };
   }
   
   /**
    * Get event metrics
    */
-  public async getEventMetrics(): Promise<any[]> {
-    return [];
+  public async getEventMetrics(): Promise<RuntimeMetrics['events']> {
+    return {
+      total: 0,
+      byType: {},
+      rate: 0
+    };
   }
   
   /**
    * Get health status
    */
-  public async getHealthStatus(): Promise<{ status: string; details: Record<string, any> }> {
+  public async getHealthStatus(): Promise<SystemHealth> {
     const now = Date.now();
     
     return {
       status: 'healthy',
-      details: {
-        components: {
-          eventBus: { status: 'healthy', lastChecked: now },
-          extensionSystem: { status: 'healthy', lastChecked: now },
-          taskExecutor: { status: 'healthy', lastChecked: now },
-          processManager: { status: 'healthy', lastChecked: now }
-        },
-        timestamp: now
-      }
+      components: {},
+      timestamp: now
     };
   }
 

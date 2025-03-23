@@ -189,7 +189,7 @@ export class InMemoryTaskExecutor implements TaskExecutor {
         error: result.error,
         value: result.value ? executionToResult(result.value) : undefined
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       return {
         success: false,
         error: error instanceof Error ? error : new Error(String(error))
@@ -343,7 +343,7 @@ export class InMemoryTaskExecutor implements TaskExecutor {
         error: result.error,
         value: result.value ? executionToResult(result.value) : undefined
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       return {
         success: false,
         error: error instanceof Error ? error : new Error(String(error))

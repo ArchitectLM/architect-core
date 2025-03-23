@@ -4,16 +4,14 @@ import {
   ProcessTransition 
 } from '../models/process-system';
 import {
-  Result,
-  DomainError
+  Result
 } from '../models/core-types';
+import { BaseRegistry, DomainError } from '../utils';
 
 /**
  * In-memory implementation of ProcessRegistry
  */
-export class InMemoryProcessRegistry implements ProcessRegistry {
-  private processDefinitions = new Map<string, ProcessDefinition<string, unknown>>();
-  
+export class InMemoryProcessRegistry extends BaseRegistry<ProcessDefinition<string, unknown>, string> implements ProcessRegistry {
   /**
    * Register a process definition
    * @param definition The process definition to register
@@ -29,19 +27,7 @@ export class InMemoryProcessRegistry implements ProcessRegistry {
         };
       }
       
-      if (this.processDefinitions.has(definition.type)) {
-        return {
-          success: false,
-          error: new DomainError(`Process definition for type '${definition.type}' is already registered`)
-        };
-      }
-      
-      this.processDefinitions.set(definition.type, definition as ProcessDefinition<string, unknown>);
-      
-      return {
-        success: true,
-        value: undefined
-      };
+      return this.registerItem(definition.type, definition as ProcessDefinition<string, unknown>);
     } catch (error) {
       return {
         success: false,
@@ -56,19 +42,7 @@ export class InMemoryProcessRegistry implements ProcessRegistry {
    */
   public unregisterProcess(processType: string): Result<void> {
     try {
-      if (!this.processDefinitions.has(processType)) {
-        return {
-          success: false,
-          error: new DomainError(`Process definition for type '${processType}' is not registered`)
-        };
-      }
-      
-      this.processDefinitions.delete(processType);
-      
-      return {
-        success: true,
-        value: undefined
-      };
+      return this.unregisterItem(processType);
     } catch (error) {
       return {
         success: false,
@@ -85,9 +59,9 @@ export class InMemoryProcessRegistry implements ProcessRegistry {
     processType: string
   ): Result<ProcessDefinition<TState, TData>> {
     try {
-      const definition = this.processDefinitions.get(processType);
+      const result = this.getItem(processType);
       
-      if (!definition) {
+      if (!result.success) {
         return {
           success: false,
           error: new DomainError(`Process definition for type '${processType}' is not registered`)
@@ -96,7 +70,7 @@ export class InMemoryProcessRegistry implements ProcessRegistry {
       
       return {
         success: true,
-        value: definition as ProcessDefinition<TState, TData>
+        value: result.value as unknown as ProcessDefinition<TState, TData>
       };
     } catch (error) {
       return {
@@ -111,21 +85,21 @@ export class InMemoryProcessRegistry implements ProcessRegistry {
    * @param processType The process type
    */
   public hasProcess(processType: string): boolean {
-    return this.processDefinitions.has(processType);
+    return this.hasItem(processType);
   }
   
   /**
    * Get all registered process types
    */
   public getProcessTypes(): string[] {
-    return Array.from(this.processDefinitions.keys());
+    return this.getAllKeys();
   }
 
   /**
    * Get all registered process definitions
    */
   public getAllProcessDefinitions(): ProcessDefinition<string, unknown>[] {
-    return Array.from(this.processDefinitions.values());
+    return this.getAllItems();
   }
 
   /**

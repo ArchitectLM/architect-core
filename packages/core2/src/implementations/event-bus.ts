@@ -209,7 +209,7 @@ export class ExtensionEventBusImpl implements EventBus {
     }
 
     // Keep track of once handlers that will be removed after execution
-    const onceHandlers = new Set<EventHandler<any>>();
+    const onceHandlers = new Set<EventHandler<unknown>>();
 
     // Sort subscribers by priority (highest first) and filter them
     const sortedSubscribers = Array.from(subscribers)

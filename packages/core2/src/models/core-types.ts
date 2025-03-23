@@ -2,13 +2,19 @@
  * Core domain types for the reactive architecture system
  */
 
+// Import Result and DomainError from our utility module
+import { Result, DomainError } from '../utils';
+
+// Re-export to maintain API compatibility
+export { Result, DomainError };
+
 /**
  * Unique identifier type
  */
 export type Identifier = string;
 
 /**
- * Timestamp representation in milliseconds
+ * Timestamp type - milliseconds since epoch
  */
 export type Timestamp = number;
 
@@ -75,47 +81,15 @@ export interface CommandResult<T> {
 }
 
 /**
- * Result type for operations
+ * State transition type
  */
-export interface Result<T = void> {
-  /** Whether the operation was successful */
-  success: boolean;
-  
-  /** The result value, if successful */
-  value?: T;
-  
-  /** The error, if unsuccessful */
-  error?: DomainError;
-}
-
-/**
- * State pattern type for domain entities
- */
-export type State<T extends string, D> = {
+export type State<D extends object = Record<string, unknown>> = {
   /** Current state name */
-  state: T;
+  name: string;
   
   /** Associated data */
   data: D;
   
   /** When the state was created */
   timestamp: Timestamp;
-};
-
-/**
- * Domain error class
- */
-export class DomainError extends Error {
-  /** Error code */
-  public code?: string;
-  
-  /** Additional context */
-  public context?: Record<string, unknown>;
-  
-  constructor(message: string, code?: string, context?: Record<string, unknown>) {
-    super(message);
-    this.name = 'DomainError';
-    this.code = code;
-    this.context = context;
-  }
-} 
+}; 

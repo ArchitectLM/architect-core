@@ -45,7 +45,7 @@ export {
 } from './task-executor';
 
 export {
-  SimpleTaskScheduler,
+  InMemoryTaskScheduler,
   createTaskScheduler
 } from './task-scheduler';
 
@@ -56,7 +56,7 @@ export {
 } from './process-registry';
 
 export {
-  SimpleProcessManager,
+  InMemoryProcessManager,
   createProcessManager
 } from './process-manager';
 

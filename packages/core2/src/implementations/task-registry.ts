@@ -1,8 +1,9 @@
 import { 
   TaskDefinition, 
-  TaskRegistry 
-} from '../models/task-system';
-import { Result, DomainError } from '../models/core-types';
+  TaskRegistry,
+  Result
+} from '../models';
+import { BaseRegistry, DomainError } from '../utils';
 
 /**
  * Extended task definition with additional properties
@@ -15,9 +16,7 @@ interface ExtendedTaskDefinition<TInput, TOutput> extends TaskDefinition<TInput,
  * In-memory implementation of TaskRegistry
  * Manages task definitions with proper error handling and type safety
  */
-export class InMemoryTaskRegistry implements TaskRegistry {
-  private tasks = new Map<string, TaskDefinition<unknown, unknown>>();
-
+export class InMemoryTaskRegistry extends BaseRegistry<TaskDefinition<unknown, unknown>, string> implements TaskRegistry {
   /**
    * Register a task definition
    * @param definition The task definition to register
@@ -29,11 +28,11 @@ export class InMemoryTaskRegistry implements TaskRegistry {
       throw new DomainError(`Task definition must have a type`);
     }
 
-    if (this.tasks.has(definition.type)) {
+    if (this.hasItem(definition.type)) {
       throw new DomainError(`Task ${definition.type} is already registered`);
     }
 
-    this.tasks.set(definition.type, definition as TaskDefinition<unknown, unknown>);
+    this.items.set(definition.type, definition as TaskDefinition<unknown, unknown>);
   }
 
   /**
@@ -41,11 +40,11 @@ export class InMemoryTaskRegistry implements TaskRegistry {
    * @param taskType The ID of the task definition to unregister
    */
   unregisterTask(taskType: string): void {
-    if (!this.tasks.has(taskType)) {
+    if (!this.hasItem(taskType)) {
       throw new DomainError(`Task ${taskType} not found`);
     }
 
-    this.tasks.delete(taskType);
+    this.items.delete(taskType);
   }
 
   /**
@@ -55,8 +54,7 @@ export class InMemoryTaskRegistry implements TaskRegistry {
   getTask<TInput = unknown, TOutput = unknown>(
     taskType: string
   ): TaskDefinition<TInput, TOutput> | undefined {
-    const task = this.tasks.get(taskType);
-    return task as TaskDefinition<TInput, TOutput> | undefined;
+    return this.items.get(taskType) as TaskDefinition<TInput, TOutput> | undefined;
   }
 
   /**
@@ -67,7 +65,7 @@ export class InMemoryTaskRegistry implements TaskRegistry {
     taskType: string
   ): Promise<Result<TaskDefinition<TInput, TOutput>>> {
     try {
-      const task = this.tasks.get(taskType);
+      const task = this.items.get(taskType);
       if (!task) {
         return {
           success: false,
@@ -89,14 +87,14 @@ export class InMemoryTaskRegistry implements TaskRegistry {
    * @param taskType The ID of the task definition to check
    */
   hasTask(taskType: string): boolean {
-    return this.tasks.has(taskType);
+    return this.hasItem(taskType);
   }
 
   /**
    * Get all registered task types
    */
   getTaskTypes(): string[] {
-    return Array.from(this.tasks.keys());
+    return Array.from(this.items.keys());
   }
 
   /**
@@ -106,7 +104,7 @@ export class InMemoryTaskRegistry implements TaskRegistry {
   getTaskDefinitionsByFilter(
     filterFn: (task: TaskDefinition<unknown, unknown>) => boolean
   ): TaskDefinition<unknown, unknown>[] {
-    return Array.from(this.tasks.values()).filter(filterFn);
+    return Array.from(this.items.values()).filter(filterFn);
   }
 
   /**
@@ -128,14 +126,14 @@ export class InMemoryTaskRegistry implements TaskRegistry {
    * Clear all task definitions (primarily for testing)
    */
   clear(): void {
-    this.tasks.clear();
+    this.items.clear();
   }
 
   /**
    * Get the count of registered task definitions
    */
   get count(): number {
-    return this.tasks.size;
+    return this.items.size;
   }
 }
 

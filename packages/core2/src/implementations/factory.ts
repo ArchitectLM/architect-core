@@ -21,9 +21,11 @@ import {
   PluginState,
   Result,
   Identifier,
-} from '../models/index';
+  DomainEvent,
+  Metadata
+} from '../models';
 
-import { DomainEvent, Metadata, DomainError } from '../models/core-types';
+import { DomainError } from '../utils';
 import { createInMemoryEventBus } from './event-bus';
 import { createEventStorage } from './event-storage';
 import { createExtensionSystem } from './extension-system';
@@ -131,7 +133,7 @@ export function createRuntime(options: RuntimeFactoryOptions = {}): Runtime {
       }
     }
     
-    return runtime;
+    return runtime as Runtime;
   } catch (error) {
     console.error('Failed to create runtime:', error instanceof Error ? error.message : String(error));
     throw error;

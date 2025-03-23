@@ -1,5 +1,4 @@
-import { DomainEvent, Result } from '../models/core-types';
-import { EventBus, EventSource, EventStorage } from '../models/event-system';
+import { DomainEvent, Result, EventBus, EventSource, EventStorage } from '../models';
 
 /**
  * In-memory implementation of EventSource for replaying events

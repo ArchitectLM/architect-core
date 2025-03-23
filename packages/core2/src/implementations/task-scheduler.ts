@@ -1,20 +1,15 @@
 import { v4 as uuidv4 } from 'uuid';
-import { Identifier, Result, Timestamp } from '../models/core-types';
 import { 
+  Identifier, 
+  Result, 
+  Timestamp,
   TaskScheduler, 
   TaskExecutor, 
   TaskRegistry,
   TaskExecution,
   TaskStatus as SystemTaskStatus
-} from '../models/task-system';
-
-// Define a local DomainError class to avoid import issues
-class DomainError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'DomainError';
-  }
-}
+} from '../models';
+import { DomainError } from '../utils';
 
 // Define local interfaces for internal implementation
 interface ScheduledTask {

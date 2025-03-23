@@ -9,7 +9,6 @@ export * from './extension-system';
 
 // Export plugin system
 export * from './plugin-system';
-// Do not export the deprecated base-plugin.ts
 
 // Export task system
 export * from './task-system';

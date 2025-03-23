@@ -1,7 +1,5 @@
 import {
-  DomainError,
   Identifier,
-  Metadata,
   Result
 } from '../models/core-types';
 import { 
@@ -10,12 +8,12 @@ import {
   PluginState 
 } from '../models/plugin-system';
 import { ExtensionSystem } from '../models/extension-system';
+import { BaseRegistry, DomainError } from '../utils';
 
 /**
  * In-memory implementation of PluginRegistry
  */
-export class InMemoryPluginRegistry implements PluginRegistry {
-  private plugins = new Map<string, Plugin<PluginState>>();
+export class InMemoryPluginRegistry extends BaseRegistry<Plugin<PluginState>, string> implements PluginRegistry {
   private extensionSystem?: ExtensionSystem;
 
   /**
@@ -40,22 +38,18 @@ export class InMemoryPluginRegistry implements PluginRegistry {
       }
 
       const pluginId = plugin.getState().id;
-      if (this.plugins.has(pluginId)) {
-        return {
-          success: false,
-          error: new DomainError(`Plugin with ID ${pluginId} already registered`)
-        };
+      const registerResult = this.registerItem(pluginId, plugin);
+      
+      if (!registerResult.success) {
+        return registerResult;
       }
-
-      // Register the plugin
-      this.plugins.set(pluginId, plugin);
       
       // Register with extension system if available
       if (this.extensionSystem) {
         const extensionResult = this.extensionSystem.registerExtension(plugin);
         if (!extensionResult.success) {
           // If extension registration fails, unregister the plugin
-          this.plugins.delete(pluginId);
+          this.unregisterItem(pluginId);
           return extensionResult;
         }
       }
@@ -77,7 +71,8 @@ export class InMemoryPluginRegistry implements PluginRegistry {
    */
   public unregisterPlugin(pluginId: Identifier): Result<void> {
     try {
-      if (!this.plugins.has(pluginId)) {
+      const result = this.getItem(pluginId);
+      if (!result.success) {
         return {
           success: false,
           error: new DomainError(`Plugin with ID ${pluginId} not found`)
@@ -92,8 +87,7 @@ export class InMemoryPluginRegistry implements PluginRegistry {
         }
       }
 
-      this.plugins.delete(pluginId);
-      return { success: true, value: undefined };
+      return this.unregisterItem(pluginId);
     } catch (error) {
       return {
         success: false,
@@ -110,16 +104,19 @@ export class InMemoryPluginRegistry implements PluginRegistry {
    */
   public getPlugin<TState extends PluginState>(pluginId: Identifier): Result<Plugin<TState>> {
     try {
-      const plugin = this.plugins.get(pluginId);
-
-      if (!plugin) {
+      const result = this.getItem(pluginId);
+      
+      if (!result.success) {
         return {
           success: false,
           error: new DomainError(`Plugin with ID ${pluginId} not found`)
         };
       }
 
-      return { success: true, value: plugin as unknown as Plugin<TState> };
+      return { 
+        success: true, 
+        value: result.value as unknown as Plugin<TState> 
+      };
     } catch (error) {
       return {
         success: false,
@@ -131,28 +128,10 @@ export class InMemoryPluginRegistry implements PluginRegistry {
   }
 
   /**
-   * Check if a plugin is registered
-   * @param pluginId The ID of the plugin to check
-   */
-  public hasPlugin(pluginId: Identifier): boolean {
-    return this.plugins.has(pluginId);
-  }
-
-  /**
    * Get all registered plugins
    */
   public getAllPlugins(): Plugin[] {
-    return Array.from(this.plugins.values());
-  }
-
-  /**
-   * Get plugins by category
-   * @param category The category to filter by
-   */
-  public getPluginsByCategory(category: string): Plugin[] {
-    return this.getAllPlugins().filter(plugin => 
-      plugin.getState().data['category'] === category
-    );
+    return this.getAllItems();
   }
 
   /**
@@ -160,7 +139,7 @@ export class InMemoryPluginRegistry implements PluginRegistry {
    * @param capabilityId The capability ID to search for
    */
   public getPluginsWithCapability(capabilityId: string): Plugin[] {
-    return this.getAllPlugins().filter(plugin => 
+    return this.filterItems(plugin => 
       plugin.hasCapability(capabilityId)
     );
   }

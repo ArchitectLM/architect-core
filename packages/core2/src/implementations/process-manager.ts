@@ -5,21 +5,19 @@ import {
   ProcessInstance,
   ProcessManager,
   ProcessRegistry,
-  ProcessTransition
-} from '../models/process-system';
-import {
-  DomainError,
+  ProcessTransition,
   Identifier,
   Metadata,
   Result,
-  Timestamp
-} from '../models/core-types';
-import { TaskExecutor } from '../models/task-system';
+  Timestamp,
+  TaskExecutor
+} from '../models';
+import { DomainError } from '../utils';
 
 /**
- * SimpleProcessRegistry interface for getProcessDefinitionByType
+ * InMemoryProcessRegistry interface for getProcessDefinitionByType
  */
-interface SimpleProcessRegistry extends ProcessRegistry {
+interface InMemoryProcessRegistry extends ProcessRegistry {
   getProcessDefinitionByType<TState extends string, TData>(
     processType: string, 
     version?: string
@@ -27,16 +25,16 @@ interface SimpleProcessRegistry extends ProcessRegistry {
 }
 
 /**
- * Simple implementation of ProcessManager
+ * In-memory implementation of ProcessManager
  */
-export class SimpleProcessManager implements ProcessManager {
+export class InMemoryProcessManager implements ProcessManager {
   private processRegistry: ProcessRegistry;
   private taskExecutor: TaskExecutor;
   private processes = new Map<Identifier, ProcessInstance<string, unknown>>();
   private checkpoints = new Map<Identifier, ProcessCheckpoint<unknown>>();
   
   /**
-   * Create a new SimpleProcessManager
+   * Create a new InMemoryProcessManager
    * @param processRegistry Registry of process definitions
    * @param taskExecutor Executor for running tasks
    */
@@ -498,9 +496,9 @@ export class SimpleProcessManager implements ProcessManager {
     processType: string,
     version?: string
   ): Result<ProcessDefinition<TState, TData>> {
-    // Use the SimpleProcessRegistry's method if it exists
+    // Use the InMemoryProcessRegistry's method if it exists
     if ('getProcessDefinitionByType' in this.processRegistry) {
-      return (this.processRegistry as SimpleProcessRegistry)
+      return (this.processRegistry as InMemoryProcessRegistry)
         .getProcessDefinitionByType<TState, TData>(processType, version);
     }
     
@@ -530,5 +528,5 @@ export class SimpleProcessManager implements ProcessManager {
  * Factory function to create a new ProcessManager
  */
 export function createProcessManager(processRegistry: ProcessRegistry, taskExecutor: TaskExecutor): ProcessManager {
-  return new SimpleProcessManager(processRegistry, taskExecutor);
+  return new InMemoryProcessManager(processRegistry, taskExecutor);
 } 

@@ -140,24 +140,24 @@ export {
 } from './implementations/task-executor';
 
 export {
-  SimpleTaskScheduler,
+  InMemoryTaskScheduler,
   createTaskScheduler
 } from './implementations/task-scheduler';
 
 // Implementations (process system)
 export {
-  SimpleProcessRegistry,
+  InMemoryProcessRegistry,
   createProcessRegistry
 } from './implementations/process-registry';
 
 export {
-  SimpleProcessManager,
+  InMemoryProcessManager,
   createProcessManager
 } from './implementations/process-manager';
 
 // Implementations (plugin system)
 export {
-  SimplePluginRegistry,
+  InMemoryPluginRegistry,
   createPluginRegistry
 } from './implementations/plugin-registry';
 
