@@ -1,122 +1,280 @@
-# ArchitectLM Core
+# Core2 Package
 
-This package provides the core functionality for the ArchitectLM framework, a reactive event-driven system for building resilient applications.
+## Overview
 
-## Features
+The Core2 package provides a robust, extensible runtime system with a plugin-based architecture designed for building scalable and resilient applications. At its heart is a powerful plugin system that allows developers to add, modify, and enhance functionality through modular extensions.
 
-- **Event Bus**: A reactive event bus for publishing and subscribing to events, with support for RxJS observables.
-- **Command Handler**: An abstract command handler for processing commands with middleware support.
-- **Circuit Breaker**: A circuit breaker pattern implementation for handling failures and preventing cascading failures.
-- **Retry Policy**: A retry policy pattern implementation for handling transient failures with configurable backoff strategies.
-- **Runtime**: A reactive runtime for executing event-driven workflows, managing processes and tasks.
-- **Dead Letter Queue**: A queue for storing and reprocessing failed events.
-- **Structured Logger**: A flexible logging system with support for levels, child loggers, and contextual information.
-- **Time Windowed Operations**: Support for tumbling windows, sliding windows, session windows, and count windows on event streams.
-- **Event Correlation**: Tools for correlating related events based on keys or custom matchers within time windows.
+## Key Features
 
-## Installation
+- **Plugin Architecture**: Extend functionality through a comprehensive plugin system
+- **Task Execution**: Process tasks with validation, monitoring, and failure handling
+- **Resource Management**: Control resource allocation and prevent overuse
+- **Fault Tolerance**: Built-in circuit breaker pattern prevents cascading failures
+- **Input Validation**: Schema-based validation ensures data integrity
+- **Extensibility**: Create custom plugins to add specialized capabilities
 
-```bash
-npm install @architectlm/core
-```
+## Core Plugins
 
-## Usage
+### Circuit Breaker
+
+Prevents cascading failures by detecting problematic services or tasks and temporarily cutting off execution when failure rates exceed thresholds.
 
 ```typescript
-import { 
-  ReactiveEventBus, 
-  CommandHandler, 
-  DefaultCircuitBreaker, 
-  DefaultRetryPolicy, 
-  DeadLetterQueue,
-  StructuredLogger,
-  LogLevel,
-  TimeWindowedOperations,
-  EventCorrelation,
-  createRuntime 
-} from '@architectlm/core';
-
-// Create an event bus
-const eventBus = new ReactiveEventBus();
-
-// Create a circuit breaker
-const circuitBreaker = new DefaultCircuitBreaker('my-circuit-breaker', {
-  failureThreshold: 5,
-  resetTimeout: 30000
-});
-
-// Create a retry policy
-const retryPolicy = new DefaultRetryPolicy('my-retry-policy', {
-  maxAttempts: 3,
-  backoff: 'exponential',
-  initialDelay: 1000
-});
-
-// Create a dead letter queue
-const deadLetterQueue = new DeadLetterQueue(eventBus);
-
-// Create a structured logger
-const logger = new StructuredLogger({
-  name: 'MyService',
-  level: LogLevel.INFO,
-  context: { serviceId: 'user-service' }
-});
-
-// Create a time windowed operations handler
-const windowedOps = new TimeWindowedOperations(eventBus);
-
-// Create an event correlation handler
-const eventCorrelation = new EventCorrelation(eventBus);
-
-// Create a command handler (example implementation)
-class MyCommandHandler extends CommandHandler {
-  constructor(eventBus) {
-    super(eventBus);
-  }
-
-  get commandName() {
-    return 'MyCommand';
-  }
-
-  protected async handleCommand(command) {
-    // Command implementation
-    return { success: true };
-  }
-}
-
-const commandHandler = new MyCommandHandler(eventBus);
-
-// Create a runtime with process and task definitions
-const runtime = createRuntime({
-  processDefinitions: {
-    /* process definitions */
-  },
-  taskDefinitions: {
-    /* task definitions */
-  }
+// Usage example
+const circuitBreaker = createCircuitBreakerPlugin({
+  failureThreshold: 3,
+  resetTimeout: 5000
 });
 ```
 
-## Recent Changes
+### Validation
 
-### Migration to Extension System
+Ensures inputs and outputs conform to specified schemas, preventing invalid data from entering the system.
 
-As part of our effort to make the ArchitectLM framework more modular and extensible, we have moved several functionalities from the core package to the extension system. This allows for better separation of concerns, more flexibility, and easier customization.
+```typescript
+// Usage example
+const validation = createValidationPlugin();
+validation.setTaskValidation('calculation-task', {
+  schema: calculationSchema,
+  mode: 'strict'
+});
+```
 
-The following functionality has been moved to the extension system:
+### Resource Governance
 
-- **Caching**: The `Cache` class and related types have been moved to the `CachingStrategyExtension`.
-- **Enhanced Retry Policy**: The `EnhancedRetryPolicy` class and related types have been moved to the `BackoffStrategyExtension`.
-- **Rate Limiter**: The `RateLimiter` class has been moved to the extension system.
-- **Bulkhead**: The `Bulkhead` isolation pattern has been moved to the extension system.
-- **Enhanced Circuit Breaker**: The `EnhancedCircuitBreaker` with additional configuration options has been moved to the extension system.
+Manages system resources by monitoring utilization and applying policies to prevent resource exhaustion.
 
-For more information on the migration, see the [Extension Migration Guide](./docs/extension-migration.md).
+```typescript
+// Usage example
+const resourceGovernance = createResourceGovernancePlugin({
+  defaultPolicy: 'Standard Resources',
+  enableRuntimeThrottling: true
+});
+```
+
+## Getting Started
+
+### Installation
+
+```bash
+# Navigate to the package directory
+cd packages/core2
+
+# Install dependencies
+npm install
+```
+
+### Basic Usage
+
+```typescript
+import { createRuntime } from '@nocode/core2';
+import { createCircuitBreakerPlugin } from '@nocode/core2/plugins/circuit-breaker';
+import { createValidationPlugin } from '@nocode/core2/plugins/validation';
+
+// Create runtime
+const runtime = createRuntime();
+
+// Create plugins
+const circuitBreaker = createCircuitBreakerPlugin();
+const validation = createValidationPlugin();
+
+// Register plugins
+runtime.extensionSystem.registerExtension(circuitBreaker);
+runtime.extensionSystem.registerExtension(validation);
+
+// Register a task
+runtime.taskRegistry.registerTask({
+  type: 'hello-world',
+  handler: async (input) => {
+    return { message: `Hello, ${input.name}!` };
+  }
+});
+
+// Execute task
+const result = await runtime.taskExecutor.executeTask('hello-world', { name: 'World' });
+console.log(result.value.result.message); // "Hello, World!"
+```
+
+## Testing
+
+The Core2 package includes comprehensive test suites for all components:
+
+### Running Tests
+
+```bash
+# Run all tests
+npm test
+
+# Run specific test file
+npm test -- tests/plugins/circuit-breaker.test.ts
+
+# Run tests with coverage
+npm test -- --coverage
+```
+
+### Test Types
+
+- **Unit Tests**: Tests for individual components and plugins
+- **Integration Tests**: Tests for interactions between multiple plugins
+- **End-to-End Tests**: Tests for complete workflows through the runtime
+
+### Test Utilities
+
+The package provides several utilities to simplify testing:
+
+- **Test Runtime**: `asTestRuntime()` helper provides access to internal runtime components
+- **Mock Timers**: Vitest's timer mocking for testing time-dependent features
+- **Spy Functions**: Mock implementations with vi.spyOn() to verify interactions
+
+## Development Guide
+
+### Creating a New Plugin
+
+1. **Implement the Extension Interface**:
+
+```typescript
+import { Extension } from '../models/extension-system';
+
+export class MyPlugin implements Extension {
+  id = 'my-plugin';
+  name = 'My Plugin';
+  description = 'Provides custom functionality';
+  dependencies: string[] = [];
+  
+  getHooks() {
+    return [/* hook registrations */];
+  }
+  
+  getVersion() {
+    return '1.0.0';
+  }
+  
+  getCapabilities() {
+    return ['my-capability'];
+  }
+  
+  // Custom plugin methods...
+}
+
+export function createMyPlugin(config?: any) {
+  return new MyPlugin();
+}
+```
+
+2. **Register Extension Points**:
+
+```typescript
+getHooks() {
+  return [
+    {
+      pointName: ExtensionPointNames.TASK_BEFORE_EXECUTE,
+      hook: async (params, context) => this.beforeTaskExecution(params, context),
+      priority: 10
+    }
+  ];
+}
+```
+
+3. **Test Your Plugin**:
+
+```typescript
+describe('My Plugin', () => {
+  let plugin: MyPlugin;
+  
+  beforeEach(() => {
+    plugin = createMyPlugin();
+  });
+  
+  it('should implement required interface', () => {
+    expect(plugin.id).toBeDefined();
+    expect(plugin.getHooks()).toBeInstanceOf(Array);
+  });
+  
+  it('should provide expected functionality', async () => {
+    // Test implementation
+  });
+});
+```
+
+### Plugin Best Practices
+
+- **Single Responsibility**: Each plugin should focus on one specific aspect of functionality
+- **Error Handling**: Gracefully handle errors to prevent affecting other plugins
+- **Configuration**: Provide sensible defaults but allow customization
+- **Documentation**: Document plugin interfaces, configuration options, and examples
+- **Testing**: Create comprehensive tests for normal, edge, and failure cases
+
+## Integration Testing
+
+The integration tests demonstrate how multiple plugins work together:
+
+```typescript
+// Example from core-plugins-integration.test.ts
+describe('Core Plugins Integration', () => {
+  // ...setup code...
+  
+  it('should handle a realistic workflow with multiple tasks', async () => {
+    // Execute a workflow using multiple plugins
+    const result = await executeWorkflow();
+    
+    // Verify parts of the workflow completed correctly
+    expect(result.calculation.result).toBe(50);
+    expect(result.processing.itemCount).toBe(50);
+    
+    // Verify that all plugins were involved
+    expect(validateSpy).toHaveBeenCalled();
+    expect(applyPolicySpy).toHaveBeenCalled();
+    expect(circuitStateSpy).toHaveBeenCalled();
+  });
+});
+```
+
+## Debugging
+
+### Troubleshooting Tips
+
+1. **Plugin Registration Issues**:
+   - Check if the plugin implements all required methods
+   - Verify unique plugin IDs
+
+2. **Task Execution Failures**:
+   - Inspect validation results
+   - Check circuit breaker state
+   - Review resource availability
+
+3. **Integration Issues**:
+   - Verify plugin order/priority
+   - Ensure dependencies are correctly declared
+   - Check execution timing for async operations
+
+### Debugging Plugins
+
+```typescript
+// Get circuit breaker analytics
+const analytics = circuitBreakerPlugin.getCircuitAnalytics('my-task');
+console.log('Circuit state:', analytics.state);
+console.log('Failure count:', analytics.failureCount);
+
+// Check validation details
+const validationDetails = validationPlugin.getValidationDetails('my-task');
+console.log('Has validation:', validationDetails.hasValidation);
+console.log('Schema:', validationDetails.schema);
+
+// Monitor resource usage
+const resources = resourceGovernancePlugin.getResourceMetrics();
+console.log('CPU usage:', resources.cpu.current);
+console.log('Memory usage:', resources.memory.current);
+```
 
 ## Documentation
 
-For more detailed documentation, see the [docs](./docs) directory.
+For more detailed information, refer to:
+
+- [Plugin System Documentation](./docs/PLUGINS.md)
+- [API Reference](./docs/API.md)
+- [Extension Point Reference](./docs/EXTENSION_POINTS.md)
+- [Contributing Guide](./CONTRIBUTING.md)
 
 ## License
 
-MIT 
+[MIT](./LICENSE)
