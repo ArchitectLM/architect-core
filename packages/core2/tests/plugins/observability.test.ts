@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Runtime } from '../../src/models/runtime';
 import { InMemoryExtensionSystem } from '../../src/implementations/extension-system';
-import { EventBusImpl } from '../../src/implementations/event-bus-impl';
+import { ExtensionEventBusImpl } from '../../src/implementations/event-bus';
 import { TaskDefinition, TaskContext } from '../../src/models/task-system';
 import { 
   ObservabilityPlugin,
@@ -198,7 +198,7 @@ class ObservabilityPluginExtension implements Extension {
 describe('Observability Plugin', () => {
   let runtime: Runtime;
   let extensionSystem: InMemoryExtensionSystem;
-  let eventBus: EventBusImpl;
+  let eventBus: ExtensionEventBusImpl;
   let observabilityPluginExtension: ObservabilityPluginExtension;
   let observabilityPlugin: ObservabilityPlugin;
   let debugExtension: Extension;
@@ -255,7 +255,7 @@ describe('Observability Plugin', () => {
     
     // Create fresh instances for each test
     extensionSystem = new InMemoryExtensionSystem();
-    eventBus = new EventBusImpl();
+    eventBus = new ExtensionEventBusImpl();
     
     // Create the plugin with default settings
     observabilityPlugin = createObservabilityPlugin({
@@ -879,7 +879,7 @@ describe('Observability Plugin', () => {
       
       // Create fresh instances for each test
       extensionSystem = new InMemoryExtensionSystem();
-      eventBus = new EventBusImpl();
+      eventBus = new ExtensionEventBusImpl();
       
       // Add console logging for extension point execution
       const originalExecuteExtensionPoint = extensionSystem.executeExtensionPoint.bind(extensionSystem);

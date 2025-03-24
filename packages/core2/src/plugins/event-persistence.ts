@@ -1,8 +1,12 @@
-import { Extension } from '../models/extension';
+import { 
+  Extension, 
+  ExtensionSystem, 
+  ExtensionPoint, 
+  ExtensionHook, 
+  ExtensionContext 
+} from '../models/extension-system';
 import { EventBus, EventStorage } from '../models/event-system';
-import { ExtensionSystem } from '../models/extension';
 import { v4 as uuidv4 } from 'uuid';
-import { ExtensionPoint, ExtensionHook, ExtensionContext } from '../models/extension';
 import { DomainEvent, Result } from '../models/core-types';
 
 interface EventPersistenceOptions {
@@ -99,10 +103,19 @@ export class EventPersistencePlugin implements Extension {
     // Get events from storage
     const result = await this.options.storage.getAllEvents<any>(fromTimestamp, toTimestamp);
     if (!result.success) {
-      throw new Error(`Failed to retrieve events for replay: ${result.error.message}`);
+      throw new Error(`Failed to retrieve events for replay: ${result.error?.message || 'Unknown error'}`);
+    }
+
+    if (!result.value) {
+      throw new Error('No events returned from storage');
     }
 
     const events = result.value.filter(event => !eventTypes || eventTypes.includes(event.type));
+
+    if (events.length === 0) {
+      console.log('No events found for replay in the specified time range');
+      return;
+    }
 
     // Publish replay start event
     await this.eventBus.publish({
@@ -120,11 +133,12 @@ export class EventPersistencePlugin implements Extension {
     // Replay events in order
     for (const event of events) {
       await this.eventBus.publish({
-        ...event,
+        ...event, // Preserve original ID and other properties
         metadata: {
-          ...event.metadata,
+          ...(event.metadata || {}),
           isReplay: true,
-          originalTimestamp: event.timestamp
+          originalTimestamp: event.timestamp,
+          replayTimestamp: Date.now()
         }
       });
     }
@@ -152,7 +166,11 @@ export class EventPersistencePlugin implements Extension {
     // Get correlated events from storage
     const result = await this.options.storage.getEventsByCorrelationId<any>(correlationId);
     if (!result.success) {
-      throw new Error(`Failed to retrieve correlated events: ${result.error.message}`);
+      throw new Error(`Failed to retrieve correlated events: ${result.error?.message || 'Unknown error'}`);
+    }
+
+    if (!result.value) {
+      return [];
     }
 
     return result.value;
@@ -165,7 +183,12 @@ export class EventPersistencePlugin implements Extension {
     // Get events older than retention period
     const result = await this.options.storage.getAllEvents<any>(0, cutoffTime);
     if (!result.success) {
-      console.error(`Failed to retrieve old events: ${result.error.message}`);
+      console.error(`Failed to retrieve old events: ${result.error?.message || 'Unknown error'}`);
+      return;
+    }
+    
+    if (!result.value) {
+      console.warn('No events returned from storage during cleanup');
       return;
     }
     

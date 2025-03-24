@@ -232,6 +232,47 @@ export class ValidationPlugin implements Extension {
   }
   
   /**
+   * Clear validation rules for a specific task
+   */
+  clearTaskValidation(taskId: string): void {
+    if (this.taskValidations.has(taskId)) {
+      this.taskValidations.delete(taskId);
+      console.log(`[Validation] Cleared validation rules for task: ${taskId}`);
+    }
+  }
+  
+  /**
+   * Get detailed validation information for a specific task
+   * This includes the schema, validation mode, and any custom validator presence
+   */
+  getValidationDetails(taskId: string): { 
+    hasValidation: boolean; 
+    schema?: JSONSchema; 
+    hasCustomValidator: boolean; 
+    mode: ValidationMode;
+    disabled: boolean;
+  } {
+    const config = this.taskValidations.get(taskId);
+    
+    if (!config) {
+      return { 
+        hasValidation: false, 
+        hasCustomValidator: false, 
+        mode: 'strict', 
+        disabled: false 
+      };
+    }
+    
+    return {
+      hasValidation: !!(config.schema || config.validator),
+      schema: config.schema,
+      hasCustomValidator: !!config.validator,
+      mode: config.mode || 'strict',
+      disabled: !!config.disabled
+    };
+  }
+  
+  /**
    * Validate data against a JSON Schema
    */
   private validateWithSchema(data: any, schema: JSONSchema): ValidationResult {

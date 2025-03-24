@@ -174,26 +174,38 @@ describe('Event Persistence and Correlation', () => {
         await eventBus.publish(event);
       }
       
-      // Replay events within a time window
+      // Create a special handler that will receive the full event, not just the payload
+      // This is needed because our event system calls handlers with just the payload
+      let capturedEvent: DomainEvent<string> | null = null;
+      
+      // Use a special subscription that captures the event before it's published
+      eventBus.addEventFilter((event) => {
+        if (event.metadata?.replayed && event.type === 'test-event') {
+          capturedEvent = event as DomainEvent<string>;
+        }
+        return true; // Allow the event to be published
+      });
+      
+      // Also add a regular handler to ensure it's called
       const handler = vi.fn();
       eventBus.subscribe('test-event', handler);
       
       const result = await eventSource.replayEvents('test-event', now - 500, now + 500);
       expect(result.success).toBe(true);
       expect(handler).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenCalledWith('present'); // Verify handler received the payload
       
-      // Expect replayed event to match original event ID, type, and payload
-      // but may have additional metadata
-      const calledEvent = handler.mock.calls[0][0];
-      expect(calledEvent.id).toBe(events[1].id);
-      expect(calledEvent.type).toBe(events[1].type);
-      expect(calledEvent.payload).toBe(events[1].payload);
-      expect(calledEvent.timestamp).toBe(events[1].timestamp);
+      // Verify that our filter captured the event properly
+      expect(capturedEvent).not.toBeNull();
+      expect(capturedEvent!.id).toBe(events[1].id);
+      expect(capturedEvent!.type).toBe(events[1].type);
+      expect(capturedEvent!.payload).toBe(events[1].payload);
+      expect(capturedEvent!.timestamp).toBe(events[1].timestamp);
       
       // Verify metadata contains replayed flag
-      expect(calledEvent.metadata).toBeDefined();
-      expect(calledEvent.metadata.replayed).toBe(true);
-      expect(calledEvent.metadata.replayTimestamp).toBeGreaterThan(0);
+      expect(capturedEvent!.metadata).toBeDefined();
+      expect(capturedEvent!.metadata?.replayed).toBe(true);
+      expect(capturedEvent!.metadata?.replayTimestamp).toBeGreaterThan(0);
     });
   });
 }); 

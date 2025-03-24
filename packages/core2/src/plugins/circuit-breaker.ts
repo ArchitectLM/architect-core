@@ -91,17 +91,17 @@ export class CircuitBreakerPlugin implements Extension {
     console.log(`[CircuitBreaker] Registering hooks with extension system`);
     return [
       {
-        pointName: ExtensionPointNames.TASK_BEFORE_EXECUTION,
+        pointName: ExtensionPointNames.TASK_BEFORE_EXECUTE,
         hook: async (params: any, context: any) => this.beforeTaskExecution(params, context),
         priority: 10
       },
       {
-        pointName: ExtensionPointNames.TASK_AFTER_EXECUTION,
+        pointName: ExtensionPointNames.TASK_AFTER_EXECUTE,
         hook: async (params: any, context: any) => this.afterTaskExecution(params, context),
         priority: 10
       },
       {
-        pointName: ExtensionPointNames.TASK_EXECUTION_ERROR,
+        pointName: 'task:error',
         hook: async (params: any, context: any) => this.onTaskError(params, context),
         priority: 10
       }
@@ -232,6 +232,14 @@ export class CircuitBreakerPlugin implements Extension {
   // Manually reset a circuit to CLOSED state
   resetCircuit(taskType: string): void {
     this.transitionToState(taskType, CircuitBreakerState.CLOSED);
+  }
+  
+  // Reset all circuits to CLOSED state
+  resetAllCircuits(): void {
+    console.log(`[CircuitBreaker] Resetting all circuits to CLOSED state`);
+    this.circuits.forEach((_, taskType) => {
+      this.resetCircuit(taskType);
+    });
   }
   
   // Get or create a circuit for a task

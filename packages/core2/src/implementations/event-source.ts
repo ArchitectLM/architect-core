@@ -1,4 +1,4 @@
-import { DomainEvent, Result, EventBus, EventSource, EventStorage } from '../models';
+import { Result, EventBus, EventSource, EventStorage } from '../models';
 
 /**
  * In-memory implementation of EventSource for replaying events
@@ -47,7 +47,11 @@ export class InMemoryEventSource implements EventSource {
         (a, b) => a.timestamp - b.timestamp
       );
       
-      // Mark events as replayed in metadata
+      if (sortedEvents.length === 0) {
+        return { success: true, value: undefined };
+      }
+      
+      // Mark events as replayed in metadata but preserve all original properties
       const eventsToReplay = sortedEvents.map(event => ({
         ...event,
         metadata: {
@@ -57,8 +61,10 @@ export class InMemoryEventSource implements EventSource {
         }
       }));
       
-      // Publish all events to the bus
-      await this.eventBus.publishAll(eventsToReplay);
+      // Publish events individually to ensure handlers can process each one
+      for (const event of eventsToReplay) {
+        await this.eventBus.publish(event);
+      }
       
       return { success: true, value: undefined };
     } catch (error) {
@@ -98,6 +104,10 @@ export class InMemoryEventSource implements EventSource {
         (a, b) => a.timestamp - b.timestamp
       );
       
+      if (sortedEvents.length === 0) {
+        return { success: true, value: undefined };
+      }
+      
       // Mark events as replayed in metadata
       const eventsToReplay = sortedEvents.map(event => ({
         ...event,
@@ -108,8 +118,10 @@ export class InMemoryEventSource implements EventSource {
         }
       }));
       
-      // Publish all events to the bus
-      await this.eventBus.publishAll(eventsToReplay);
+      // Publish events individually to ensure handlers can process each one
+      for (const event of eventsToReplay) {
+        await this.eventBus.publish(event);
+      }
       
       return { success: true, value: undefined };
     } catch (error) {

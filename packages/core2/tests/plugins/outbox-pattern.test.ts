@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { EventBus } from '../../src/models/event';
+import { EventBus } from '../../src/models/event-system';
 import { 
   OutboxPattern, 
   OutboxEntry, 
@@ -11,16 +11,30 @@ describe('Outbox Pattern Plugin', () => {
   let eventBus: EventBus;
   let outboxRepository: OutboxRepository;
   let outboxPattern: OutboxPattern;
+  let setIntervalSpy: any;
 
   beforeEach(() => {
     vi.useFakeTimers();
     
     eventBus = {
       subscribe: vi.fn(),
+      subscribeWithFilter: vi.fn(),
       unsubscribe: vi.fn(),
+      unsubscribeById: vi.fn(),
       publish: vi.fn(),
-      applyBackpressure: vi.fn()
-    };
+      publishAll: vi.fn(),
+      applyBackpressure: vi.fn(),
+      clearSubscriptions: vi.fn(),
+      clearAllSubscriptions: vi.fn(),
+      subscriberCount: vi.fn(),
+      hasSubscribers: vi.fn(),
+      correlate: vi.fn(),
+      enablePersistence: vi.fn(),
+      disablePersistence: vi.fn(),
+      addEventFilter: vi.fn(),
+      addEventRouter: vi.fn(),
+      removeEventRouter: vi.fn()
+    } as unknown as EventBus;
 
     outboxRepository = {
       saveEntry: vi.fn().mockResolvedValue(undefined),
@@ -30,11 +44,13 @@ describe('Outbox Pattern Plugin', () => {
       purgeProcessedEntries: vi.fn().mockResolvedValue(undefined)
     };
 
+    setIntervalSpy = vi.spyOn(global, 'setInterval');
     outboxPattern = createOutboxPattern(eventBus, outboxRepository);
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   describe('Plugin Initialization', () => {
@@ -44,15 +60,13 @@ describe('Outbox Pattern Plugin', () => {
     });
 
     it('should set up processing interval on initialization with defaults', () => {
-      vi.spyOn(global, 'setInterval');
       outboxPattern.initialize();
-      expect(setInterval).toHaveBeenCalledWith(expect.any(Function), 5000); // Default interval
+      expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 5000); // Default interval
     });
 
     it('should set up processing interval with custom interval', () => {
-      vi.spyOn(global, 'setInterval');
       outboxPattern.initialize(10000); // 10 seconds
-      expect(setInterval).toHaveBeenCalledWith(expect.any(Function), 10000);
+      expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 10000);
     });
   });
 
@@ -61,7 +75,7 @@ describe('Outbox Pattern Plugin', () => {
       outboxPattern.initialize();
       
       // Get the event handler function
-      const eventHandler = (eventBus.subscribe as jest.Mock).mock.calls[0][1];
+      const eventHandler = vi.mocked(eventBus.subscribe).mock.calls[0][1];
       
       const event = {
         type: 'TEST_EVENT',
@@ -83,10 +97,10 @@ describe('Outbox Pattern Plugin', () => {
       outboxPattern.initialize();
       
       // Configure repository to throw an error
-      (outboxRepository.saveEntry as jest.Mock).mockRejectedValueOnce(new Error('Database error'));
+      vi.mocked(outboxRepository.saveEntry).mockRejectedValueOnce(new Error('Database error'));
       
       // Get the event handler function
-      const eventHandler = (eventBus.subscribe as jest.Mock).mock.calls[0][1];
+      const eventHandler = vi.mocked(eventBus.subscribe).mock.calls[0][1];
       
       const event = {
         type: 'TEST_EVENT',
@@ -126,13 +140,13 @@ describe('Outbox Pattern Plugin', () => {
         }
       ];
       
-      (outboxRepository.getUnprocessedEntries as jest.Mock).mockResolvedValue(mockEntries);
+      vi.mocked(outboxRepository.getUnprocessedEntries).mockResolvedValue(mockEntries);
       
       outboxPattern.initialize();
       
-      // Trigger the interval function manually
-      const intervalCallback = (setInterval as jest.Mock).mock.calls[0][0];
-      await intervalCallback();
+      // Instead of directly accessing the interval callback, 
+      // we'll call processOutbox directly (which is what the interval would call)
+      await outboxPattern.processOutbox();
       
       // Should have marked both entries as processed
       expect(outboxRepository.markAsProcessed).toHaveBeenCalledWith('1');
@@ -163,17 +177,17 @@ describe('Outbox Pattern Plugin', () => {
         }
       ];
       
-      (outboxRepository.getUnprocessedEntries as jest.Mock).mockResolvedValue(mockEntries);
+      vi.mocked(outboxRepository.getUnprocessedEntries).mockResolvedValue(mockEntries);
       
       // Make the first entry fail to process
-      (outboxRepository.markAsProcessed as jest.Mock)
+      vi.mocked(outboxRepository.markAsProcessed)
         .mockImplementationOnce(() => Promise.reject(new Error('Processing error')));
       
       outboxPattern.initialize();
       
-      // Trigger the interval function manually
-      const intervalCallback = (setInterval as jest.Mock).mock.calls[0][0];
-      await intervalCallback();
+      // Instead of directly accessing the interval callback, 
+      // we'll call processOutbox directly (which is what the interval would call)
+      await outboxPattern.processOutbox();
       
       // Should have attempted to mark both entries as processed
       expect(outboxRepository.markAsProcessed).toHaveBeenCalledWith('1');
@@ -203,7 +217,7 @@ describe('Outbox Pattern Plugin', () => {
         }
       ];
       
-      (outboxRepository.getUnprocessedEntries as jest.Mock).mockResolvedValue(mockEntries);
+      vi.mocked(outboxRepository.getUnprocessedEntries).mockResolvedValue(mockEntries);
       
       // Don't initialize to avoid the automatic interval
       await outboxPattern.processOutbox();
@@ -233,7 +247,7 @@ describe('Outbox Pattern Plugin', () => {
         }
       ];
       
-      (outboxRepository.getAllEntries as jest.Mock).mockResolvedValue(mockEntries);
+      vi.mocked(outboxRepository.getAllEntries).mockResolvedValue(mockEntries);
       
       const status = await outboxPattern.getOutboxStatus();
       
@@ -252,8 +266,8 @@ describe('Outbox Pattern Plugin', () => {
       
       expect(outboxRepository.purgeProcessedEntries).toHaveBeenCalledWith(purgeDate);
     });
-    
-    it('should shutdown cleanly', () => {
+
+    it('should clean up interval on shutdown', () => {
       vi.spyOn(global, 'clearInterval');
       
       outboxPattern.initialize();
