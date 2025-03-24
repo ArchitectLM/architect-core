@@ -5,12 +5,12 @@ import { createInMemoryEventBus } from '../../src/implementations/event-bus';
 import { createExtensionSystem } from '../../src/implementations/extension-system';
 import { InMemoryTaskRegistry } from '../../src/implementations/task-registry';
 import { InMemoryProcessRegistry } from '../../src/implementations/process-registry';
-import { RuntimeInstance } from '../../src/implementations/runtime';
+import { Runtime } from '../../src/models/runtime';
 
 /**
  * Creates a mock runtime instance for testing 
  */
-export function mockRuntime(): TestRuntime {
+export function mockRuntime(): Runtime {
   // Create extension system first
   const extensionSystem = createExtensionSystem();
   
@@ -22,7 +22,7 @@ export function mockRuntime(): TestRuntime {
   const processRegistry = new InMemoryProcessRegistry();
   
   // Create a runtime with all required components
-  const runtime = createRuntime({
+  return createRuntime({
     runtimeOptions: {
       version: '1.0.0',
       namespace: `test-runtime-${uuidv4()}`,
@@ -38,7 +38,5 @@ export function mockRuntime(): TestRuntime {
       taskRegistry,
       processRegistry
     }
-  }) as TestRuntime;
-  
-  return runtime;
+  });
 } 

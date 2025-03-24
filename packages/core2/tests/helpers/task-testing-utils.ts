@@ -6,12 +6,12 @@ import {
   TaskStatus, 
   TaskRetryPolicy,
   CancellationToken,
-  TaskExecution,
-  TaskExecutor
+  TaskExecutionResult
 } from '../../src/models/task-system';
 import { ExtensionSystem } from '../../src/models/extension-system';
 import { Result } from '../../src/models/core-types';
 import { EventBus } from '../../src/models/event-system';
+import { TaskHandler } from '../../src/models/task-system';
 
 /**
  * Creates a test task definition with the given id, handler and options
@@ -32,53 +32,72 @@ export function createTestTaskDefinition<TInput, TOutput>(
     };
     metadata?: Record<string, unknown>;
   } = {}
-): TaskDefinition<TInput, TOutput, unknown> {
+): TaskDefinition<TInput, TOutput> {
+  // Create an adapter function that takes the input and creates a task context to pass to the original handler
+  const handlerAdapter: TaskHandler<TInput, TOutput> = async (input: TInput) => {
+    // Create a context object with the required properties
+    const context: TaskContext<TInput, unknown> = {
+      input,
+      attemptNumber: 1,
+      cancellationToken: createMockCancellationToken(),
+      state: {} as unknown,
+      metadata: {}
+    };
+    
+    // Call the original handler with the context
+    return handler(context);
+  };
+
+  // Construct retry policy if options.retry is provided
+  const retryPolicy: TaskRetryPolicy | undefined = options.retry
+    ? {
+        maxAttempts: options.retry.maxAttempts,
+        backoffStrategy: options.retry.backoffStrategy,
+        initialDelay: options.retry.initialDelay,
+        maxDelay: options.retry.maxDelay,
+        retryableErrorTypes: options.retry.retryableErrorTypes
+      }
+    : undefined;
+
   return {
-    id,
-    name: options.name || `Test Task ${id}`,
-    description: options.description || `Test description for ${id}`,
-    handler,
-    timeout: options.timeout,
-    retry: options.retry as TaskRetryPolicy,
-    metadata: {
-      isTest: true,
-      ...options.metadata
+    type: id, // Use the provided id as the type
+    handler: handlerAdapter,
+    retryPolicy,
+    metadata: options.metadata || {
+      name: options.name || `Test Task ${id}`,
+      description: options.description || `Test description for ${id}`,
+      timeout: options.timeout
     }
   };
 }
 
 /**
- * Creates a mock extension system for task testing
+ * Creates a mock extension system for testing
  */
-export function createMockExtensionSystem(): ExtensionSystem {
+export function createMockExtensionSystem(): Partial<ExtensionSystem> {
   return {
     executeExtensionPoint: vi.fn().mockResolvedValue({ success: true, value: undefined }),
     registerExtension: vi.fn(),
     unregisterExtension: vi.fn(),
-    getExtensions: vi.fn(),
-    hasExtension: vi.fn().mockReturnValue(false)
+    getExtensions: vi.fn().mockReturnValue([])
   };
 }
 
 /**
- * Creates a mock event bus for task testing
+ * Creates a mock event bus for testing
  */
-export function createMockEventBus(): EventBus {
+export function createMockEventBus(): Partial<EventBus> {
   return {
     publish: vi.fn().mockResolvedValue(undefined),
     subscribe: vi.fn().mockReturnValue({
+      id: uuidv4(),
+      eventType: 'test-event',
       unsubscribe: vi.fn()
     }),
     unsubscribe: vi.fn(),
     clearSubscriptions: vi.fn(),
     clearAllSubscriptions: vi.fn(),
-    subscriberCount: vi.fn().mockReturnValue(0),
-    applyBackpressure: vi.fn(),
-    enablePersistence: vi.fn(),
-    disablePersistence: vi.fn(),
-    addEventRouter: vi.fn(),
-    addEventFilter: vi.fn(),
-    correlate: vi.fn()
+    subscriberCount: vi.fn().mockReturnValue(0)
   };
 }
 
@@ -87,10 +106,9 @@ export function createMockEventBus(): EventBus {
  */
 export function createMockCancellationToken(isCancelled = false): CancellationToken {
   return {
-    isCancelled: () => isCancelled,
-    cancel: vi.fn(),
-    onCancel: vi.fn(),
-    throwIfCancelled: vi.fn()
+    isCancellationRequested: isCancelled,
+    onCancellationRequested: vi.fn(),
+    throwIfCancellationRequested: vi.fn()
   };
 }
 
@@ -222,7 +240,7 @@ export function createMockTaskExecution<TInput, TOutput>(
     attemptNumber?: number;
     metadata?: Record<string, unknown>;
   }
-): TaskExecution<TInput, TOutput> {
+): TaskExecutionResult<TInput, TOutput> {
   const now = Date.now();
   return {
     id: options.id || uuidv4(),
@@ -234,8 +252,7 @@ export function createMockTaskExecution<TInput, TOutput>(
     createdAt: now - 100,
     startedAt: options.startedAt || (options.status !== 'pending' ? now - 50 : undefined),
     completedAt: options.completedAt || (options.status === 'completed' || options.status === 'failed' ? now : undefined),
-    attemptNumber: options.attemptNumber || 1,
-    metadata: options.metadata || {}
+    attemptNumber: options.attemptNumber || 1
   };
 }
 
@@ -243,112 +260,75 @@ export function createMockTaskExecution<TInput, TOutput>(
  * Creates a mock task executor that returns predefined results
  * Useful for testing task scheduling and dependencies
  */
+export interface MockTaskExecutor {
+  executeTask: <TInput = unknown, TOutput = unknown>(
+    taskType: string,
+    input?: TInput
+  ) => Promise<Result<TaskExecutionResult<TInput, TOutput>>>;
+  
+  executeTaskWithDependencies: <TInput = unknown, TOutput = unknown>(
+    taskType: string,
+    input?: TInput,
+    dependencies?: string[]
+  ) => Promise<Result<TaskExecutionResult<TInput, TOutput>>>;
+}
+
 export function createMockTaskExecutor(
-  mockResults: Record<string, Result<TaskExecution<any, any>>> = {}
-): TaskExecutor {
+  mockResults: Record<string, Result<TaskExecutionResult<any, any>>> = {}
+): MockTaskExecutor {
   return {
-    executeTask: vi.fn((taskType: string, input?: any) => {
+    executeTask: async <TInput = unknown, TOutput = unknown>(
+      taskType: string, 
+      input?: TInput
+    ): Promise<Result<TaskExecutionResult<TInput, TOutput>>> => {
       if (mockResults[taskType]) {
-        return Promise.resolve(mockResults[taskType]);
+        return mockResults[taskType] as Result<TaskExecutionResult<TInput, TOutput>>;
       }
       
       // Default success result if not specified
-      return Promise.resolve({
+      return {
         success: true,
-        value: createMockTaskExecution({
+        value: createMockTaskExecution<TInput, TOutput>({
           taskType,
           status: 'completed',
           input,
-          result: { success: true }
+          result: { success: true } as unknown as TOutput
         })
-      });
-    }),
-    executeTaskWithDependencies: vi.fn((taskType: string, input?: any, dependencyIds?: string[]) => {
+      };
+    },
+    
+    executeTaskWithDependencies: async <TInput = unknown, TOutput = unknown>(
+      taskType: string, 
+      input?: TInput, 
+      dependencies?: string[]
+    ): Promise<Result<TaskExecutionResult<TInput, TOutput>>> => {
       if (mockResults[`${taskType}-with-deps`]) {
-        return Promise.resolve(mockResults[`${taskType}-with-deps`]);
+        return mockResults[`${taskType}-with-deps`] as Result<TaskExecutionResult<TInput, TOutput>>;
       }
       
-      if (dependencyIds && dependencyIds.some(id => mockResults[id] && !mockResults[id].success)) {
-        return Promise.resolve({
+      if (dependencies && dependencies.some(id => mockResults[id] && !mockResults[id].success)) {
+        return {
           success: false,
           error: new Error('Dependency execution failed')
-        });
+        };
       }
       
       // Default success result if not specified
-      return Promise.resolve({
+      return {
         success: true,
-        value: createMockTaskExecution({
+        value: createMockTaskExecution<TInput, TOutput>({
           taskType,
           status: 'completed',
           input,
-          result: { success: true, withDependencies: true }
+          result: { success: true, withDependencies: true } as unknown as TOutput
         })
-      });
-    })
-  };
-}
-
-/**
- * Modern task definition type with current implementation requirements
- */
-export interface ModernTaskDefinition<TInput = unknown, TOutput = unknown> {
-  type: string;
-  handler: (input: TInput) => Promise<TOutput>;
-  dependencies?: string[];
-  timeout?: number;
-  retry?: TaskRetryPolicy;
-  metadata?: Record<string, unknown>;
-}
-
-/**
- * Convert a legacy task definition (with id) to a modern one (with type)
- */
-export function convertLegacyTaskDefinition<TInput = unknown, TOutput = unknown>(
-  legacy: {
-    id: string;
-    name?: string;
-    description?: string;
-    handler: (context: any) => Promise<TOutput>;
-    timeout?: number;
-    retry?: TaskRetryPolicy;
-    metadata?: Record<string, unknown>;
-    dependencies?: string[];
-  }
-): TaskDefinition<TInput, TOutput> {
-  // Create an adapter handler that converts context-based handlers to input-based ones
-  const modernHandler = async (input: TInput): Promise<TOutput> => {
-    // Create a context object that matches the legacy API expectations
-    const context = {
-      input,
-      taskId: 'task-execution-id',
-      taskType: legacy.id,
-      attemptNumber: 1,
-      previousResults: {},
-      metadata: {}
-    };
-    
-    return await legacy.handler(context);
-  };
-  
-  // Return a task definition that follows the current model
-  return {
-    type: legacy.id, // Convert id to type
-    handler: modernHandler,
-    timeout: legacy.timeout,
-    retry: legacy.retry,
-    metadata: {
-      ...(legacy.metadata || {}),
-      name: legacy.name || legacy.id,
-      description: legacy.description || `Task for ${legacy.id}`
-    },
-    dependencies: legacy.dependencies
+      };
+    }
   };
 }
 
 /**
  * Helper function to create a task definition with the modern structure
- * while supporting legacy property names (id instead of type)
  */
 export function createTaskDefinition<TInput = unknown, TOutput = unknown>(
   definition: {
@@ -362,5 +342,33 @@ export function createTaskDefinition<TInput = unknown, TOutput = unknown>(
     dependencies?: string[];
   }
 ): TaskDefinition<TInput, TOutput> {
-  return convertLegacyTaskDefinition<TInput, TOutput>(definition);
+  // Create an adapter handler that converts context-based handlers to input-based ones
+  const modernHandler: TaskHandler<TInput, TOutput> = async (input: TInput): Promise<TOutput> => {
+    // Create a context object that matches the legacy API expectations
+    const context = {
+      input,
+      taskId: 'task-execution-id',
+      taskType: definition.id,
+      attemptNumber: 1,
+      previousResults: {},
+      metadata: {},
+      cancellationToken: createMockCancellationToken(),
+      state: {}
+    };
+    
+    return await definition.handler(context);
+  };
+  
+  // Return a task definition that follows the current model
+  return {
+    type: definition.id, // Convert id to type
+    handler: modernHandler,
+    dependencies: definition.dependencies,
+    retryPolicy: definition.retry,
+    metadata: {
+      ...(definition.metadata || {}),
+      name: definition.name || definition.id,
+      description: definition.description || `Task for ${definition.id}`
+    }
+  };
 } 

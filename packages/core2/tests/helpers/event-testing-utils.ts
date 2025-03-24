@@ -1,8 +1,8 @@
 import { vi } from 'vitest';
 import { v4 as uuidv4 } from 'uuid';
 import { DomainEvent, Result, Identifier } from '../../src/models/core-types';
-import { EventHandler, EventFilter, EventBus, SubscriptionOptions, Subscription, EventStorage } from '../../src/models/event-system';
-import { ExtensionSystem, ExtensionPoint, ExtensionHookRegistration, ExtensionPointName } from '../../src/models/extension-system';
+import { EventHandler, EventFilter, EventBus, SubscriptionOptions, Subscription } from '../../src/models/event-system';
+import { ExtensionSystem } from '../../src/models/extension-system';
 
 /**
  * Create a test event with the given type and payload
@@ -13,32 +13,35 @@ export function createTestEvent<T>(type: string, payload: T): DomainEvent<T> {
     type,
     timestamp: Date.now(),
     payload,
-    correlationId: uuidv4(),
-    causationId: uuidv4()
+    metadata: {},
+    correlationId: uuidv4()
   };
 }
 
 /**
  * Create a mock event handler for testing
  */
-export function createMockEventHandler<T>(): EventHandler<T> & {
+export function createMockEventHandler<T>(): {
+  handler: EventHandler<T>;
   mockClear: () => void;
   getCallCount: () => number;
   getEvents: () => T[];
 } {
   const events: T[] = [];
-  const handler = vi.fn((payload: T) => {
+  const handlerFn = vi.fn(async (payload: T) => {
     events.push(payload);
+    return Promise.resolve();
   });
 
-  return Object.assign(handler, {
+  return {
+    handler: handlerFn,
     mockClear: () => {
-      handler.mockClear();
+      handlerFn.mockClear();
       events.length = 0;
     },
-    getCallCount: () => handler.mock.calls.length,
+    getCallCount: () => handlerFn.mock.calls.length,
     getEvents: () => [...events]
-  });
+  };
 }
 
 /**
@@ -47,21 +50,19 @@ export function createMockEventHandler<T>(): EventHandler<T> & {
 export function createMockEventFilter<T>(
   predicate: (event: DomainEvent<T>) => boolean
 ): EventFilter<T> {
-  return {
-    matches: vi.fn((event: DomainEvent<T>) => predicate(event))
-  };
+  return (event: DomainEvent<T>) => predicate(event);
 }
 
 /**
  * Create a mock extension system for testing
  */
-export function createMockExtensionSystem(): ExtensionSystem {
+export function createMockExtensionSystem(): Partial<ExtensionSystem> {
   return {
     registerExtension: vi.fn().mockReturnValue({ success: true, value: undefined }),
     unregisterExtension: vi.fn().mockReturnValue({ success: true, value: undefined }),
     executeExtensionPoint: vi.fn().mockResolvedValue({ success: true, value: undefined }),
-    getRegisteredExtensions: vi.fn().mockReturnValue([]),
-    clearAllExtensions: vi.fn()
+    getExtensions: vi.fn().mockReturnValue([]),
+    registerExtensionPoint: vi.fn()
   };
 }
 
@@ -84,7 +85,6 @@ export function createDomainEvent<T = unknown>(
     id?: string;
     timestamp?: number;
     correlationId?: string;
-    causationId?: string;
     metadata?: Record<string, unknown>;
   }
 ): DomainEvent<T> {
@@ -93,8 +93,7 @@ export function createDomainEvent<T = unknown>(
     type: eventType,
     timestamp: options?.timestamp || Date.now(),
     payload,
-    correlationId: options?.correlationId,
-    causationId: options?.causationId,
+    correlationId: options?.correlationId || uuidv4(),
     metadata: options?.metadata || {}
   };
 }
@@ -106,7 +105,7 @@ export function createDomainEvent<T = unknown>(
  */
 export function createEventBusAdapter(eventBus: EventBus): {
   publish<T = unknown>(eventTypeOrEvent: string | DomainEvent<T>, payload?: T): Promise<void>;
-  subscribe<T = unknown>(eventType: string, handler: EventHandler<T>): { unsubscribe: () => void };
+  subscribe<T = unknown>(eventType: string, handler: EventHandler<T>): Subscription;
 } {
   return {
     async publish<T = unknown>(eventTypeOrEvent: string | DomainEvent<T>, payload?: T): Promise<void> {
@@ -123,7 +122,7 @@ export function createEventBusAdapter(eventBus: EventBus): {
       }
     },
     
-    subscribe<T = unknown>(eventType: string, handler: EventHandler<T>) {
+    subscribe<T = unknown>(eventType: string, handler: EventHandler<T>): Subscription {
       return eventBus.subscribe(eventType, handler);
     }
   };
@@ -135,15 +134,15 @@ export function createEventBusAdapter(eventBus: EventBus): {
 export async function waitForEvent<T = unknown>(
   eventBus: EventBus,
   eventType: string,
-  predicate?: (event: DomainEvent<T>) => boolean,
+  predicate?: (event: T) => boolean,
   timeout = 1000
-): Promise<DomainEvent<T> | null> {
-  return new Promise<DomainEvent<T> | null>((resolve) => {
+): Promise<T | null> {
+  return new Promise<T | null>((resolve) => {
     let timeoutId: NodeJS.Timeout;
-    const events: DomainEvent<T>[] = [];
+    const events: T[] = [];
     
-    const subscription = eventBus.subscribe<T>(eventType, async (event) => {
-      events.push(event);
+    const subscription = eventBus.subscribe<T>(eventType, async (payload) => {
+      events.push(payload);
       
       // If predicate is provided, check if any event matches
       if (predicate) {
@@ -187,20 +186,15 @@ export async function pollUntilEventCondition(
 
 /**
  * Subscribe with a filter adapter for compatibility with different event bus implementations
- * 
- * This helper adapts between:
- * - Event bus implementations that pass the full event to handlers
- * - Event bus implementations that pass only the payload to handlers
- * - Different filter implementation signatures
  */
 export function subscribeWithCompatibilityFilter<T>(
   eventBus: EventBus,
   eventType: string, 
-  filter: EventFilter<T>, 
+  filter: (event: DomainEvent<T>) => boolean, 
   handler: EventHandler<T>
-): { unsubscribe: () => void } {
+): Subscription {
   // Create an adapter handler that applies the filter
-  const adapterHandler: EventHandler<T> = (payload) => {
+  const adapterHandler: EventHandler<T> = async (payload) => {
     // For modern event bus implementations, we need to recreate an event object
     // to pass to the filter, since it expects a DomainEvent but the handler
     // only receives the payload
@@ -208,17 +202,17 @@ export function subscribeWithCompatibilityFilter<T>(
       id: uuidv4(),
       type: eventType,
       timestamp: Date.now(),
-      payload: payload,
-      correlationId: uuidv4()
+      payload,
+      correlationId: uuidv4(),
+      metadata: {}
     };
 
     // Only call the handler if the filter matches
-    if (filter.matches(syntheticEvent)) {
-      handler(payload);
+    if (filter(syntheticEvent)) {
+      await handler(payload);
     }
   };
 
   // Subscribe with the adapter handler
-  const subscription = eventBus.subscribe(eventType, adapterHandler);
-  return subscription;
+  return eventBus.subscribe(eventType, adapterHandler);
 } 

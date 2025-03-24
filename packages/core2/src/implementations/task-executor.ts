@@ -462,7 +462,10 @@ export class InMemoryTaskExecutor implements TaskExecutor {
       input,
       createdAt: Date.now(),
       attemptNumber: 1,
-      ...(dependencies && { relations: { dependsOn: dependencies } })
+      ...(dependencies && { 
+        relations: { dependsOn: dependencies },
+        dependencies: dependencies
+      })
     };
   }
 
@@ -538,6 +541,10 @@ export class InMemoryTaskExecutor implements TaskExecutor {
           cancellationToken,
           state: {} as Record<string, unknown>,
           metadata: definition.metadata || {},
+          // Add previousResults from dependencies if present
+          previousResults: execution.dependencies?.length 
+            ? this.getDependencyResults(execution.dependencies)
+            : undefined
         };
 
         // Create a timeout promise if a timeout is defined
@@ -736,6 +743,24 @@ export class InMemoryTaskExecutor implements TaskExecutor {
       const delay = initialDelay * Math.pow(2, attempt - 1);
       return Math.min(delay, maxDelay);
     }
+  }
+
+  /**
+   * Get results from dependency tasks
+   * @param dependencies Array of dependency task IDs
+   * @returns Record of dependency results
+   */
+  private getDependencyResults(dependencies: string[]): Record<string, any> {
+    const results: Record<string, any> = {};
+    
+    for (const dependencyId of dependencies) {
+      const dependency = this.taskExecutions.get(dependencyId);
+      if (dependency && dependency.status === TASK_STATUS.COMPLETED) {
+        results[dependencyId] = dependency.result;
+      }
+    }
+    
+    return results;
   }
 }
 

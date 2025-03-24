@@ -72,6 +72,9 @@ export interface TaskContext<TInput = unknown, TState = unknown> {
   
   /** Additional metadata */
   metadata: Metadata;
+
+  /** Results from previous dependency tasks */
+  previousResults?: Record<string, any>;
 }
 
 /**
@@ -363,4 +366,7 @@ export interface TaskExecution<TInput = unknown, TOutput = unknown> {
   
   /** Additional metadata */
   metadata?: Metadata;
+  
+  /** Dependency task IDs - tasks that need to be completed first */
+  dependencies?: string[];
 } 

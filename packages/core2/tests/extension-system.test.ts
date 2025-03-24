@@ -159,11 +159,11 @@ describe('Extension System', () => {
         await extensionSystem.registerExtension(extensionA);
         
         // Register extension B with dependency on A (should succeed)
-        const resultB = await extensionSystem.registerExtension(extensionB);
+        const resultB = extensionSystem.registerExtension(extensionB);
         expect(resultB.success).toBe(true);
         
         // Register extension C with missing dependency (should fail)
-        const resultC = await extensionSystem.registerExtension(extensionC);
+        const resultC = extensionSystem.registerExtension(extensionC);
         expect(resultC.success).toBe(false);
         if (!resultC.success) {
           expect(resultC.error?.message).toContain('missing dependency');
@@ -176,14 +176,14 @@ describe('Extension System', () => {
         const extensionB = createTestExtension('circular-b', 'Extension B', ['test.extension.circular-a']);
         
         // Try to register extension A
-        const resultA = await extensionSystem.registerExtension(extensionA);
+        const resultA = extensionSystem.registerExtension(extensionA);
         expect(resultA.success).toBe(false);
         if (!resultA.success) {
           expect(resultA.error?.message).toContain('missing dependency');
         }
         
         // Try to register extension B first
-        const resultB = await extensionSystem.registerExtension(extensionB);
+        const resultB = extensionSystem.registerExtension(extensionB);
         expect(resultB.success).toBe(false);
         if (!resultB.success) {
           expect(resultB.error?.message).toContain('missing dependency');
@@ -250,7 +250,7 @@ describe('Extension System', () => {
           'modify1',
           [{ 
             name: ExtensionPointNames.TASK_BEFORE_EXECUTE,
-            modification: (params) => ({ ...params, input: { ...params.input, modified1: true } })
+            modification: (params: any) => ({ ...params, input: { ...params.input, modified1: true } })
           }]
         );
         
@@ -269,13 +269,13 @@ describe('Extension System', () => {
         );
         
         // Register extensions
-        await extensionSystem.registerExtension(ext1);
-        await extensionSystem.registerExtension(ext2);
+        extensionSystem.registerExtension(ext1);
+        extensionSystem.registerExtension(ext2);
         
         // Execute extension point
         const result = await extensionSystem.executeExtensionPoint(
           ExtensionPointNames.TASK_BEFORE_EXECUTE,
-          { taskId: 'test', input: { original: true } }
+          { taskId: 'test', taskType: 'test', input: { original: true } }
         );
         
         // Check the final result has modifications from both hooks
@@ -289,32 +289,58 @@ describe('Extension System', () => {
       });
       
       it('should stop executing hooks after failure', async () => {
-        // Use the createTrackingExtension helper
-        const { extension: successExt, executionOrder: successOrder } = createTrackingExtension(
-          'success', 
-          [ExtensionPointNames.SYSTEM_INIT]
-        );
+        const successOrder: number[] = [];
+        const neverCalledOrder: number[] = [];
         
-        const { extension: failingExt } = createTrackingExtension(
-          'failing', 
-          [ExtensionPointNames.SYSTEM_INIT], 
-          { shouldFail: true, errorMessage: 'Hook failed intentionally' }
-        );
+        // First hook - succeeds
+        const successHook: ExtensionHook<typeof ExtensionPointNames.SYSTEM_INIT, unknown> = 
+          async (params, context) => {
+            successOrder.push(1);
+            return { success: true, value: params };
+          };
         
-        const { extension: neverCalledExt, executionOrder: neverCalledOrder } = createTrackingExtension(
-          'never-called', 
-          [ExtensionPointNames.SYSTEM_INIT]
-        );
+        // Second hook - fails
+        const failingHook: ExtensionHook<typeof ExtensionPointNames.SYSTEM_INIT, unknown> = 
+          async (params, context) => {
+            return { 
+              success: false, 
+              error: new Error('Hook failed intentionally') 
+            };
+          };
+        
+        // Third hook - should never be called
+        const neverCalledHook: ExtensionHook<typeof ExtensionPointNames.SYSTEM_INIT, unknown> = 
+          async (params, context) => {
+            neverCalledOrder.push(1);
+            return { success: true, value: params };
+          };
         
         // Register extensions in execution order
-        await extensionSystem.registerExtension(successExt);
-        await extensionSystem.registerExtension(failingExt);
-        await extensionSystem.registerExtension(neverCalledExt);
+        extensionSystem.registerExtension(createTestExtension(
+          'success-ext', 
+          'Success Extension', 
+          [],
+          { [ExtensionPointNames.SYSTEM_INIT]: successHook }
+        ));
+        
+        extensionSystem.registerExtension(createTestExtension(
+          'failing-ext', 
+          'Failing Extension', 
+          [],
+          { [ExtensionPointNames.SYSTEM_INIT]: failingHook }
+        ));
+        
+        extensionSystem.registerExtension(createTestExtension(
+          'never-called-ext', 
+          'Never Called Extension', 
+          [],
+          { [ExtensionPointNames.SYSTEM_INIT]: neverCalledHook }
+        ));
         
         // Execute extension point - should fail
         const result = await extensionSystem.executeExtensionPoint(
           ExtensionPointNames.SYSTEM_INIT,
-          { initialized: false }
+          { version: '1.0.0', config: {} }
         );
         
         // Should fail after the second hook
@@ -324,30 +350,57 @@ describe('Extension System', () => {
       });
       
       it('should handle concurrent execution of different extension points', async () => {
-        // Create tracking extensions for multiple points
-        const { extension: ext1, executionOrder: order1 } = createTrackingExtension(
-          'multi-1', 
-          [ExtensionPointNames.SYSTEM_INIT, ExtensionPointNames.TASK_BEFORE_EXECUTE]
+        // Create arrays to track execution
+        const order1: string[] = [];
+        const order2: string[] = [];
+        
+        // First extension - tracks execution order for both points
+        const ext1 = createTestExtension(
+          'multi-1',
+          'Multi-point Extension 1',
+          [],
+          {
+            [ExtensionPointNames.SYSTEM_INIT]: async (params, context) => {
+              order1.push(ExtensionPointNames.SYSTEM_INIT);
+              return { success: true, value: params };
+            },
+            [ExtensionPointNames.TASK_BEFORE_EXECUTE]: async (params, context) => {
+              order1.push(ExtensionPointNames.TASK_BEFORE_EXECUTE);
+              return { success: true, value: params };
+            }
+          }
         );
         
-        const { extension: ext2, executionOrder: order2 } = createTrackingExtension(
-          'multi-2', 
-          [ExtensionPointNames.SYSTEM_INIT, ExtensionPointNames.TASK_BEFORE_EXECUTE]
+        // Second extension - tracks execution order for both points
+        const ext2 = createTestExtension(
+          'multi-2',
+          'Multi-point Extension 2',
+          [],
+          {
+            [ExtensionPointNames.SYSTEM_INIT]: async (params, context) => {
+              order2.push(ExtensionPointNames.SYSTEM_INIT);
+              return { success: true, value: params };
+            },
+            [ExtensionPointNames.TASK_BEFORE_EXECUTE]: async (params, context) => {
+              order2.push(ExtensionPointNames.TASK_BEFORE_EXECUTE);
+              return { success: true, value: params };
+            }
+          }
         );
         
         // Register extensions
-        await extensionSystem.registerExtension(ext1);
-        await extensionSystem.registerExtension(ext2);
+        extensionSystem.registerExtension(ext1);
+        extensionSystem.registerExtension(ext2);
         
         // Execute extension points concurrently
         const promise1 = extensionSystem.executeExtensionPoint(
           ExtensionPointNames.SYSTEM_INIT,
-          { initialized: false }
+          { version: '1.0.0', config: {} }
         );
         
         const promise2 = extensionSystem.executeExtensionPoint(
           ExtensionPointNames.TASK_BEFORE_EXECUTE,
-          { taskId: 'test', input: {} }
+          { taskId: 'test', taskType: 'test', input: {} }
         );
         
         // Wait for both to complete
@@ -367,33 +420,37 @@ describe('Extension System', () => {
     
     describe('Extension Context', () => {
       it('should provide context to extension hooks', async () => {
-        let receivedContext: ExtensionContext<unknown> | null = null;
+        let receivedContext: any = null;
         
-        const contextCheckHook: ExtensionHook<typeof ExtensionPointNames.SYSTEM_INIT, unknown> = 
+        const contextCheckHook: ExtensionHook<typeof ExtensionPointNames.SYSTEM_INIT, Record<string, unknown>> = 
           async (params, context) => {
             receivedContext = context;
             return { success: true, value: params };
           };
         
         // Register extension with hook
-        await extensionSystem.registerExtension(createTestExtension('context', 'Context Test', [], {
-          [ExtensionPointNames.SYSTEM_INIT]: contextCheckHook
-        }));
+        extensionSystem.registerExtension(createTestExtension(
+          'context',
+          'Context Test',
+          [],
+          { [ExtensionPointNames.SYSTEM_INIT]: contextCheckHook }
+        ));
         
-        // Set extension context - assuming it's available in InMemoryExtensionSystem
+        // Set extension context
         const testContextData = { testValue: 'context-data' };
-        (extensionSystem as any).setContext(testContextData);
+        extensionSystem.setContext(testContextData);
         
         // Execute extension point
         await extensionSystem.executeExtensionPoint(
           ExtensionPointNames.SYSTEM_INIT,
-          { initialized: false }
+          { version: '1.0.0', config: {} }
         );
         
         // Check context was provided to hook
         expect(receivedContext).not.toBeNull();
         if (receivedContext) {
-          expect((receivedContext as any).data).toBe(testContextData);
+          expect(receivedContext.data).toBeDefined();
+          expect(receivedContext.data).toEqual(testContextData);
         }
       });
     });
@@ -403,33 +460,43 @@ describe('Extension System', () => {
     it('should work with BasePlugin extensions', async () => {
       const extensionSystem = new InMemoryExtensionSystem();
       
-      // Use the TestPlugin helper class
-      const plugin = new TestPlugin(
-        'test.plugin',
-        'Test Plugin',
-        'A test plugin',
-        [],
-        [{
-          pointName: ExtensionPointNames.SYSTEM_INIT,
-          hook: async (params, context) => {
-            return { 
-              success: true, 
-              value: { ...params as object, modified: true } 
-            };
-          }
-        }]
+      // Create a test plugin that extends TestPlugin
+      class TestPluginExtension extends TestPlugin {
+        constructor() {
+          super('test-plugin', 'Test Plugin Extension');
+        }
+        
+        // Use the plugin's built-in registerHook method to add a hook
+        addCustomHook(
+          pointName: ExtensionPointName, 
+          hook: ExtensionHook<ExtensionPointName, unknown>, 
+          priority = 0
+        ): void {
+          this.registerHook(pointName, hook, priority);
+        }
+      }
+      
+      const plugin = new TestPluginExtension();
+      plugin.addCustomHook(
+        ExtensionPointNames.SYSTEM_INIT,
+        async (params: any) => {
+          return { 
+            success: true, 
+            value: { ...params, modified: true } 
+          };
+        }
       );
       
-      // Register plugin
-      await extensionSystem.registerExtension(plugin);
+      // Register the plugin
+      extensionSystem.registerExtension(plugin);
       
-      // Execute the hook
+      // Execute extension point
       const result = await extensionSystem.executeExtensionPoint(
         ExtensionPointNames.SYSTEM_INIT,
-        { initialized: false }
+        { version: '1.0.0', config: {}, initialized: false }
       );
       
-      // Check the result
+      // Verify hook modified the parameters
       expect(result.success).toBe(true);
       if (result.success) {
         const typedResult = result.value as { initialized: boolean, modified: boolean };

@@ -19,7 +19,7 @@ describe('Task System Integration Tests', () => {
   let taskRegistry: TaskRegistry;
   let taskExecutor: TaskExecutor;
   let taskScheduler: TaskScheduler;
-  let extensionSystem: ExtensionSystem;
+  let extensionSystem: Partial<ExtensionSystem>;
   let eventBus: ExtensionEventBusImpl;
   let publishSpy: ReturnType<typeof vi.fn>;
 
@@ -45,8 +45,9 @@ describe('Task System Integration Tests', () => {
     
     // Initialize components
     extensionSystem = createMockExtensionSystem();
-    eventBus = new ExtensionEventBusImpl(extensionSystem);
-    publishSpy = vi.spyOn(eventBus, 'publish');
+    eventBus = new ExtensionEventBusImpl(extensionSystem as ExtensionSystem);
+    // Cast to unknown first to avoid type conflicts
+    publishSpy = vi.spyOn(eventBus, 'publish') as unknown as ReturnType<typeof vi.fn>;
     taskRegistry = new InMemoryTaskRegistry();
     taskExecutor = new InMemoryTaskExecutor(taskRegistry, eventBus);
     taskScheduler = new InMemoryTaskScheduler(taskRegistry, taskExecutor);

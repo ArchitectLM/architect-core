@@ -178,13 +178,13 @@ describe('Process Versioning and Recovery', () => {
       
       // Approve v1 directly
       const approveV1Result = await processManager.applyEvent(
-        processV1Result.value.id,
+        processV1Result.value!.id,
         'approve',
         { approvedBy: 'test' }
       );
       
       expect(approveV1Result.success).toBe(true);
-      expect(approveV1Result.value.state).toBe('approved');
+      expect(approveV1Result.value!.state).toBe('approved');
 
       // Create v2 process
       const processV2Result = await processManager.createProcess(
@@ -195,13 +195,13 @@ describe('Process Versioning and Recovery', () => {
       
       // Request payment in v2 (new state in v2)
       const paymentResult = await processManager.applyEvent(
-        processV2Result.value.id,
+        processV2Result.value!.id,
         'request-payment',
         { amount: 100 }
       );
       
       expect(paymentResult.success).toBe(true);
-      expect(paymentResult.value.state).toBe('payment-pending');
+      expect(paymentResult.value!.state).toBe('payment-pending');
     });
   });
 
@@ -214,7 +214,7 @@ describe('Process Versioning and Recovery', () => {
       );
       
       expect(processResult.success).toBe(true);
-      const processId = processResult.value.id;
+      const processId = processResult.value!.id;
       
       // Advance the process
       const approveResult = await processManager.applyEvent(
@@ -224,16 +224,18 @@ describe('Process Versioning and Recovery', () => {
       );
       
       expect(approveResult.success).toBe(true);
-      expect(approveResult.value.state).toBe('approved');
+      expect(approveResult.value!.state).toBe('approved');
       
       // Save a checkpoint
       const checkpointResult = await processManager.saveCheckpoint(processId);
       
       expect(checkpointResult.success).toBe(true);
-      expect(checkpointResult.value.processId).toBe(processId);
-      expect(checkpointResult.value.state).toBe('approved');
-      expect(checkpointResult.value.data.orderId).toBe('123');
-      expect(checkpointResult.value.data.items).toEqual(['item1']);
+      expect(checkpointResult.value!.processId).toBe(processId);
+      expect(checkpointResult.value!.state).toBe('approved');
+      // Type assert the data to fix 'unknown' type error
+      const data = checkpointResult.value!.data as { orderId: string; items: string[] };
+      expect(data.orderId).toBe('123');
+      expect(data.items).toEqual(['item1']);
     });
 
     it('should restore processes from checkpoints', async () => {
@@ -243,7 +245,7 @@ describe('Process Versioning and Recovery', () => {
         { orderId: '123', items: ['item1'] }
       );
       
-      const processId = processResult.value.id;
+      const processId = processResult.value!.id;
       
       // Advance to approved
       await processManager.applyEvent(
@@ -254,7 +256,7 @@ describe('Process Versioning and Recovery', () => {
       
       // Save checkpoint in approved state
       const checkpointResult = await processManager.saveCheckpoint(processId);
-      const checkpointId = checkpointResult.value.id;
+      const checkpointId = checkpointResult.value!.id;
       
       console.log('Checkpoint created:', checkpointId, checkpointResult.success);
       
@@ -267,17 +269,19 @@ describe('Process Versioning and Recovery', () => {
       
       // Verify process is in fulfilled state
       const currentProcess = await processManager.getProcess(processId);
-      expect(currentProcess.value.state).toBe('fulfilled');
+      expect(currentProcess.value!.state).toBe('fulfilled');
       
       // Restore from checkpoint (should go back to approved state)
       const restoreResult = await processManager.restoreFromCheckpoint(processId, checkpointId);
       
       console.log('Restore result:', restoreResult);
       expect(restoreResult.success).toBe(true);
-      expect(restoreResult.value.id).toBe(processId);
-      expect(restoreResult.value.state).toBe('approved');
-      expect(restoreResult.value.data.orderId).toBe('123');
-      expect(restoreResult.value.data.items).toEqual(['item1']);
+      expect(restoreResult.value!.id).toBe(processId);
+      expect(restoreResult.value!.state).toBe('approved');
+      // Type assert the data to fix 'unknown' type error
+      const restoredData = restoreResult.value!.data as { orderId: string; items: string[] };
+      expect(restoredData.orderId).toBe('123');
+      expect(restoredData.items).toEqual(['item1']);
     });
 
     it('should fail when restoring a non-existent checkpoint', async () => {
@@ -288,7 +292,7 @@ describe('Process Versioning and Recovery', () => {
       );
       
       // Try to restore from non-existent checkpoint
-      const restoreResult = await processManager.restoreFromCheckpoint(processResult.value.id, 'non-existent-id');
+      const restoreResult = await processManager.restoreFromCheckpoint(processResult.value!.id, 'non-existent-id');
       
       expect(restoreResult.success).toBe(false);
       expect(restoreResult.error).toBeDefined();
@@ -304,11 +308,11 @@ describe('Process Versioning and Recovery', () => {
         { version: '1.0.0' }
       );
       
-      const processId = processResult.value.id;
+      const processId = processResult.value!.id;
       
       // Save a checkpoint in initial state
       const initialCheckpointResult = await processManager.saveCheckpoint(processId);
-      const initialCheckpointId = initialCheckpointResult.value.id;
+      const initialCheckpointId = initialCheckpointResult.value!.id;
       
       // Advance to approved state
       await processManager.applyEvent(
@@ -319,7 +323,7 @@ describe('Process Versioning and Recovery', () => {
       
       // Save a checkpoint in approved state
       const approvedCheckpointResult = await processManager.saveCheckpoint(processId);
-      const approvedCheckpointId = approvedCheckpointResult.value.id;
+      const approvedCheckpointId = approvedCheckpointResult.value!.id;
       
       // Try to apply an invalid event - should fail
       const invalidResult = await processManager.applyEvent(
@@ -332,14 +336,14 @@ describe('Process Versioning and Recovery', () => {
       
       // Process should still be in approved state
       const currentProcess = await processManager.getProcess(processId);
-      expect(currentProcess.value.state).toBe('approved');
+      expect(currentProcess.value!.state).toBe('approved');
       
       // Restore from initial checkpoint
       const restoreResult = await processManager.restoreFromCheckpoint(processId, initialCheckpointId);
       
       console.log('Restore result:', restoreResult);
       expect(restoreResult.success).toBe(true);
-      expect(restoreResult.value.state).toBe('created');
+      expect(restoreResult.value!.state).toBe('created');
     });
   });
 }); 

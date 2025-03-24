@@ -84,11 +84,11 @@ export class ExtensionSystemImpl implements ExtensionSystem {
       for (const { hook, extensionId } of sortedHooks) {
         const result = await hook(currentParams, extensionContext);
         
-        // If hook failed, return the error
+        // If hook failed, return the error immediately
         if (!result.success) {
           return { 
             success: false, 
-            error: result.error || new Error('Hook execution failed')
+            error: result.error || new Error(`Hook execution failed for extension ${extensionId}`)
           };
         }
         

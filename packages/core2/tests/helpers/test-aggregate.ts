@@ -1,4 +1,4 @@
-import { AggregateRoot, DomainEvent } from '../../src/plugins/event-sourcing';
+import { AggregateRoot, AggregateEvent } from '../../src/plugins/event-sourcing';
 
 /**
  * Test aggregate implementation for event sourcing tests
@@ -7,7 +7,7 @@ export class TestAggregate implements AggregateRoot {
   private _id: string;
   private _version: number = 0;
   private _state: { value: number } = { value: 0 };
-  private _events: DomainEvent[] = [];
+  private _events: AggregateEvent[] = [];
 
   constructor(id: string) {
     this._id = id;
@@ -25,7 +25,7 @@ export class TestAggregate implements AggregateRoot {
     return this._state;
   }
 
-  applyEvent(event: DomainEvent): void {
+  applyEvent(event: AggregateEvent): void {
     if (event.type === 'VALUE_INCREMENTED') {
       this._state.value += event.payload.amount;
     } else if (event.type === 'VALUE_DECREMENTED') {
@@ -34,7 +34,7 @@ export class TestAggregate implements AggregateRoot {
     this._version = event.version;
   }
 
-  getUncommittedEvents(): DomainEvent[] {
+  getUncommittedEvents(): AggregateEvent[] {
     return [...this._events];
   }
 
@@ -44,7 +44,7 @@ export class TestAggregate implements AggregateRoot {
 
   // Commands
   increment(amount: number): void {
-    const event = {
+    const event: AggregateEvent = {
       aggregateId: this._id,
       type: 'VALUE_INCREMENTED',
       payload: { amount },
@@ -57,7 +57,7 @@ export class TestAggregate implements AggregateRoot {
   }
 
   decrement(amount: number): void {
-    const event = {
+    const event: AggregateEvent = {
       aggregateId: this._id,
       type: 'VALUE_DECREMENTED',
       payload: { amount },

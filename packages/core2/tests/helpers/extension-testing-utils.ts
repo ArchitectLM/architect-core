@@ -17,12 +17,11 @@ import { BasePlugin, PluginState } from '../../src/models/plugin-system';
 /**
  * Creates a basic test extension with the given properties and hooks
  */
-export function createTestExtension<N extends ExtensionPointName>(
+export function createTestExtension(
   name: string, 
   description: string, 
-  pointName: N,
-  hook: ExtensionHook<N, unknown>,
-  dependencies: string[] = []
+  dependencies: string[] = [],
+  hooks: Partial<Record<ExtensionPointName, ExtensionHook<any, any>>> = {}
 ): Extension {
   const id = `test.extension.${name.toLowerCase().replace(/\s+/g, '.')}`;
   
@@ -33,9 +32,20 @@ export function createTestExtension<N extends ExtensionPointName>(
     dependencies,
     
     getHooks() {
-      return [
-        createHookRegistration(pointName, hook, 0)
-      ];
+      const registrations: ExtensionHookRegistration<ExtensionPointName, unknown>[] = [];
+      
+      // Convert hooks object to array of ExtensionHookRegistration objects
+      for (const [pointName, hook] of Object.entries(hooks)) {
+        if (hook) {
+          registrations.push({
+            pointName: pointName as ExtensionPointName,
+            hook,
+            priority: 0
+          });
+        }
+      }
+      
+      return registrations;
     },
     
     getVersion() {
@@ -52,16 +62,31 @@ export function createTestExtension<N extends ExtensionPointName>(
  * Creates a configurable test extension
  */
 export class ConfigurableTestExtension extends BasePlugin {
-  private readonly extensionHooks: ExtensionHookRegistration<ExtensionPointName, unknown>[];
+  private extensionHooks: ExtensionHookRegistration<ExtensionPointName, unknown>[] = [];
 
   constructor(
     id: string, 
-    name: string, 
-    description: string, 
+    name: string = `Configurable Test Extension ${id}`, 
+    description: string = `A configurable test extension with ID ${id}`,
     hooks: ExtensionHookRegistration<ExtensionPointName, unknown>[] = []
   ) {
     super({ id, name, description, dependencies: [] });
     this.extensionHooks = hooks;
+  }
+
+  /**
+   * Add a hook to this extension with specified priority
+   */
+  addHook<N extends ExtensionPointName>(
+    pointName: N, 
+    hook: ExtensionHook<N, unknown>,
+    priority: number = 0
+  ): void {
+    this.extensionHooks.push({
+      pointName,
+      hook,
+      priority
+    });
   }
 
   getHooks(): ExtensionHookRegistration<ExtensionPointName, unknown>[] {
@@ -85,36 +110,56 @@ export async function flushPromises(): Promise<void> {
 }
 
 /**
- * Utility to add a hook to a test extension
+ * Creates an extension that tracks execution order
  */
-export function createTrackingExtension(pointName: ExtensionPointName): Extension {
-  const spy = vi.fn().mockImplementation(async (params: unknown): Promise<Result<unknown>> => {
-    return { success: true, value: params };
-  });
+export function createTrackingExtension(
+  id: string,
+  pointNames: ExtensionPointName[]
+): { 
+  extension: Extension; 
+  executionOrder: ExtensionPointName[];
+} {
+  const executionOrder: ExtensionPointName[] = [];
+  const hooks: Partial<Record<ExtensionPointName, ExtensionHook<any, any>>> = {};
   
-  return createTestExtension(
-    `Tracking Extension - ${pointName}`,
-    `Extension that tracks calls to ${pointName}`,
-    pointName,
-    spy as ExtensionHook<typeof pointName, unknown>
-  );
+  for (const pointName of pointNames) {
+    hooks[pointName] = async (params: unknown): Promise<Result<unknown>> => {
+      executionOrder.push(pointName);
+      return { success: true, value: params };
+    };
+  }
+  
+  return {
+    extension: createTestExtension(id, `Tracking Extension - ${id}`, [], hooks),
+    executionOrder
+  };
 }
 
 /**
  * Creates an extension that modifies the parameters
  */
-export function createParamModifyingExtension<
-  N extends ExtensionPointName
->(pointName: N, modifier: (params: ExtensionPointParameters[N]) => ExtensionPointParameters[N]): Extension {
-  const hook: ExtensionHook<N, unknown> = async (params: ExtensionPointParameters[N]): Promise<Result<ExtensionPointParameters[N]>> => {
-    return { success: true, value: modifier(params) };
-  };
+export interface ModificationSpec {
+  name: ExtensionPointName;
+  modification: (params: any) => any;
+}
+
+export function createParamModifyingExtension(
+  id: string,
+  modifications: ModificationSpec[]
+): Extension {
+  const hooks: Partial<Record<ExtensionPointName, ExtensionHook<any, any>>> = {};
+  
+  for (const { name, modification } of modifications) {
+    hooks[name] = async (params: unknown): Promise<Result<unknown>> => {
+      return { success: true, value: modification(params) };
+    };
+  }
   
   return createTestExtension(
-    `Param Modifier - ${pointName}`,
-    `Extension that modifies parameters for ${pointName}`,
-    pointName,
-    hook
+    id, 
+    `Parameter Modifying Extension - ${id}`,
+    [],
+    hooks
   );
 }
 
@@ -141,13 +186,14 @@ export class TestPlugin extends BasePlugin {
 export function registerTestHook<N extends ExtensionPointName>(
   extensionSystem: ExtensionSystem,
   pointName: N,
-  handler: ExtensionHook<N, unknown>
+  handler: ExtensionHook<N, unknown>,
+  priority: number = 0
 ): void {
   const extension = createTestExtension(
-    `Test Extension for ${pointName}`,
+    `hook-${pointName}`,
     `Test extension that registers a hook for ${pointName}`,
-    pointName,
-    handler
+    [],
+    { [pointName]: handler }
   );
   
   extensionSystem.registerExtension(extension);
@@ -158,12 +204,13 @@ export function registerTestHook<N extends ExtensionPointName>(
  */
 export function createMockExtensionSystem(): ExtensionSystem {
   return {
+    registerExtensionPoint: vi.fn(),
     executeExtensionPoint: vi.fn().mockResolvedValue({ success: true, value: {} }),
-    registerExtension: vi.fn().mockResolvedValue({ success: true }),
-    unregisterExtension: vi.fn().mockResolvedValue({ success: true }),
-    getExtension: vi.fn().mockReturnValue(null),
+    registerExtension: vi.fn().mockReturnValue({ success: true, value: undefined }),
+    unregisterExtension: vi.fn().mockReturnValue({ success: true, value: undefined }),
+    getExtensionPoints: vi.fn().mockReturnValue([]),
     getExtensions: vi.fn().mockReturnValue([]),
-    hasExtension: vi.fn().mockReturnValue(false),
+    getExtensionHandlers: vi.fn().mockReturnValue([]),
     setContext: vi.fn()
   };
 }

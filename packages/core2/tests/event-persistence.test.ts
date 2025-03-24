@@ -3,14 +3,14 @@ import { createRuntime } from '../src/implementations/factory';
 import { RuntimeInstance } from '../src/implementations/runtime';
 import { DomainEvent, Result } from '../src/models/core-types';
 import { InMemoryExtensionSystem } from '../src/implementations/extension-system';
-import { ExtensionEventBus } from '../src/implementations/event-bus';
-import { InMemoryEventStorage } from '../src/implementations/event-storage-impl';
+import { ExtensionEventBusImpl } from '../src/implementations/event-bus';
+import { InMemoryEventStorage } from '../src/implementations/event-storage';
 import { createEventSource, InMemoryEventSource } from '../src/implementations/event-source';
 import { EventSource } from '../src/models/event-system';
 
 describe('Event Persistence and Correlation', () => {
   let runtime: RuntimeInstance;
-  let eventBus: ExtensionEventBus;
+  let eventBus: ExtensionEventBusImpl;
   let storage: InMemoryEventStorage;
   let extensionSystem: InMemoryExtensionSystem;
   let eventSource: EventSource;
@@ -26,7 +26,7 @@ describe('Event Persistence and Correlation', () => {
     
     // Create all components in the correct order with proper dependencies
     extensionSystem = new InMemoryExtensionSystem();
-    eventBus = new ExtensionEventBus(extensionSystem);
+    eventBus = new ExtensionEventBusImpl(extensionSystem);
     storage = new InMemoryEventStorage();
     eventSource = createEventSource(storage, eventBus);
   });
@@ -64,7 +64,7 @@ describe('Event Persistence and Correlation', () => {
       // Check persisted events
       const result = await storage.getAllEvents();
       expect(result.success).toBe(true);
-      if (result.success) {
+      if (result.success && result.value) {
         expect(result.value.length).toBe(3);
         expect(result.value.filter((e: DomainEvent<unknown>) => e.type === 'test-event').length).toBe(2);
         expect(result.value.filter((e: DomainEvent<unknown>) => e.type === 'other-event').length).toBe(1);
@@ -96,7 +96,7 @@ describe('Event Persistence and Correlation', () => {
       // Check persisted events
       const result = await storage.getAllEvents();
       expect(result.success).toBe(true);
-      if (result.success) {
+      if (result.success && result.value) {
         expect(result.value.length).toBe(1);
         expect(result.value[0].payload).toBe('test1');
       }
