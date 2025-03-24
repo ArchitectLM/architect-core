@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach, test } from 'vitest';
 import { createCachingPlugin } from '../../src/plugins/caching';
+import { CachingPlugin } from '../../src/plugins/index';
 
 describe('Caching Plugin', () => {
-  let cachingPlugin;
+  let cachingPlugin: CachingPlugin;
   
   beforeEach(() => {
     // Reset mocks
@@ -12,7 +13,7 @@ describe('Caching Plugin', () => {
     cachingPlugin = createCachingPlugin({
       defaultTTL: 60000, // 1 minute cache TTL
       maxSize: 100       // Maximum 100 items in cache
-    });
+    }) as unknown as CachingPlugin;
   });
   
   afterEach(() => {

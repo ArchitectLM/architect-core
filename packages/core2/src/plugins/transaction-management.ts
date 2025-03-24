@@ -1,5 +1,5 @@
 import { EventBus, EventHandler } from '../models/event-system';
-import { Extension, ExtensionHook, ExtensionContext, ExtensionPoint } from '../models/extension';
+import { Extension, ExtensionHookRegistration, ExtensionPointName } from '../models/extension-system';
 import { v4 as uuidv4 } from 'uuid';
 import { DomainEvent } from '../models/core-types';
 
@@ -17,37 +17,49 @@ export interface TransactionContext {
 }
 
 export class TransactionPluginImpl implements TransactionPlugin {
-  private transactions: Map<string, TransactionContext> = new Map();
-  hooks: Partial<Record<ExtensionPoint, ExtensionHook>> = {
-    'system:init': async (context: ExtensionContext) => {
-      // Initialize transaction tracking
-      return context;
-    },
-    'system:cleanup': async (context: ExtensionContext) => {
-      // Clean up any pending transactions
-      const activeTransactions = Array.from(this.transactions.values())
-        .filter(tx => tx.status === 'active');
-      
-      for (const tx of activeTransactions) {
-        try {
-          this.rollbackTransaction(tx.transactionId);
-        } catch (error) {
-          // Log error but continue cleanup
-          console.error(`Failed to rollback transaction ${tx.transactionId}:`, error);
-        }
-      }
-      
-      return context;
-    }
-  };
+  id = 'transaction-management';
   name = 'transaction-management';
   description = 'Manages transaction lifecycle and provides transaction context';
+  dependencies: string[] = [];
+  
+  private transactions: Map<string, TransactionContext> = new Map();
 
   constructor(private eventBus: EventBus) {
     // Subscribe to transaction events
     this.eventBus.subscribe('transaction:begin', this.handleTransactionBegin.bind(this));
     this.eventBus.subscribe('transaction:commit', this.handleTransactionCommit.bind(this));
     this.eventBus.subscribe('transaction:rollback', this.handleTransactionRollback.bind(this));
+  }
+
+  getHooks(): Array<ExtensionHookRegistration<ExtensionPointName, unknown>> {
+    return [
+      {
+        pointName: 'system:init' as ExtensionPointName,
+        hook: async (context: unknown) => {
+          // Initialize transaction tracking
+          return { success: true, value: context };
+        }
+      },
+      {
+        pointName: 'system:cleanup' as ExtensionPointName,
+        hook: async (context: unknown) => {
+          // Clean up any pending transactions
+          const activeTransactions = Array.from(this.transactions.values())
+            .filter(tx => tx.status === 'active');
+          
+          for (const tx of activeTransactions) {
+            try {
+              this.rollbackTransaction(tx.transactionId);
+            } catch (error) {
+              // Log error but continue cleanup
+              console.error(`Failed to rollback transaction ${tx.transactionId}:`, error);
+            }
+          }
+          
+          return { success: true, value: context };
+        }
+      }
+    ];
   }
 
   private async handleTransactionBegin(event: DomainEvent<{ transactionId: string }>): Promise<void> {
@@ -65,16 +77,12 @@ export class TransactionPluginImpl implements TransactionPlugin {
     this.rollbackTransaction(transactionId);
   }
 
-  getExtension(): Extension {
-    return {
-      name: this.name,
-      description: this.description,
-      hooks: this.hooks
-    };
+  getVersion(): string {
+    return '1.0.0';
   }
 
-  initialize(): void {
-    // No initialization needed
+  getCapabilities(): string[] {
+    return ['transaction-management'];
   }
 
   beginTransaction(): string {

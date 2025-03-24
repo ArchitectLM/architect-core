@@ -8,7 +8,7 @@ import {
   ValidationMode,
   ValidatorFunction
 } from '../../src/plugins/validation';
-import { Extension } from '../../src/models/extension';
+import { Extension } from '../../src/models/extension-system';
 
 // Define the test suite using BDD style
 describe('Validation Plugin', () => {

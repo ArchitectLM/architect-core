@@ -1,4 +1,4 @@
-import { Extension } from '../models/extension';
+import { Extension, ExtensionHookRegistration, ExtensionPointName } from '../models/extension-system';
 
 export enum MetricType {
   COUNTER = 'counter',
@@ -72,24 +72,43 @@ export interface LogExport {
 export class ObservabilityPlugin implements Extension {
   name = 'observability-plugin';
   description = 'Provides metrics, tracing, and logging capabilities';
-
+  id = 'observability';
+  dependencies: string[] = [];
+  
   private options: Required<ObservabilityOptions>;
   private metrics: Map<string, Metric> = new Map();
   private traces: TraceSpan[] = [];
   private logs: LogEntry[] = [];
   private activeSpans: Map<string, TraceSpan> = new Map();
   private spanStack: string[] = [];
-
+  
   constructor(options: ObservabilityOptions = {}) {
     this.options = {
-      enableMetrics: options.enableMetrics ?? true,
-      enableTracing: options.enableTracing ?? true,
-      enableLogging: options.enableLogging ?? true,
-      samplingRate: options.samplingRate ?? 1.0,
-      logLevel: options.logLevel ?? LogLevel.INFO
+      enableMetrics: options.enableMetrics !== undefined ? options.enableMetrics : true,
+      enableTracing: options.enableTracing !== undefined ? options.enableTracing : true,
+      enableLogging: options.enableLogging !== undefined ? options.enableLogging : true,
+      samplingRate: options.samplingRate || 1.0, // Default to sampling 100% of traces
+      logLevel: options.logLevel || LogLevel.INFO
     };
   }
-
+  
+  // Implement Extension interface methods
+  getHooks(): Array<ExtensionHookRegistration<ExtensionPointName, unknown>> {
+    return Object.entries(this.hooks).map(([pointName, hook]) => ({
+      pointName: pointName as ExtensionPointName,
+      hook,
+      priority: 0
+    }));
+  }
+  
+  getVersion(): string {
+    return '1.0.0';
+  }
+  
+  getCapabilities(): string[] {
+    return ['metrics', 'tracing', 'logging'];
+  }
+  
   hooks = {
     'task:beforeExecution': async (context: any) => {
       const { taskId, task, metadata } = context;

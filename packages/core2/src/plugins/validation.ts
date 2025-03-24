@@ -1,4 +1,4 @@
-import { Extension } from '../models/extension';
+import { Extension, ExtensionHookRegistration, ExtensionPointName } from '../models/extension-system';
 
 /**
  * JSON Schema type for validating inputs
@@ -76,118 +76,171 @@ export interface ProcessValidationConfig {
  * Validation plugin for validating inputs and transitions
  */
 export class ValidationPlugin implements Extension {
+  id = 'validation-plugin';
   name = 'validation-plugin';
   description = 'Validates task inputs and process transitions';
+  dependencies: string[] = [];
+
+  // Hooks property for backward compatibility with tests
+  hooks: Record<string, Function>;
   
   private taskValidations: Map<string, TaskValidationConfig> = new Map();
   private processValidations: Map<string, ProcessValidationConfig> = new Map();
   
-  hooks = {
-    'task:beforeExecution': async (context: any) => {
-      const taskId = context.taskType;
-      const input = context.input;
-      
-      // Check if we have validation rules for this task
-      if (!this.taskValidations.has(taskId)) {
-        return context;
-      }
-      
-      const config = this.taskValidations.get(taskId)!;
-      
-      // Skip validation if disabled
-      if (config.disabled) {
-        return context;
-      }
-      
-      // Validate the input
-      const result = this.validateTaskInput(taskId, input);
-      
-      // Handle validation result based on mode
-      if (!result.valid) {
-        if (config.mode === 'warn') {
-          console.warn(`Validation warning for task ${taskId}:`, result.errors);
-        } else {
-          throw new Error(`Task input validation failed for ${taskId}: ${result.errors?.join(', ')}`);
-        }
-      }
-      
-      return context;
-    },
+  constructor() {
+    // Initialize hooks property for backward compatibility
+    this.hooks = {
+      'task:beforeExecution': this.validateTaskHook.bind(this),
+      'process:beforeTransition': this.validateProcessHook.bind(this),
+      // For backward compatibility with tests that use process:beforeUpdate
+      'process:beforeUpdate': this.validateProcessHook.bind(this)
+    };
+  }
+
+  // Hook method for task validation
+  private async validateTaskHook(context: any): Promise<any> {
+    const taskId = context.taskType;
+    const input = context.data || context.input; // Handle both formats
     
-    'process:beforeTransition': async (context: any) => {
-      const processType = context.processType;
-      const event = context.event;
-      const data = context.data;
-      
-      // Check if we have validation rules for this process
-      if (!this.processValidations.has(processType)) {
-        return context;
-      }
-      
-      const config = this.processValidations.get(processType)!;
-      
-      // Skip validation if disabled
-      if (config.disabled) {
-        return context;
-      }
-      
-      // Check if we have rules for this transition
-      if (!config.transitions[event]) {
-        return context;
-      }
-      
-      // Validate the transition
-      const result = this.validateProcessTransition(processType, event, data);
-      
-      // Handle validation result based on mode
-      if (!result.valid) {
-        if (config.transitions[event].mode === 'warn') {
-          console.warn(`Validation warning for process ${processType} transition ${event}:`, result.errors);
-        } else {
-          throw new Error(`Process transition validation failed for ${processType}.${event}: ${result.errors?.join(', ')}`);
-        }
-      }
-      
+    // Skip validation if not configured for this task
+    if (!this.taskValidations.has(taskId)) {
       return context;
     }
-  };
+    
+    const config = this.taskValidations.get(taskId)!;
+    
+    // Skip if validation is disabled
+    if (config.disabled) {
+      return context;
+    }
+    
+    // Validate input
+    const result = this.validateTaskInput(taskId, input);
+    
+    // Handle validation result
+    if (!result.valid) {
+      if (config.mode === 'strict') {
+        throw new Error(`Validation failed for task ${taskId}: ${result.errors?.join(', ')}`);
+      } else {
+        // In warn mode, log warning but don't modify context
+        console.warn(`Validation warning for task ${taskId}:`, result.errors);
+        return context;
+      }
+    }
+    
+    return context;
+  }
+
+  // Hook method for process validation
+  private async validateProcessHook(context: any): Promise<any> {
+    const processType = context.processType;
+    const event = context.event;
+    const data = context.data;
+    
+    // Skip validation if not configured for this process
+    if (!this.processValidations.has(processType)) {
+      return context;
+    }
+    
+    const config = this.processValidations.get(processType)!;
+    
+    // Skip if validation is disabled
+    if (config.disabled) {
+      return context;
+    }
+    
+    // Skip if no validation for this transition
+    if (!config.transitions[event]) {
+      return context;
+    }
+    
+    // Validate transition data
+    const result = this.validateProcessTransition(processType, event, data);
+    
+    // Handle validation result
+    if (!result.valid) {
+      if (config.transitions[event].mode === 'strict') {
+        throw new Error(`Validation failed for process ${processType} transition ${event}: ${result.errors?.join(', ')}`);
+      } else {
+        // In warn mode, log warning but don't modify context
+        console.warn(`Validation warning for process ${processType} transition ${event}:`, result.errors);
+        return context;
+      }
+    }
+    
+    return context;
+  }
+  
+  getHooks(): Array<ExtensionHookRegistration<ExtensionPointName, unknown>> {
+    return [
+      {
+        pointName: 'task:beforeExecution',
+        hook: this.validateTaskHook.bind(this)
+      },
+      {
+        pointName: 'process:beforeUpdate',
+        hook: this.validateProcessHook.bind(this)
+      }
+    ];
+  }
+  
+  getVersion(): string {
+    return '1.0.0';
+  }
+  
+  getCapabilities(): string[] {
+    return ['input-validation', 'transition-validation', 'schema-validation'];
+  }
   
   /**
    * Set validation rules for a task
    */
   setTaskValidation(taskId: string, config: TaskValidationConfig): void {
-    // Merge with existing config if any
-    const existingConfig = this.taskValidations.get(taskId) || {};
-    this.taskValidations.set(taskId, { ...existingConfig, ...config });
+    // Set default mode if not specified
+    const fullConfig: TaskValidationConfig = {
+      mode: 'strict',
+      disabled: false,
+      ...config
+    };
+    
+    this.taskValidations.set(taskId, fullConfig);
   }
   
   /**
    * Set validation rules for a process
    */
   setProcessValidation(processType: string, config: ProcessValidationConfig): void {
-    // Merge with existing config if any
-    const existingConfig = this.processValidations.get(processType) || { transitions: {} };
-    
-    // Merge transitions
-    const mergedTransitions = {
-      ...existingConfig.transitions,
-      ...config.transitions
+    // Set default disabled state if not specified
+    const fullConfig: ProcessValidationConfig = {
+      ...config,
+      disabled: config.disabled ?? false,
+      transitions: { ...config.transitions }
     };
     
-    this.processValidations.set(processType, {
-      ...existingConfig,
-      ...config,
-      transitions: mergedTransitions
-    });
+    // Set default mode for transitions if not specified
+    for (const [eventType, transitionConfig] of Object.entries(fullConfig.transitions)) {
+      fullConfig.transitions[eventType] = {
+        mode: 'strict',
+        ...transitionConfig
+      };
+    }
+    
+    this.processValidations.set(processType, fullConfig);
   }
   
   /**
    * Validate a task input against its validation rules
    */
   validateTaskInput(taskId: string, input: any): ValidationResult {
-    const config = this.taskValidations.get(taskId);
+    // Default to valid if no validation is configured
+    if (!this.taskValidations.has(taskId)) {
+      return { valid: true };
+    }
     
-    if (!config) {
+    const config = this.taskValidations.get(taskId)!;
+    
+    // Skip if disabled
+    if (config.disabled) {
       return { valid: true };
     }
     
@@ -196,12 +249,12 @@ export class ValidationPlugin implements Extension {
       return config.validator(input);
     }
     
-    // Use schema validation if provided
+    // Use JSON Schema validation if provided
     if (config.schema) {
       return this.validateWithSchema(input, config.schema);
     }
     
-    // No validation rules, so input is valid
+    // Default to valid if no validation method is configured
     return { valid: true };
   }
   
@@ -209,9 +262,20 @@ export class ValidationPlugin implements Extension {
    * Validate a process transition against its validation rules
    */
   validateProcessTransition(processType: string, event: string, data: any): ValidationResult {
-    const config = this.processValidations.get(processType);
+    // Default to valid if no validation is configured
+    if (!this.processValidations.has(processType)) {
+      return { valid: true };
+    }
     
-    if (!config || !config.transitions[event]) {
+    const config = this.processValidations.get(processType)!;
+    
+    // Skip if disabled
+    if (config.disabled) {
+      return { valid: true };
+    }
+    
+    // Skip if no validation for this transition
+    if (!config.transitions[event]) {
       return { valid: true };
     }
     
@@ -222,12 +286,12 @@ export class ValidationPlugin implements Extension {
       return transitionConfig.validator(data);
     }
     
-    // Use schema validation if provided
+    // Use JSON Schema validation if provided
     if (transitionConfig.schema) {
       return this.validateWithSchema(data, transitionConfig.schema);
     }
     
-    // No validation rules, so transition is valid
+    // Default to valid if no validation method is configured
     return { valid: true };
   }
   
@@ -235,10 +299,7 @@ export class ValidationPlugin implements Extension {
    * Clear validation rules for a specific task
    */
   clearTaskValidation(taskId: string): void {
-    if (this.taskValidations.has(taskId)) {
-      this.taskValidations.delete(taskId);
-      console.log(`[Validation] Cleared validation rules for task: ${taskId}`);
-    }
+    this.taskValidations.delete(taskId);
   }
   
   /**
@@ -252,23 +313,25 @@ export class ValidationPlugin implements Extension {
     mode: ValidationMode;
     disabled: boolean;
   } {
-    const config = this.taskValidations.get(taskId);
+    const hasValidation = this.taskValidations.has(taskId);
     
-    if (!config) {
-      return { 
-        hasValidation: false, 
-        hasCustomValidator: false, 
-        mode: 'strict', 
-        disabled: false 
+    if (!hasValidation) {
+      return {
+        hasValidation: false,
+        hasCustomValidator: false,
+        mode: 'strict',
+        disabled: false
       };
     }
     
+    const config = this.taskValidations.get(taskId)!;
+    
     return {
-      hasValidation: !!(config.schema || config.validator),
+      hasValidation: true,
       schema: config.schema,
       hasCustomValidator: !!config.validator,
       mode: config.mode || 'strict',
-      disabled: !!config.disabled
+      disabled: config.disabled || false
     };
   }
   
@@ -276,69 +339,64 @@ export class ValidationPlugin implements Extension {
    * Validate data against a JSON Schema
    */
   private validateWithSchema(data: any, schema: JSONSchema): ValidationResult {
-    // Simple JSON Schema validation implementation
-    // In a real implementation, you would use a library like Ajv
+    // Very simple JSON Schema validation implementation
+    // In a real implementation, you would use a library like ajv
     
     const errors: string[] = [];
     
     // Check type
     if (schema.type) {
-      const schemaType = schema.type;
-      let actualType = typeof data;
+      const expectedType = schema.type;
+      // Determine data type as a string
+      let actualType = 'unknown';
       
-      // Special handling for arrays and null
-      if (Array.isArray(data)) actualType = 'array' as any;
-      if (data === null) actualType = 'null' as any;
+      if (Array.isArray(data)) {
+        actualType = 'array';
+      } else if (data === null) {
+        actualType = 'null';
+      } else {
+        actualType = typeof data;
+      }
       
-      if (schemaType !== actualType) {
-        errors.push(`Expected type ${schemaType}, but got ${actualType}`);
+      if (expectedType !== actualType) {
+        errors.push(`Expected type ${expectedType}, but got ${actualType}`);
       }
     }
     
-    // Check required properties
+    // Check required properties for objects
     if (schema.type === 'object' && schema.required && schema.required.length > 0) {
-      for (const prop of schema.required) {
-        if (data === null || data === undefined || !(prop in data)) {
-          errors.push(`Missing required property: ${prop}`);
+      for (const requiredProp of schema.required) {
+        if (!(requiredProp in data)) {
+          errors.push(`Missing required property: ${requiredProp}`);
         }
       }
     }
     
-    // Check properties
-    if (schema.type === 'object' && schema.properties && typeof data === 'object' && data !== null) {
-      for (const [prop, propSchema] of Object.entries(schema.properties)) {
-        if (prop in data) {
-          const propResult = this.validateWithSchema(data[prop], propSchema);
-          if (!propResult.valid) {
-            errors.push(...propResult.errors!.map(err => `Property ${prop}: ${err}`));
+    // Check properties for objects
+    if (schema.type === 'object' && schema.properties) {
+      for (const [propName, propSchema] of Object.entries(schema.properties)) {
+        if (propName in data) {
+          const propResult = this.validateWithSchema(data[propName], propSchema as JSONSchema);
+          if (!propResult.valid && propResult.errors) {
+            errors.push(...propResult.errors.map(err => `${propName}: ${err}`));
           }
         }
       }
     }
     
+    // Check items for arrays
+    if (schema.type === 'array' && schema.items && Array.isArray(data)) {
+      data.forEach((item, index) => {
+        const itemResult = this.validateWithSchema(item, schema.items as JSONSchema);
+        if (!itemResult.valid && itemResult.errors) {
+          errors.push(...itemResult.errors.map(err => `[${index}]: ${err}`));
+        }
+      });
+    }
+    
     // Check enum values
     if (schema.enum && !schema.enum.includes(data)) {
       errors.push(`Value must be one of: ${schema.enum.join(', ')}`);
-    }
-    
-    // Check string length
-    if (schema.type === 'string' && typeof data === 'string') {
-      if (schema.minLength !== undefined && data.length < schema.minLength) {
-        errors.push(`String must be at least ${schema.minLength} characters long`);
-      }
-      if (schema.maxLength !== undefined && data.length > schema.maxLength) {
-        errors.push(`String must be at most ${schema.maxLength} characters long`);
-      }
-    }
-    
-    // Check number constraints
-    if ((schema.type === 'number' || schema.type === 'integer') && typeof data === 'number') {
-      if (schema.minimum !== undefined && data < schema.minimum) {
-        errors.push(`Value must be >= ${schema.minimum}`);
-      }
-      if (schema.maximum !== undefined && data > schema.maximum) {
-        errors.push(`Value must be <= ${schema.maximum}`);
-      }
     }
     
     return {

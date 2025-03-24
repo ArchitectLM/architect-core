@@ -1,5 +1,5 @@
-import { Extension } from '../models/extension';
-import { Event } from '../models/event';
+import { Extension, ExtensionHookRegistration, ExtensionPointName } from '../models/extension-system';
+import { DomainEvent } from '../models/core-types';
 
 export interface TaskMetrics {
   total: number;
@@ -20,8 +20,27 @@ export interface PerformanceMetrics {
 export class PerformanceMonitoringPlugin implements Extension {
   name = 'performance-monitoring';
   description = 'Collects and exposes performance metrics for the runtime';
+  id = 'performance-monitoring';
+  dependencies: string[] = [];
   
   private metrics: PerformanceMetrics = this.createEmptyMetrics();
+  
+  // Implement Extension interface methods
+  getHooks(): Array<ExtensionHookRegistration<ExtensionPointName, unknown>> {
+    return Object.entries(this.hooks).map(([pointName, hook]) => ({
+      pointName: pointName as ExtensionPointName,
+      hook,
+      priority: 0
+    }));
+  }
+  
+  getVersion(): string {
+    return '1.0.0';
+  }
+  
+  getCapabilities(): string[] {
+    return ['performance-monitoring'];
+  }
   
   hooks = {
     // Task lifecycle hooks
@@ -80,8 +99,7 @@ export class PerformanceMonitoringPlugin implements Extension {
     }
   };
   
-  // Event interceptor to track event counts
-  eventInterceptor = (event: Event) => {
+  eventInterceptor = (event: DomainEvent<any>) => {
     // Count events by type
     if (!this.metrics.eventCounts[event.type]) {
       this.metrics.eventCounts[event.type] = 0;

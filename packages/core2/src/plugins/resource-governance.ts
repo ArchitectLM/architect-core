@@ -1,5 +1,5 @@
-import { Extension } from '../models/extension';
-import { EventBus } from '../models/event';
+import { Extension, ExtensionHookRegistration, ExtensionPointName } from '../models/extension-system';
+import { EventBus } from '../models/event-system';
 
 export enum ResourceType {
   CPU = 'CPU',
@@ -134,8 +134,10 @@ export interface ResourceGovernancePlugin extends Extension {
 }
 
 class ResourceGovernancePluginImpl implements ResourceGovernancePlugin {
+  id = 'resource-governance';
   name = 'resource-governance';
   description = 'Monitors and manages resource usage during task execution';
+  dependencies: string[] = [];
   
   private options: ResourceGovernanceOptions;
   private resourceMetrics: ResourceMetrics;
@@ -245,7 +247,7 @@ class ResourceGovernancePluginImpl implements ResourceGovernancePlugin {
       adaptations: 0,
       currentThrottlingLevel: 1.0,
       initialThrottlingLevel: 1.0,
-      maxThrottlingLevel: 5.0
+      maxThrottlingLevel: 2.0
     };
     
     this.reservationMetrics = {
@@ -259,33 +261,11 @@ class ResourceGovernancePluginImpl implements ResourceGovernancePlugin {
     });
     
     // Set active policy
-    if (options.defaultPolicy && this.policies.has(options.defaultPolicy)) {
-      const policy = this.policies.get(options.defaultPolicy);
-      if (!policy) {
-        throw new Error(`Default policy '${options.defaultPolicy}' not found`);
-      }
-      this.activePolicy = policy;
-    } else if (this.policies.size > 0) {
-      const policy = this.policies.values().next().value;
-      if (!policy) {
-        throw new Error('No policies available');
-      }
-      this.activePolicy = policy;
-    } else {
-      // Create a default policy if none provided
-      this.activePolicy = {
-        name: 'default',
-        description: 'Default resource policy',
-        resourceLimits: {
-          [ResourceType.CPU]: 0.8,
-          [ResourceType.MEMORY]: 200,
-          [ResourceType.NETWORK]: 1000,
-          [ResourceType.DISK]: 100,
-          [ResourceType.CONCURRENCY]: 10
-        }
-      };
-      this.policies.set('default', this.activePolicy);
+    const defaultPolicy = options.policies.find(p => p.name === options.defaultPolicy);
+    if (!defaultPolicy) {
+      throw new Error(`Default policy '${options.defaultPolicy}' not found`);
     }
+    this.activePolicy = defaultPolicy;
     
     // Start monitoring
     if (this.options.enableRuntimeThrottling) {
@@ -293,143 +273,95 @@ class ResourceGovernancePluginImpl implements ResourceGovernancePlugin {
     }
   }
   
-  hooks = {
-    'task:beforeExecution': async (context: any) => {
-      const taskId = context.taskId || context.taskType;
-      
-      // Initialize task metrics if not exists
-      if (!this.taskMetrics[taskId]) {
-        this.taskMetrics[taskId] = {
-          cpu: { average: 0, peak: 0, executions: 0 },
-          memory: { average: 0, peak: 0, executions: 0 },
-          executionTime: { average: 0, min: Infinity, max: 0, executions: 0 }
-        };
-      }
-      
-      // Check resource limits
-      const cpuUsage = this.getCurrentCpuUsage();
-      const memoryUsage = this.getCurrentMemoryUsage();
-      
-      // Get task-specific limits
-      const cpuLimit = this.getTaskResourceLimit(taskId, ResourceType.CPU);
-      const memoryLimit = this.getTaskResourceLimit(taskId, ResourceType.MEMORY);
-      
-      // Check if we're in circuit breaker state for memory
-      if (memoryUsage > memoryLimit * 1.5) { // 150% threshold for circuit breaker
-        this.throttlingMetrics.throttledTasks++;
-        this.throttlingMetrics.throttlingEvents[ResourceType.MEMORY]++;
-        this.throttlingMetrics.throttleReason[taskId] = ResourceType.MEMORY;
-        
-        throw new Error(`Circuit breaker triggered for task '${taskId}' due to high memory usage`);
-      }
-      
-      // Check CPU throttling
-      if (cpuUsage > cpuLimit) {
-        this.throttlingMetrics.throttledTasks++;
-        this.throttlingMetrics.throttlingEvents[ResourceType.CPU]++;
-        this.throttlingMetrics.throttleReason[taskId] = ResourceType.CPU;
-        
-        // Queue the task if CPU throttling is enabled
-        if (this.options.enableRuntimeThrottling) {
-          const priority = this.getTaskPriority(taskId);
-          this.queueTask(taskId, priority);
-          throw new Error(`Task '${taskId}' queued due to CPU throttling`);
+  getHooks(): Array<ExtensionHookRegistration<ExtensionPointName, unknown>> {
+    return [
+      {
+        pointName: 'task:beforeExecute',
+        hook: async (context: any) => {
+          const taskId = context.taskId;
+          
+          // Check if we're at concurrency limit
+          if (this.activeExecutions.size >= this.concurrencyLimit) {
+            // Queue the task by priority
+            const priority = this.getTaskPriority(taskId);
+            this.queueTask(taskId, priority);
+            this.throttlingMetrics.throttledTasks++;
+            this.throttlingMetrics.throttlingEvents[ResourceType.CONCURRENCY]++;
+            this.throttlingMetrics.throttleReason[taskId] = ResourceType.CONCURRENCY;
+            
+            // Skip execution for now
+            return {
+              ...context,
+              skipExecution: true
+            };
+          }
+          
+          // Add to active executions
+          this.activeExecutions.add(taskId);
+          this.executionOrder.push(taskId);
+          this.resourceMetrics.concurrency.current = this.activeExecutions.size;
+          
+          // Update peak concurrency
+          if (this.activeExecutions.size > this.resourceMetrics.concurrency.peak) {
+            this.resourceMetrics.concurrency.peak = this.activeExecutions.size;
+          }
+          
+          return context;
+        }
+      },
+      {
+        pointName: 'task:afterExecute',
+        hook: async (context: any) => {
+          const taskId = context.taskId;
+          
+          // Remove from active executions
+          this.activeExecutions.delete(taskId);
+          this.resourceMetrics.concurrency.current = this.activeExecutions.size;
+          
+          // Process the next task in queue if available
+          this.processTaskQueue();
+          
+          return context;
+        }
+      },
+      {
+        pointName: 'system:init',
+        hook: async (context: any) => {
+          if (context.eventBus) {
+            this.eventBus = context.eventBus;
+            
+            // Emit initial resource metrics
+            this.eventBus?.publish({
+              id: 'resource-metrics-init',
+              type: 'resource:metrics',
+              timestamp: Date.now(),
+              payload: {
+                cpu: this.resourceMetrics.cpu,
+                memory: this.resourceMetrics.memory,
+                time: Date.now()
+              },
+              metadata: {}
+            });
+          }
+          
+          return context;
         }
       }
-      
-      // Reserve resources for the task
-      if (!this.activePolicy) {
-        throw new Error('No active policy found for resource governance');
-      }
-      
-      const taskResources = this.activePolicy.taskResourceLimits?.[taskId] || 
-                           this.activePolicy.resourceLimits;
-      this.reserveResources(taskId, taskResources);
-      
-      // Record start time for execution metrics
-      context.startTime = Date.now();
-      
-      return context;
-    },
-    
-    'task:afterCompletion': async (context: any) => {
-      const taskId = context.taskId || context.taskType;
-      const startTime = context.startTime;
-      const endTime = Date.now();
-      const executionTime = endTime - startTime;
-      
-      // Update task metrics
-      const taskMetric = this.taskMetrics[taskId];
-      if (taskMetric) {
-        // Update CPU metrics
-        const currentCpu = this.getCurrentCpuUsage();
-        const cpuMetrics = taskMetric.cpu;
-        cpuMetrics.executions++;
-        cpuMetrics.average = (cpuMetrics.average * (cpuMetrics.executions - 1) + currentCpu) / cpuMetrics.executions;
-        cpuMetrics.peak = Math.max(cpuMetrics.peak, currentCpu);
-        
-        // Update memory metrics
-        const currentMemory = this.getCurrentMemoryUsage();
-        const memoryMetrics = taskMetric.memory;
-        memoryMetrics.executions++;
-        memoryMetrics.average = (memoryMetrics.average * (memoryMetrics.executions - 1) + currentMemory) / memoryMetrics.executions;
-        memoryMetrics.peak = Math.max(memoryMetrics.peak, currentMemory);
-        
-        // Update execution time metrics
-        const executionMetrics = taskMetric.executionTime;
-        executionMetrics.executions++;
-        executionMetrics.average = (executionMetrics.average * (executionMetrics.executions - 1) + executionTime) / executionMetrics.executions;
-        executionMetrics.min = Math.min(executionMetrics.min, executionTime);
-        executionMetrics.max = Math.max(executionMetrics.max, executionTime);
-      }
-      
-      // Release reserved resources
-      this.reservedResources.delete(taskId);
-      
-      // Update utilization percentage
-      this.updateUtilizationPercentage();
-      
-      return context;
-    },
-    
-    'task:onError': async (context: any) => {
-      if (!context._resourceGovernance) return context;
-      
-      const taskId = context.taskType;
-      
-      // Clear task timeout if set
-      if (context._resourceGovernance.timeoutHandle) {
-        clearTimeout(context._resourceGovernance.timeoutHandle);
-      }
-      
-      // Remove from active executions
-      this.activeExecutions.delete(taskId);
-      this.resourceMetrics.concurrency.current = this.activeExecutions.size;
-      
-      // Dequeue next task if there's a queue
-      if (this.taskQueue.length > 0 && this.activeExecutions.size < this.concurrencyLimit) {
-        this.processTaskQueue();
-      }
-      
-      return context;
-    },
-    
-    'runtime:initialized': async (context: any) => {
-      if (context.eventBus) {
-        this.eventBus = context.eventBus;
-        this.eventBus.subscribe('resource:alert', this.handleResourceAlert.bind(this));
-        
-        // Emit initial resource metrics
-        this.eventBus.publish('resource:metrics', {
-          cpu: this.resourceMetrics.cpu,
-          memory: this.resourceMetrics.memory,
-          time: Date.now()
-        });
-      }
-      
-      return context;
-    }
-  };
+    ];
+  }
+  
+  getVersion(): string {
+    return '1.0.0';
+  }
+  
+  getCapabilities(): string[] {
+    return [
+      'resource-governance',
+      'throttling',
+      'resource-reservation',
+      'adaptive-throttling'
+    ];
+  }
   
   getResourceMetrics(): ResourceMetrics {
     return {...this.resourceMetrics};
@@ -575,10 +507,16 @@ class ResourceGovernancePluginImpl implements ResourceGovernancePlugin {
       
       // Emit metrics events
       if (this.eventBus) {
-        this.eventBus.publish('resource:metrics', {
-          cpu: this.resourceMetrics.cpu,
-          memory: this.resourceMetrics.memory,
-          time: Date.now()
+        this.eventBus.publish({
+          id: 'resource-metrics',
+          type: 'resource:metrics',
+          timestamp: Date.now(),
+          payload: {
+            cpu: this.resourceMetrics.cpu,
+            memory: this.resourceMetrics.memory,
+            time: Date.now()
+          },
+          metadata: {}
         });
       }
       
@@ -771,10 +709,42 @@ export function createResourceGovernancePlugin(
     }
   };
 
+  // Define the default 'Standard Resources' policy
+  const standardResourcesPolicy: ResourcePolicy = {
+    name: 'Standard Resources',
+    description: 'Default resource policy with standard limits',
+    resourceLimits: {
+      [ResourceType.CPU]: 0.8,
+      [ResourceType.MEMORY]: 200,
+      [ResourceType.NETWORK]: 1000,
+      [ResourceType.DISK]: 100,
+      [ResourceType.CONCURRENCY]: 10
+    },
+    taskPriorities: {
+      'calculation-task': 10,
+      'processing-task': 5,
+      'unreliable-task': 1
+    },
+    taskTimeouts: {
+      'calculation-task': 5000,
+      'processing-task': 10000,
+      'unreliable-task': 3000
+    }
+  };
+
+  // Use provided policies or fall back to default
+  const policies = options.policies || [standardResourcesPolicy];
+  
+  // If policies is provided but doesn't contain 'Standard Resources', add it
+  if (options.policies && !options.policies.some(p => p.name === 'Standard Resources') && 
+      options.defaultPolicy === 'Standard Resources') {
+    policies.push(standardResourcesPolicy);
+  }
+
   const fullOptions: ResourceGovernanceOptions = {
     resources: options.resources || defaultResources,
-    policies: options.policies || [],
-    defaultPolicy: options.defaultPolicy || '',
+    policies: policies,
+    defaultPolicy: options.defaultPolicy || 'Standard Resources',
     enableRuntimeThrottling: options.enableRuntimeThrottling !== false,
     monitoringInterval: options.monitoringInterval || 1000
   };

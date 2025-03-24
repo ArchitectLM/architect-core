@@ -1,4 +1,4 @@
-import { Extension } from '../models/extension';
+import { Extension, ExtensionHookRegistration, ExtensionPointName } from '../models/extension-system';
 
 /**
  * Represents the status of a node in the distributed system
@@ -134,6 +134,8 @@ export interface DistributionMetrics {
 export class DistributedExecutionPlugin implements Extension {
   name = 'distributed-execution-plugin';
   description = 'Enables distributed task execution across multiple nodes';
+  id = 'distributed-execution';
+  dependencies: string[] = [];
   
   private options: DistributedExecutionPluginOptions;
   private nodes: Map<string, DistributedNode> = new Map();
@@ -154,17 +156,34 @@ export class DistributedExecutionPlugin implements Extension {
   constructor(options: DistributedExecutionPluginOptions) {
     this.options = options;
     
-    // Initialize nodes
+    // Initialize nodes if provided
     if (options.nodes) {
-      options.nodes.forEach(node => {
-        this.nodes.set(node.id, { ...node });
-      });
+      for (const node of options.nodes) {
+        this.nodes.set(node.id, node);
+      }
     }
     
     // Set up health checking if configured
     if (options.healthCheck) {
       this.enableHealthCheck(options.healthCheck);
     }
+  }
+  
+  // Implement Extension interface methods
+  getHooks(): Array<ExtensionHookRegistration<ExtensionPointName, unknown>> {
+    return Object.entries(this.hooks).map(([pointName, hook]) => ({
+      pointName: pointName as ExtensionPointName,
+      hook,
+      priority: 0
+    }));
+  }
+  
+  getVersion(): string {
+    return '1.0.0';
+  }
+  
+  getCapabilities(): string[] {
+    return ['distributed-execution', 'load-balancing'];
   }
   
   hooks = {

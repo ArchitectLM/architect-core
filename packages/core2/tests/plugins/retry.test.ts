@@ -543,4 +543,35 @@ describe('Retry Plugin', () => {
       expect(stats.failureAfterRetry).toBe(1);
     });
   });
+
+  describe('Retry Logic', () => {
+    it('should apply retry logic based on configuration', async () => {
+      // Mock context for task error
+      let context: any = {
+        taskType: 'test-task',
+        error: new Error('Test error')
+      };
+      
+      try {
+        // Apply retry hook
+        context = await retryPlugin.hooks['task:onError'](context) as any;
+        
+        // Simulate re-executing the task
+        try {
+          throw new Error('Simulated retry failure');
+        } catch (error) {
+          context = {
+            ...context,
+            error: error instanceof Error ? error : new Error(String(error))
+          };
+        }
+      } catch (e) {
+        // Expected
+      }
+      
+      // Check retry context
+      expect(context._retry).toBeDefined();
+      expect(context._retry.attemptNumber).toBeGreaterThan(1);
+    });
+  });
 }); 

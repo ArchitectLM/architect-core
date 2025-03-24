@@ -1,7 +1,8 @@
-import { EventBus } from '../models/event';
-import { ExtensionSystem } from '../models/extension';
-import { Extension } from '../models/extension';
+import { EventBus } from '../models/event-system';
+import { ExtensionSystem, Extension, ExtensionHookRegistration, ExtensionPointName, ExtensionHook } from '../models/extension-system';
 import { ProcessDefinition, ProcessInstance, ProcessTransition } from '../models/index';
+import { v4 as uuidv4 } from 'uuid';
+import { Result } from '../models/core-types';
 
 /**
  * ProcessManagementPlugin provides capabilities for managing process definitions and instances
@@ -48,73 +49,150 @@ export interface ProcessManagementPlugin {
   initialize(): void;
 }
 
+// Define context types to fix type errors
+interface ProcessCreateContext {
+  process: ProcessInstance;
+  definition: ProcessDefinition;
+  [key: string]: any;
+}
+
+interface ProcessTransitionContext {
+  process: ProcessInstance;
+  event: string;
+  oldState?: string;
+  definition: ProcessDefinition;
+  transition?: ProcessTransition;
+  [key: string]: any;
+}
+
 /**
  * Implementation of the ProcessManagementPlugin
  */
 export class ProcessManagementPluginImpl implements ProcessManagementPlugin {
   private processDefinitions: Map<string, ProcessDefinition[]> = new Map();
   private readonly extension: Extension;
+  private eventBusInstance: EventBus;
 
   constructor(
     private eventBus: EventBus,
     private extensionSystem: ExtensionSystem
   ) {
+    this.eventBusInstance = eventBus;
+    // Create a proper extension with bound methods
+    const self = this;
+    
     this.extension = {
+      id: 'process-management',
       name: 'process-management',
       description: 'Provides process definition and lifecycle management',
-      hooks: {
-        'process:beforeCreate': async (context) => {
-          // We could add validation or enrichment here
-          return context;
-        },
-        'process:afterCreate': async (context) => {
-          // Emit process created event
-          this.eventBus.publish('process.created', {
-            processId: context.process.id,
-            processType: context.process.type,
-            timestamp: Date.now(),
-            state: context.process.state,
-            version: context.process.version
-          });
-          return context;
-        },
-        'process:beforeTransition': async (context) => {
-          const { process, event } = context;
-          
-          // Validate the transition
-          if (!this.isTransitionValid(process, event)) {
-            throw new Error(`Invalid transition ${event} from state ${process.state}`);
+      dependencies: [],
+      
+      getHooks(): Array<ExtensionHookRegistration<ExtensionPointName, unknown>> {
+        // Use closure to capture the plugin instance
+        return [
+          {
+            pointName: 'process:beforeCreate' as ExtensionPointName,
+            hook: async (context: unknown): Promise<Result<unknown>> => {
+              // We could add validation or enrichment here
+              return { success: true, value: context };
+            }
+          },
+          {
+            pointName: 'process:afterCreate' as ExtensionPointName,
+            hook: async (context: unknown): Promise<Result<unknown>> => {
+              // Type assertion for the context
+              const typedContext = context as ProcessCreateContext;
+              
+              // Emit process created event
+              self.eventBus.publish({
+                id: uuidv4(),
+                type: 'process.created',
+                timestamp: Date.now(),
+                payload: {
+                  processId: typedContext.process?.id,
+                  processType: typedContext.process?.type,
+                  state: typedContext.process?.state,
+                  version: typedContext.process?.version
+                }
+              });
+              return { success: true, value: context };
+            }
+          },
+          {
+            pointName: 'process:beforeTransition' as ExtensionPointName,
+            hook: async (context: unknown): Promise<Result<unknown>> => {
+              // Type assertion for the context
+              const typedContext = context as ProcessTransitionContext;
+              
+              if (!typedContext.process || !typedContext.event) {
+                return { 
+                  success: false, 
+                  error: new Error('Missing process or event in context')
+                };
+              }
+              
+              // Validate the transition
+              if (!self.isTransitionValid(typedContext.process, typedContext.event)) {
+                return { 
+                  success: false, 
+                  error: new Error(`Invalid transition: ${typedContext.event} is not allowed from state ${typedContext.process.state}`)
+                };
+              }
+              
+              return { success: true, value: context };
+            }
+          },
+          {
+            pointName: 'process:afterTransition' as ExtensionPointName,
+            hook: async (context: unknown): Promise<Result<unknown>> => {
+              // Type assertion for the context
+              const typedContext = context as ProcessTransitionContext;
+              
+              if (!typedContext.process || !typedContext.oldState) {
+                return { 
+                  success: false, 
+                  error: new Error('Missing process or oldState in context')
+                };
+              }
+              
+              // Emit process transitioned event
+              self.eventBus.publish({
+                id: uuidv4(),
+                type: 'process.transitioned',
+                timestamp: Date.now(),
+                payload: {
+                  processId: typedContext.process.id,
+                  processType: typedContext.process.type,
+                  fromState: typedContext.oldState,
+                  toState: typedContext.process.state,
+                  event: typedContext.event,
+                }
+              });
+              
+              return { success: true, value: context };
+            }
           }
-          
-          return context;
-        },
-        'process:afterTransition': async (context) => {
-          const { process, oldState, event } = context;
-          
-          // Emit process transitioned event
-          this.eventBus.publish('process.transitioned', {
-            processId: process.id,
-            processType: process.type,
-            fromState: oldState,
-            toState: process.state,
-            event,
-            timestamp: Date.now()
-          });
-          
-          return context;
-        }
+        ];
+      },
+      
+      getVersion(): string {
+        return '1.0.0';
+      },
+      
+      getCapabilities(): string[] {
+        return ['process-management'];
       }
     };
   }
 
   registerProcessDefinition(definition: ProcessDefinition): void {
     // Validate definition
-    if (!definition.id || !definition.initialState || !definition.transitions) {
+    if (!definition.type || !definition.initialState || !definition.transitions) {
       throw new Error('Invalid process definition');
     }
     
     // Get existing definitions array or create a new one
-    const definitions = this.processDefinitions.get(definition.id) || [];
+    const definitions = this.processDefinitions.get(definition.type) || [];
     
     // Check if version already exists
     const existingIndex = definitions.findIndex(def => def.version === definition.version);
@@ -133,7 +211,7 @@ export class ProcessManagementPluginImpl implements ProcessManagementPlugin {
       return a.version.localeCompare(b.version, undefined, { numeric: true });
     });
     
-    this.processDefinitions.set(definition.id, definitions);
+    this.processDefinitions.set(definition.type, definitions);
   }
 
   getProcessDefinition(processType: string, version?: string): ProcessDefinition | undefined {
@@ -175,7 +253,7 @@ export class ProcessManagementPluginImpl implements ProcessManagementPlugin {
       id: `process-${Date.now()}`,
       type: processType,
       state: definition.initialState,
-      data: createContext.data || data,
+      data: (createContext.value as any)?.data || data,
       createdAt: Date.now(),
       updatedAt: Date.now(),
       version: definition.version || '1.0.0'
@@ -187,7 +265,7 @@ export class ProcessManagementPluginImpl implements ProcessManagementPlugin {
       definition
     });
 
-    return afterCreateContext.process;
+    return (afterCreateContext.value as any)?.process || process;
   }
 
   async transitionProcess(instance: ProcessInstance, event: string): Promise<ProcessInstance> {
@@ -223,7 +301,7 @@ export class ProcessManagementPluginImpl implements ProcessManagementPlugin {
       transition
     });
 
-    return afterTransitionContext.process;
+    return (afterTransitionContext.value as any)?.process || instance;
   }
 
   isTransitionValid(instance: ProcessInstance, event: string): boolean {
@@ -246,7 +324,7 @@ export class ProcessManagementPluginImpl implements ProcessManagementPlugin {
   }
 
   private findTransition(definition: ProcessDefinition, state: string, event: string): ProcessTransition | undefined {
-    return definition.transitions.find(t => t.from === state && t.on === event);
+    return definition.transitions.find(t => t.from === state && t.event === event);
   }
 
   initialize(): void {

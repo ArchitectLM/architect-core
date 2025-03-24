@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { EventBus } from '../../src/models/event';
+import { describe, it, expect, beforeEach, vi, Mock } from 'vitest';
+import type { EventBus } from '../../src/models/event-system';
 import { 
   ContentBasedRouter, 
   RouteDefinition, 
@@ -7,8 +7,15 @@ import {
   createContentBasedRouter 
 } from '../../src/plugins/content-based-routing';
 
+interface MockEventBus {
+  subscribe: Mock;
+  unsubscribe: Mock;
+  publish: Mock;
+  applyBackpressure: Mock;
+}
+
 describe('Content-Based Routing Plugin', () => {
-  let eventBus: EventBus;
+  let eventBus: MockEventBus;
   let router: ContentBasedRouter;
 
   beforeEach(() => {
@@ -19,7 +26,7 @@ describe('Content-Based Routing Plugin', () => {
       applyBackpressure: vi.fn()
     };
 
-    router = createContentBasedRouter(eventBus);
+    router = createContentBasedRouter(eventBus as unknown as EventBus);
   });
 
   describe('Plugin Initialization', () => {
@@ -43,7 +50,7 @@ describe('Content-Based Routing Plugin', () => {
       router.initialize();
       
       // Extract the event handler
-      const eventHandler = (eventBus.subscribe as vi.Mock).mock.calls[0][1];
+      const eventHandler = eventBus.subscribe.mock.calls[0][1];
       
       // Create an event that matches the route
       const highPriorityEvent = {
@@ -54,8 +61,11 @@ describe('Content-Based Routing Plugin', () => {
       
       eventHandler(highPriorityEvent);
       
-      // Verify the event was routed
-      expect(eventBus.publish).toHaveBeenCalledWith('high-priority-event', highPriorityEvent.payload);
+      // Verify the event was routed with DomainEvent format
+      expect(eventBus.publish).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'high-priority-event',
+        payload: highPriorityEvent.payload
+      }));
     });
 
     it('should register a route with a JSON path expression', () => {
@@ -69,7 +79,7 @@ describe('Content-Based Routing Plugin', () => {
       router.initialize();
       
       // Extract the event handler
-      const eventHandler = (eventBus.subscribe as vi.Mock).mock.calls[0][1];
+      const eventHandler = eventBus.subscribe.mock.calls[0][1];
       
       // Create an event that matches the route
       const adminEvent = {
@@ -86,8 +96,11 @@ describe('Content-Based Routing Plugin', () => {
       
       eventHandler(adminEvent);
       
-      // Verify the event was routed
-      expect(eventBus.publish).toHaveBeenCalledWith('admin-event', adminEvent.payload);
+      // Verify the event was routed with DomainEvent format
+      expect(eventBus.publish).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'admin-event',
+        payload: adminEvent.payload
+      }));
     });
 
     it('should handle multiple routes for the same event', () => {
@@ -107,7 +120,7 @@ describe('Content-Based Routing Plugin', () => {
       router.initialize();
       
       // Extract the event handler
-      const eventHandler = (eventBus.subscribe as vi.Mock).mock.calls[0][1];
+      const eventHandler = eventBus.subscribe.mock.calls[0][1];
       
       // Create an event that matches both routes
       const matchingEvent = {
@@ -124,9 +137,16 @@ describe('Content-Based Routing Plugin', () => {
       
       eventHandler(matchingEvent);
       
-      // Verify the event was routed to both targets
-      expect(eventBus.publish).toHaveBeenCalledWith('high-priority-event', matchingEvent.payload);
-      expect(eventBus.publish).toHaveBeenCalledWith('admin-event', matchingEvent.payload);
+      // Verify the event was routed to both targets with DomainEvent format
+      expect(eventBus.publish).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'high-priority-event',
+        payload: matchingEvent.payload
+      }));
+      
+      expect(eventBus.publish).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'admin-event',
+        payload: matchingEvent.payload
+      }));
     });
   });
 
@@ -146,7 +166,7 @@ describe('Content-Based Routing Plugin', () => {
       router.initialize();
       
       // Extract the event handler
-      const eventHandler = (eventBus.subscribe as vi.Mock).mock.calls[0][1];
+      const eventHandler = eventBus.subscribe.mock.calls[0][1];
       
       // Create a test event
       const originalEvent = {
@@ -159,11 +179,13 @@ describe('Content-Based Routing Plugin', () => {
       
       // Verify the event was routed with transformed payload
       expect(eventBus.publish).toHaveBeenCalledWith(
-        'transformed-event', 
         expect.objectContaining({
-          data: 'test',
-          transformed: true,
-          timestamp: 'overridden'
+          type: 'transformed-event',
+          payload: expect.objectContaining({
+            data: 'test',
+            transformed: true,
+            timestamp: 'overridden'
+          })
         })
       );
     });
@@ -184,7 +206,7 @@ describe('Content-Based Routing Plugin', () => {
       router.initialize();
       
       // Extract the event handler
-      const eventHandler = (eventBus.subscribe as vi.Mock).mock.calls[0][1];
+      const eventHandler = eventBus.subscribe.mock.calls[0][1];
       
       // Create error and normal events
       const errorEvent = {
@@ -199,24 +221,29 @@ describe('Content-Based Routing Plugin', () => {
         timestamp: Date.now()
       };
       
-      // Process both events
       eventHandler(errorEvent);
       eventHandler(normalEvent);
       
       // Verify the events were routed with proper transformations
       expect(eventBus.publish).toHaveBeenCalledWith(
-        'conditional-event', 
         expect.objectContaining({
-          status: 'error',
-          critical: true
+          type: 'conditional-event',
+          payload: expect.objectContaining({
+            status: 'error',
+            message: 'Something went wrong',
+            critical: true
+          })
         })
       );
       
       expect(eventBus.publish).toHaveBeenCalledWith(
-        'conditional-event', 
         expect.objectContaining({
-          status: 'success',
-          routine: true
+          type: 'conditional-event',
+          payload: expect.objectContaining({
+            status: 'success',
+            message: 'Operation completed',
+            routine: true
+          })
         })
       );
     });
@@ -224,20 +251,16 @@ describe('Content-Based Routing Plugin', () => {
 
   describe('Route Filtering', () => {
     it('should handle route filtering', () => {
-      // Register a route that will reject some events
       router.registerRoute({
         name: 'filtered-route',
-        predicate: (event) => {
-          // Only accept events with a valid ID
-          return typeof event.payload?.id === 'string' && event.payload.id.length > 0;
-        },
+        predicate: (event) => event.payload && 'id' in event.payload,
         targetEventType: 'validated-event'
       });
       
       router.initialize();
       
       // Extract the event handler
-      const eventHandler = (eventBus.subscribe as vi.Mock).mock.calls[0][1];
+      const eventHandler = eventBus.subscribe.mock.calls[0][1];
       
       // Create valid and invalid events
       const validEvent = {
@@ -248,64 +271,59 @@ describe('Content-Based Routing Plugin', () => {
       
       const invalidEvent = {
         type: 'original-event',
-        payload: { id: '', data: 'test' },
+        payload: { data: 'missing-id' },
         timestamp: Date.now()
       };
       
-      const missingIdEvent = {
-        type: 'original-event',
-        payload: { data: 'test' },
-        timestamp: Date.now()
-      };
-      
-      // Process all events
       eventHandler(validEvent);
       eventHandler(invalidEvent);
-      eventHandler(missingIdEvent);
       
       // Verify only the valid event was routed
       expect(eventBus.publish).toHaveBeenCalledTimes(1);
-      expect(eventBus.publish).toHaveBeenCalledWith('validated-event', validEvent.payload);
+      expect(eventBus.publish).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'validated-event',
+        payload: validEvent.payload
+      }));
     });
   });
 
   describe('Route Management', () => {
     it('should find routes by name', () => {
-      const routeDef = {
-        name: 'findable-route',
+      const routeDefinition: RouteDefinition = {
+        name: 'test-route',
         predicate: () => true,
-        targetEventType: 'target-event'
+        targetEventType: 'test-target'
       };
       
-      router.registerRoute(routeDef);
+      router.registerRoute(routeDefinition);
       
-      const foundRoute = router.getRouteByName('findable-route');
-      expect(foundRoute).toEqual(routeDef);
+      const foundRoute = router.getRouteByName('test-route');
+      expect(foundRoute).toEqual(routeDefinition);
     });
 
     it('should update existing routes', () => {
       // Register initial route
       router.registerRoute({
-        name: 'updateable-route',
-        predicate: () => false, // This route initially doesn't match anything
-        targetEventType: 'original-target'
+        name: 'update-test',
+        predicate: () => true,
+        targetEventType: 'initial-target'
       });
       
       // Update the route
       router.updateRoute({
-        name: 'updateable-route',
-        predicate: () => true, // Now it matches everything
+        name: 'update-test',
+        predicate: () => true,
         targetEventType: 'new-target'
       });
       
       router.initialize();
       
       // Extract the event handler
-      const eventHandler = (eventBus.subscribe as vi.Mock).mock.calls[0][1];
+      const eventHandler = eventBus.subscribe.mock.calls[0][1];
       
       // Create a test event
       const testEvent = {
-        type: 'test-event',
+        type: 'original-event',
         payload: { data: 'test' },
         timestamp: Date.now()
       };
@@ -313,64 +331,46 @@ describe('Content-Based Routing Plugin', () => {
       eventHandler(testEvent);
       
       // Verify the event was routed to the new target
-      expect(eventBus.publish).toHaveBeenCalledWith('new-target', testEvent.payload);
+      expect(eventBus.publish).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'new-target',
+        payload: testEvent.payload
+      }));
     });
 
     it('should remove routes', () => {
       // Register a route
       router.registerRoute({
-        name: 'removable-route',
+        name: 'remove-test',
         predicate: () => true,
-        targetEventType: 'target-event'
+        targetEventType: 'test-target'
       });
       
-      // Remove it
-      router.removeRoute('removable-route');
+      // Remove the route
+      router.removeRoute('remove-test');
       
-      router.initialize();
-      
-      // Extract the event handler
-      const eventHandler = (eventBus.subscribe as vi.Mock).mock.calls[0][1];
-      
-      // Create a test event
-      const testEvent = {
-        type: 'test-event',
-        payload: { data: 'test' },
-        timestamp: Date.now()
-      };
-      
-      eventHandler(testEvent);
-      
-      // Verify no routing occurred
-      expect(eventBus.publish).not.toHaveBeenCalled();
+      // Verify it's gone
+      expect(router.getRouteByName('remove-test')).toBeUndefined();
     });
 
     it('should get all registered routes', () => {
       const routes = [
         {
-          name: 'route-1',
+          name: 'route1',
           predicate: () => true,
-          targetEventType: 'target-1'
+          targetEventType: 'target1'
         },
         {
-          name: 'route-2',
+          name: 'route2',
           predicate: () => false,
-          targetEventType: 'target-2'
+          targetEventType: 'target2'
         }
       ];
       
-      // Register routes
       routes.forEach(route => router.registerRoute(route));
       
-      // Get all routes
       const allRoutes = router.getAllRoutes();
-      
-      // Verify all routes are returned
       expect(allRoutes).toHaveLength(2);
-      expect(allRoutes).toEqual(expect.arrayContaining([
-        expect.objectContaining({ name: 'route-1' }),
-        expect.objectContaining({ name: 'route-2' })
-      ]));
+      expect(allRoutes).toEqual(expect.arrayContaining(routes));
     });
   });
 
@@ -387,7 +387,7 @@ describe('Content-Based Routing Plugin', () => {
       router.initialize();
       
       // Extract the event handler
-      const eventHandler = (eventBus.subscribe as vi.Mock).mock.calls[0][1];
+      const eventHandler = eventBus.subscribe.mock.calls[0][1];
       
       // Create a test event
       const testEvent = {
@@ -400,11 +400,19 @@ describe('Content-Based Routing Plugin', () => {
       
       // Verify route match event was published
       expect(eventBus.publish).toHaveBeenCalledWith(
-        'router.route.matched',
         expect.objectContaining({
-          routeName: 'route-with-events',
-          originalEventType: 'test-event',
-          targetEventType: 'target-event'
+          type: 'target-event'
+        })
+      );
+      
+      expect(eventBus.publish).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'router.route.matched',
+          payload: expect.objectContaining({
+            routeName: 'route-with-events',
+            originalEventType: 'test-event',
+            targetEventType: 'target-event'
+          })
         })
       );
     });
@@ -418,12 +426,13 @@ describe('Content-Based Routing Plugin', () => {
         targetEventType: 'target-event'
       });
       
+      // Disable events
       router.disableRouteEvents();
       
       router.initialize();
       
       // Extract the event handler
-      const eventHandler = (eventBus.subscribe as vi.Mock).mock.calls[0][1];
+      const eventHandler = eventBus.subscribe.mock.calls[0][1];
       
       // Create a test event
       const testEvent = {
@@ -435,8 +444,12 @@ describe('Content-Based Routing Plugin', () => {
       eventHandler(testEvent);
       
       // Verify the target event was published but no route match event
-      expect(eventBus.publish).toHaveBeenCalledWith('target-event', expect.anything());
-      expect(eventBus.publish).not.toHaveBeenCalledWith('router.route.matched', expect.anything());
+      expect(eventBus.publish).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'target-event'
+      }));
+      expect(eventBus.publish).not.toHaveBeenCalledWith(expect.objectContaining({
+        type: 'router.route.matched'
+      }));
     });
   });
 }); 

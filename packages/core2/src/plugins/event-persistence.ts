@@ -27,11 +27,28 @@ interface CorrelationContext {
   events?: DomainEvent<any>[];
 }
 
+// Type guard for DomainEvent
+function isDomainEvent(obj: unknown): obj is DomainEvent<any> {
+  return typeof obj === 'object' && 
+         obj !== null && 
+         'id' in obj && 
+         'type' in obj && 
+         'timestamp' in obj &&
+         'payload' in obj;
+}
+
 export class EventPersistencePlugin implements Extension {
+  id = 'event-persistence';
   name = 'event-persistence';
   description = 'Handles event persistence, replay, and correlation';
+  dependencies: string[] = [];
 
   private options: Required<EventPersistenceOptions>;
+  private extensionHooks: Array<{ 
+    pointName: string; 
+    hook: ExtensionHook<any, any>; 
+    priority: number 
+  }> = [];
 
   constructor(
     private eventBus: EventBus,
@@ -43,48 +60,76 @@ export class EventPersistencePlugin implements Extension {
       maxEvents: options.maxEvents || 10000,
       retentionPeriod: options.retentionPeriod || 7 * 24 * 60 * 60 * 1000, // 7 days
     };
+    
+    // Initialize hooks
+    this.initHooks();
+  }
+  
+  private initHooks(): void {
+    // Event before replay hook
+    this.extensionHooks.push({
+      pointName: 'event:beforeReplay',
+      hook: async (params: unknown) => {
+        const context = params as ReplayContext;
+        
+        if (!context) {
+          return { success: false, error: new Error('Invalid context') };
+        }
+        
+        return { 
+          success: true, 
+          value: context 
+        };
+      },
+      priority: 10
+    });
+
+    // Event after replay hook
+    this.extensionHooks.push({
+      pointName: 'event:afterReplay',
+      hook: async (params: unknown) => {
+        if (!params || typeof params !== 'object') {
+          return { success: false, error: new Error('Invalid parameters') };
+        }
+        
+        const event = params as DomainEvent<any>;
+        
+        if (isDomainEvent(event)) {
+          // Persist event
+          try {
+            await this.persistEvent(event);
+            return { success: true, value: event };
+          } catch (error) {
+            return { 
+              success: false, 
+              error: error instanceof Error ? error : new Error('Unknown error during persistence') 
+            };
+          }
+        }
+        
+        return { success: true, value: params };
+      },
+      priority: 10
+    });
   }
 
-  getExtension(): Extension {
-    return {
-      name: this.name,
-      description: this.description,
-      hooks: this.hooks
-    };
+  // Required Extension interface methods
+  getHooks(): Array<{ pointName: string; hook: ExtensionHook<any, any>; priority?: number }> {
+    return this.extensionHooks;
   }
-
-  hooks: Partial<Record<ExtensionPoint, ExtensionHook>> = {
-    'event:beforeReplay': async (context: ExtensionContext) => {
-      const event = context.data as DomainEvent<any>;
-      
-      // Add metadata if not present
-      event.metadata = event.metadata || {};
-
-      // Ensure required metadata fields
-      event.id = event.id || uuidv4();
-      event.timestamp = event.timestamp || Date.now();
-      event.metadata.source = event.metadata.source || 'event-persistence';
-
-      return {
-        ...context,
-        data: event
-      };
-    },
-
-    'event:afterReplay': async (context: ExtensionContext) => {
-      const event = context.data as DomainEvent<any>;
-      
-      // Persist event
-      await this.persistEvent(event);
-
-      return context;
-    }
-  };
+  
+  getVersion(): string {
+    return '1.0.0';
+  }
+  
+  getCapabilities(): string[] {
+    return ['event-persistence', 'event-replay', 'event-correlation'];
+  }
 
   async persistEvent(event: DomainEvent<any>): Promise<void> {
     // Store event
     const result = await this.options.storage.storeEvent(event);
-    if (!result.success) {
+    if (!result.success && result.error) {
       throw new Error(`Failed to store event: ${result.error.message}`);
     }
 
@@ -94,7 +139,7 @@ export class EventPersistencePlugin implements Extension {
 
   async replayEvents(fromTimestamp: number, toTimestamp: number, eventTypes?: string[]): Promise<void> {
     // Execute beforeReplay extension point
-    const replayContext = await this.extensionSystem.executeExtensionPoint<ReplayContext>('event:beforeReplay', {
+    const replayContextResult = await this.extensionSystem.executeExtensionPoint<ReplayContext, ReplayContext>('event:beforeReplay', {
       fromTimestamp,
       toTimestamp,
       eventTypes
@@ -159,7 +204,7 @@ export class EventPersistencePlugin implements Extension {
 
   async correlateEvents(correlationId: string): Promise<DomainEvent<any>[]> {
     // Execute beforeCorrelation extension point
-    const correlationContext = await this.extensionSystem.executeExtensionPoint<CorrelationContext>('event:beforeCorrelation', {
+    const correlationContextResult = await this.extensionSystem.executeExtensionPoint<CorrelationContext, CorrelationContext>('event:beforeCorrelation', {
       correlationId
     });
 

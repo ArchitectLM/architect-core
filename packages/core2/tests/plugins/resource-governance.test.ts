@@ -168,7 +168,7 @@ describe('Resource Governance Plugin', () => {
     
     // Create fresh instances for each test
     extensionSystem = createExtensionSystem();
-    eventBus = createEventBus();
+    eventBus = createEventBus(extensionSystem);
     
     // Create the resource governance plugin with default settings
     const basePlugin = createResourceGovernancePlugin({
@@ -382,12 +382,19 @@ describe('Resource Governance Plugin', () => {
     it.skip('should handle resource-related events from other components', async () => {
       // This test fails in the test environment because event handling is not properly simulated
       // Publish a resource alert event
-      eventBus.publish('resource.alert', {
-        type: ResourceType.MEMORY,
-        level: 'warning',
-        message: 'Memory usage approaching limit',
-        timestamp: Date.now()
-      });
+      const resourceAlertEvent = {
+        id: 'resource-alert-123',
+        type: 'resource.alert',
+        timestamp: Date.now(),
+        payload: {
+          type: ResourceType.MEMORY,
+          level: 'warning',
+          message: 'Memory usage approaching limit'
+        }
+      };
+      
+      // Use appropriate argument format for eventBus.publish
+      eventBus.publish(resourceAlertEvent);
       
       // Just verify the plugin exists
       expect(resourceGovernancePlugin).toBeDefined();

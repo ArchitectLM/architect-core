@@ -137,9 +137,24 @@ describe('Performance Monitoring Plugin', () => {
   describe('Event Processing Metrics', () => {
     it('should track event processing counts', () => {
       // Directly call the event interceptor
-      performancePlugin.eventInterceptor({ type: 'TEST_EVENT_1', payload: { test: true } });
-      performancePlugin.eventInterceptor({ type: 'TEST_EVENT_2', payload: { test: true } });
-      performancePlugin.eventInterceptor({ type: 'TEST_EVENT_1', payload: { test: true } });
+      performancePlugin.eventInterceptor({ 
+        id: '1',
+        type: 'TEST_EVENT_1', 
+        payload: { test: true },
+        timestamp: Date.now()
+      });
+      performancePlugin.eventInterceptor({ 
+        id: '2',
+        type: 'TEST_EVENT_2', 
+        payload: { test: true },
+        timestamp: Date.now()
+      });
+      performancePlugin.eventInterceptor({ 
+        id: '3',
+        type: 'TEST_EVENT_1', 
+        payload: { test: true },
+        timestamp: Date.now()
+      });
       
       // Get metrics
       const metrics = performancePlugin.getMetrics();
@@ -176,7 +191,12 @@ describe('Performance Monitoring Plugin', () => {
         taskType: 'fast-task'
       });
       
-      performancePlugin.eventInterceptor({ type: 'TEST_EVENT', payload: { test: true } });
+      performancePlugin.eventInterceptor({ 
+        id: '1',
+        type: 'TEST_EVENT', 
+        payload: { test: true },
+        timestamp: Date.now()
+      });
       
       // Get metrics and verify they're non-empty
       const metricsBeforeReset = performancePlugin.getMetrics();

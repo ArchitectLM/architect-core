@@ -1,9 +1,12 @@
-import { Extension } from '../models/extension';
+import { Extension } from '../models/extension-system';
 import { TaskExecution, TaskDefinition, TaskRetryPolicy } from '../models/index';
-import { EventBus } from '../models/event';
-import { ExtensionSystem } from '../models/extension';
+import { EventBus } from '../models/event-system';
+import { ExtensionSystem } from '../models/extension-system';
 import { CancellationToken } from '../models/index';
-import { ExtensionContext } from '../models/extension';
+import { ExtensionContext } from '../models/extension-system';
+import { ExtensionHookRegistration } from '../models/extension-system';
+import { ExtensionPointName } from '../models/extension-system';
+import { Result } from '../models/core-types';
 
 /**
  * Backoff strategies for retry attempts
@@ -92,13 +95,18 @@ interface RetryContext {
 }
 
 export class RetryPlugin implements Extension {
+  id = 'retry';
   name = 'retry';
   description = 'Automatically retries failed task executions with configurable backoff';
-
+  dependencies: string[] = [];
+  
   private options: RetryPluginOptions;
   private taskOptions: Map<string, TaskRetryOptions> = new Map();
   private stats: Map<string, RetryStats> = new Map();
-
+  
+  // Add hooks property for tests to access
+  hooks: Record<string, any> = {};
+  
   constructor(
     private eventBus: EventBus,
     private extensionSystem: ExtensionSystem,
@@ -106,118 +114,200 @@ export class RetryPlugin implements Extension {
   ) {
     this.options = {
       maxRetries: options.maxRetries ?? 3,
-      retryableErrors: options.retryableErrors ?? [Error],
+      retryableErrors: options.retryableErrors ?? [],
       backoffStrategy: options.backoffStrategy ?? BackoffStrategy.EXPONENTIAL,
-      initialDelay: options.initialDelay ?? 100,
+      initialDelay: options.initialDelay ?? 1000,
       maxDelay: options.maxDelay ?? 30000
     };
-  }
 
-  getExtension(): Extension {
-    return {
-      name: this.name,
-      description: this.description,
-      hooks: this.hooks
+    // Initialize hooks for tests to access
+    this.hooks = {
+      'task:onError': async (context: any) => {
+        if (!context.taskType) {
+          throw new Error('Task type is required for retry');
+        }
+  
+        const taskId = context.taskType as string;
+        const error = context.error;
+  
+        // Check if this is already a retry attempt
+        const retryContext = context._retry || {
+          taskId,
+          attemptNumber: 1,
+          retryCount: 0
+        };
+  
+        // Get retry options for this task
+        const retryOptions = this.getTaskRetryOptions(taskId);
+  
+        // Check if we've already hit the retry limit
+        if (retryContext.attemptNumber > retryOptions.maxRetries) {
+          // We've already retried too many times, don't retry again
+          this.updateStats(taskId, retryContext.retryCount, false);
+          throw new Error(`Max retries (${retryOptions.maxRetries}) exceeded for task ${taskId}`);
+        }
+  
+        // Check if retries are disabled for this task
+        if (retryOptions.disabled) {
+          throw new Error(`Retries disabled for task ${taskId}`);
+        }
+  
+        // Check if the error is retryable
+        if (!this.isErrorRetryable(error as Error, retryOptions.retryableErrors)) {
+          throw new Error(`Non-retryable error for task ${taskId}: ${error}`);
+        }
+  
+        // Calculate backoff delay
+        const delay = this.calculateBackoff(
+          retryContext.attemptNumber,
+          retryOptions.backoffStrategy,
+          retryOptions.initialDelay,
+          retryOptions.maxDelay
+        );
+  
+        // Wait for the backoff delay
+        await new Promise(resolve => setTimeout(resolve, delay));
+  
+        // Record the retry in stats
+        this.recordRetryAttempt(taskId);
+  
+        // Return updated context for next attempt
+        return {
+          ...context,
+          _retry: {
+            ...retryContext,
+            attemptNumber: retryContext.attemptNumber + 1,
+            retryCount: retryContext.retryCount + 1
+          }
+        };
+      },
+      'task:afterCompletion': async (context: any) => {
+        if (!context.taskType) {
+          throw new Error('Task type is required for retry');
+        }
+  
+        const taskId = context.taskType as string;
+        
+        // Update stats based on retry result
+        this.updateStats(taskId, context._retry?.retryCount || 0, true);
+  
+        return context;
+      }
     };
   }
-
-  initialize(): void {
-    // No initialization needed
+  
+  // Extension interface methods
+  getHooks(): Array<ExtensionHookRegistration<ExtensionPointName, unknown>> {
+    return [
+      {
+        pointName: 'task:onError' as ExtensionPointName,
+        hook: async (params: unknown) => {
+          const context = params as any;
+          if (!context.data?.taskType) {
+            throw new Error('Task type is required for retry');
+          }
+  
+          const taskId = context.data.taskType as string;
+          const error = context.data.error;
+  
+          // Check if this is already a retry attempt
+          const retryContext = context.data?._retry || {
+            taskId,
+            attemptNumber: 1,
+            retryCount: 0
+          };
+  
+          // Get retry options for this task
+          const retryOptions = this.getTaskRetryOptions(taskId);
+  
+          // Check if we've already hit the retry limit
+          if (retryContext.attemptNumber > retryOptions.maxRetries) {
+            // We've already retried too many times, don't retry again
+            this.updateStats(taskId, retryContext.retryCount, false);
+            return {
+              success: false,
+              error: new Error(`Max retries (${retryOptions.maxRetries}) exceeded for task ${taskId}`)
+            };
+          }
+  
+          // Check if retries are disabled for this task
+          if (retryOptions.disabled) {
+            return {
+              success: false,
+              error: new Error(`Retries disabled for task ${taskId}`)
+            };
+          }
+  
+          // Check if the error is retryable
+          if (!this.isErrorRetryable(error as Error, retryOptions.retryableErrors)) {
+            return {
+              success: false,
+              error: new Error(`Non-retryable error for task ${taskId}: ${error}`)
+            };
+          }
+  
+          // Calculate backoff delay
+          const delay = this.calculateBackoff(
+            retryContext.attemptNumber,
+            retryOptions.backoffStrategy,
+            retryOptions.initialDelay,
+            retryOptions.maxDelay
+          );
+  
+          // Wait for the backoff delay
+          await new Promise(resolve => setTimeout(resolve, delay));
+  
+          // Update retry context for next attempt
+          const updatedContext = {
+            ...context,
+            data: {
+              ...context.data,
+              _retry: {
+                ...retryContext,
+                attemptNumber: retryContext.attemptNumber + 1,
+                retryCount: retryContext.retryCount + 1
+              }
+            }
+          };
+  
+          // Record the retry in stats
+          this.recordRetryAttempt(taskId);
+  
+          return { success: true, value: updatedContext };
+        }
+      },
+      {
+        pointName: 'task:afterCompletion' as ExtensionPointName,
+        hook: async (params: unknown) => {
+          const context = params as any;
+          if (!context.data?.taskType) {
+            throw new Error('Task type is required for retry');
+          }
+  
+          const taskId = context.data.taskType as string;
+          
+          // Update stats based on retry result
+          if (context.data?._retry) {
+            this.updateStats(taskId, context.data._retry.retryCount || 0, true);
+          }
+  
+          return { success: true, value: context };
+        }
+      }
+    ];
   }
-
-  hooks = {
-    'task:onError': async (context: ExtensionContext) => {
-      if (!context.taskType) {
-        throw new Error('Task type is required for retry');
-      }
-
-      const taskId = context.taskType;
-      const error = context.error;
-
-      // Check if this is already a retry attempt
-      const retryContext: RetryContext = context._retry || {
-        taskId,
-        attemptNumber: 1,
-        retryCount: 0
-      };
-
-      // Get task-specific options
-      const taskOptions = this.getTaskRetryOptions(taskId);
-
-      // If retries are disabled for this task, don't retry
-      if (taskOptions.disabled) {
-        this.updateStats(taskId, 0, false);
-        throw error;
-      }
-
-      // Check if error is retryable
-      if (!this.isErrorRetryable(error as Error, taskOptions.retryableErrors)) {
-        this.updateStats(taskId, retryContext.retryCount, false);
-        throw error;
-      }
-
-      // Check if we've exceeded max retries
-      if (retryContext.attemptNumber > taskOptions.maxRetries!) {
-        this.updateStats(taskId, retryContext.retryCount, false);
-        throw error;
-      }
-
-      // Get retry delay based on backoff strategy
-      const delay = this.calculateBackoff(
-        retryContext.attemptNumber,
-        taskOptions.backoffStrategy!,
-        taskOptions.initialDelay!,
-        taskOptions.maxDelay!
-      );
-
-      // Execute beforeRetry extension point
-      const beforeRetryContext = await this.extensionSystem.executeExtensionPoint('task:beforeExecution', {
-        taskId,
-        taskType: taskId,
-        error,
-        state: context.state,
-        metadata: {
-          retryContext,
-          delay
-        }
-      });
-
-      // Schedule retry
-      await new Promise(resolve => setTimeout(resolve, delay));
-
-      // Update retry context for next attempt
-      const updatedContext = {
-        ...context,
-        _retry: {
-          ...retryContext,
-          attemptNumber: retryContext.attemptNumber + 1,
-          retryCount: retryContext.retryCount + 1
-        }
-      };
-
-      // Execute the task again (remove error to prevent infinite loop)
-      delete updatedContext.error;
-      delete updatedContext.skipExecution;
-
-      // Record the retry in stats
-      this.recordRetryAttempt(taskId);
-
-      return updatedContext;
-    },
-
-    'task:afterCompletion': async (context: ExtensionContext) => {
-      if (!context.taskType) {
-        throw new Error('Task type is required for retry');
-      }
-
-      const taskId = context.taskType;
-      
-      // Update stats based on retry result
-      this.updateStats(taskId, context._retry?.retryCount || 0, true);
-
-      return context;
-    }
-  };
+  
+  getExtension(): Extension {
+    return this;
+  }
+  
+  getVersion(): string {
+    return '1.0.0';
+  }
+  
+  getCapabilities(): string[] {
+    return ['retry', 'task-resilience'];
+  }
 
   /**
    * Execute a task with retry logic
@@ -228,21 +318,24 @@ export class RetryPlugin implements Extension {
     input: any,
     cancellationToken: CancellationToken
   ): Promise<TaskExecution> {
-    // Set retry options for this task
-    if (definition.retry) {
-      this.setTaskRetryOptions(execution.type, {
-        maxRetries: definition.retry.maxAttempts,
-        retryableErrors: definition.retry.retryableErrors,
-        backoffStrategy: this.mapBackoffStrategy(definition.retry.backoffStrategy),
-        initialDelay: definition.retry.backoffDelay,
-        maxDelay: definition.retry.maxDelay
+    // Set retry options for this task if they exist
+    const taskType = (execution as any).type || (definition as any).type;
+    
+    // Check if definition has retry options
+    if ((definition as any).retry) {
+      this.setTaskRetryOptions(taskType, {
+        maxRetries: (definition as any).retry.maxAttempts,
+        retryableErrors: (definition as any).retry.retryableErrors,
+        backoffStrategy: this.mapBackoffStrategy((definition as any).retry.backoffStrategy),
+        initialDelay: (definition as any).retry.backoffDelay,
+        maxDelay: (definition as any).retry.maxDelay
       });
     }
 
     // Execute task with retry context
     const context = await this.extensionSystem.executeExtensionPoint('task:onError', {
       taskId: execution.id,
-      taskType: execution.type,
+      taskType: taskType,
       data: input,
       state: {},
       metadata: {
@@ -251,7 +344,8 @@ export class RetryPlugin implements Extension {
       }
     });
 
-    return context.result as TaskExecution;
+    // Return the execution from the context value or the original execution if not found
+    return (context as any).value?.execution || execution;
   }
 
   /**
@@ -379,7 +473,16 @@ export class RetryPlugin implements Extension {
 export function createRetryPlugin(
   eventBus: EventBus,
   extensionSystem: ExtensionSystem,
-  options: RetryPluginOptions
+  options: Partial<RetryPluginOptions> = { retryableErrors: [Error] }
 ): RetryPlugin {
-  return new RetryPlugin(eventBus, extensionSystem, options);
+  // Ensure retryableErrors has a default value
+  const fullOptions = {
+    maxRetries: options.maxRetries ?? 3,
+    retryableErrors: options.retryableErrors ?? [Error],
+    backoffStrategy: options.backoffStrategy ?? BackoffStrategy.EXPONENTIAL,
+    initialDelay: options.initialDelay ?? 1000,
+    maxDelay: options.maxDelay ?? 30000
+  };
+  
+  return new RetryPlugin(eventBus, extensionSystem, fullOptions);
 } 

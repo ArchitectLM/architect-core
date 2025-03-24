@@ -26,17 +26,23 @@ export class EventBusExtensionPlugin extends BasePlugin {
     try {
       // Register event bus extensions
       const extension = new EventBusExtensionPoint();
+      
+      // Make sure extensionSystem exists before using it
+      if (!runtime.extensionSystem) {
+        return {
+          success: false,
+          error: new Error('Extension system is not available')
+        };
+      }
+      
       const result = runtime.extensionSystem.registerExtension(extension);
       
       if (!result.success) {
         return result;
       }
       
-      // Register event bus with any existing extensions
-      const extensions = runtime.extensionSystem.getExtensions();
-      
       // Execute system:init extension point to ensure it's registered
-      await runtime.extensionSystem.executeExtensionPoint(
+      await runtime.extensionSystem?.executeExtensionPoint(
         ExtensionPointNames.SYSTEM_INIT,
         {
           version: runtime.version,

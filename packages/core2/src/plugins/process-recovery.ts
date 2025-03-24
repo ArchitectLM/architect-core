@@ -1,6 +1,7 @@
-import { Extension } from '../models/extension';
+import { Extension, ExtensionHookRegistration, ExtensionPointName } from '../models/extension-system';
 import { ProcessDefinition, ProcessInstance } from '../models/index';
-import { EventBus } from '../models/event';
+import { EventBus } from '../models/event-system';
+import { DomainEvent } from '../models/core-types';
 
 interface ProcessCheckpoint {
   id: string;
@@ -12,112 +13,125 @@ interface ProcessCheckpoint {
 }
 
 export class ProcessRecoveryPlugin implements Extension {
+  id = 'process-recovery';
   name = 'process-recovery';
   description = 'Handles process versioning, checkpointing, and recovery';
+  dependencies: string[] = [];
 
   private checkpoints: Map<string, ProcessCheckpoint> = new Map();
   private processVersions: Map<string, Map<string, ProcessDefinition>> = new Map();
 
   constructor(private eventBus: EventBus) {}
 
-  getExtension(): Extension {
-    return {
-      name: this.name,
-      description: this.description,
-      hooks: this.hooks
-    };
+  getHooks(): Array<ExtensionHookRegistration<ExtensionPointName, unknown>> {
+    return [
+      {
+        pointName: 'process:beforeCheckpoint',
+        hook: async (context: any) => {
+          const { process, checkpointId } = context;
+          
+          // Create checkpoint
+          const checkpoint: ProcessCheckpoint = {
+            id: checkpointId,
+            processId: process.id,
+            state: process.state,
+            data: { ...process.data },
+            version: process.version || '1.0',
+            timestamp: Date.now()
+          };
+
+          this.checkpoints.set(checkpointId, checkpoint);
+
+          // Emit checkpoint event
+          this.eventBus.publish({
+            id: checkpointId,
+            type: 'process:checkpointed',
+            timestamp: Date.now(),
+            payload: {
+              processId: process.id,
+              checkpointId,
+              state: process.state,
+              version: process.version
+            },
+            metadata: {
+              source: 'process-recovery',
+              version: process.version
+            }
+          });
+
+          return {
+            ...context,
+            checkpoint
+          };
+        }
+      },
+      {
+        pointName: 'process:beforeRestore',
+        hook: async (context: any) => {
+          const { processId, checkpointId } = context;
+          
+          const checkpoint = this.checkpoints.get(checkpointId);
+          if (!checkpoint) {
+            throw new Error(`Checkpoint ${checkpointId} not found`);
+          }
+
+          if (checkpoint.processId !== processId) {
+            throw new Error(`Checkpoint ${checkpointId} does not belong to process ${processId}`);
+          }
+
+          const restored: ProcessInstance = {
+            id: processId,
+            type: checkpoint.processId,
+            state: checkpoint.state,
+            data: { ...checkpoint.data },
+            version: checkpoint.version,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            recovery: {
+              checkpointId,
+              lastSavedAt: checkpoint.timestamp
+            }
+          };
+
+          // Emit restore event
+          this.eventBus.publish({
+            id: checkpointId,
+            type: 'process:restored',
+            timestamp: Date.now(),
+            payload: {
+              processId,
+              checkpointId,
+              state: checkpoint.state,
+              version: checkpoint.version
+            },
+            metadata: {
+              source: 'process-recovery',
+              version: checkpoint.version
+            }
+          });
+
+          return {
+            ...context,
+            restored
+          };
+        }
+      }
+    ];
   }
 
-  initialize(): void {
-    // No initialization needed
+  getVersion(): string {
+    return '1.0.0';
   }
 
-  hooks = {
-    'process:beforeCheckpoint': async (context: any) => {
-      const { process, checkpointId } = context;
-      
-      // Create checkpoint
-      const checkpoint: ProcessCheckpoint = {
-        id: checkpointId,
-        processId: process.id,
-        state: process.state,
-        data: { ...process.data },
-        version: process.version || '1.0',
-        timestamp: Date.now()
-      };
-
-      this.checkpoints.set(checkpointId, checkpoint);
-
-      // Emit checkpoint event
-      this.eventBus.publish('process:checkpointed', {
-        processId: process.id,
-        checkpointId,
-        state: process.state,
-        version: process.version
-      }, {
-        metadata: {
-          source: 'process-recovery',
-          version: process.version
-        }
-      });
-
-      return {
-        ...context,
-        checkpoint
-      };
-    },
-
-    'process:beforeRestore': async (context: any) => {
-      const { processId, checkpointId } = context;
-      
-      const checkpoint = this.checkpoints.get(checkpointId);
-      if (!checkpoint) {
-        throw new Error(`Checkpoint ${checkpointId} not found`);
-      }
-
-      if (checkpoint.processId !== processId) {
-        throw new Error(`Checkpoint ${checkpointId} does not belong to process ${processId}`);
-      }
-
-      const restored: ProcessInstance = {
-        id: processId,
-        type: checkpoint.processId,
-        state: checkpoint.state,
-        data: { ...checkpoint.data },
-        version: checkpoint.version,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        recovery: {
-          checkpointId,
-          lastSavedAt: checkpoint.timestamp
-        }
-      };
-
-      // Emit restore event
-      this.eventBus.publish('process:restored', {
-        processId,
-        checkpointId,
-        state: checkpoint.state,
-        version: checkpoint.version
-      }, {
-        metadata: {
-          source: 'process-recovery',
-          version: checkpoint.version
-        }
-      });
-
-      return {
-        ...context,
-        restored
-      };
-    }
-  };
+  getCapabilities(): string[] {
+    return ['process-versioning', 'process-checkpointing', 'process-recovery'];
+  }
 
   registerProcessVersion(definition: ProcessDefinition): void {
-    if (!this.processVersions.has(definition.id)) {
-      this.processVersions.set(definition.id, new Map());
+    if (!this.processVersions.has(definition.type)) {
+      this.processVersions.set(definition.type, new Map());
     }
-    this.processVersions.get(definition.id)!.set(definition.version || '1.0', definition);
+    this.processVersions.get(definition.type)!.set(definition.version || '1.0', definition);
   }
 
   getProcessDefinition(processId: string, version?: string): ProcessDefinition | undefined {
@@ -166,6 +180,6 @@ export class ProcessRecoveryPlugin implements Extension {
   }
 }
 
-export function createProcessRecoveryPlugin(eventBus: EventBus): ProcessRecoveryPlugin {
+export function createProcessRecoveryPlugin(eventBus: EventBus): Extension {
   return new ProcessRecoveryPlugin(eventBus);
 } 

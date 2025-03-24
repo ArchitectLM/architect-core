@@ -1,7 +1,9 @@
-import { Extension, ExtensionPoint, ExtensionContext, ExtensionHook } from '../models/extension';
+import { Extension, ExtensionPointName, ExtensionHookRegistration } from '../models/extension-system';
 import { TaskDefinition, TaskExecution, TaskContext } from '../models/index';
-import { EventBus } from '../models/event';
-import { ExtensionSystem } from '../models/extension';
+import { EventBus, EventHandler } from '../models/event-system';
+import { ExtensionSystem } from '../models/extension-system';
+import { DomainEvent } from '../models/core-types';
+import { v4 as uuidv4 } from 'uuid';
 
 interface TaskDependency {
   taskId: string;
@@ -29,6 +31,8 @@ interface ExecutionContext {
   dependencyResults: Record<string, any>;
   execution?: TaskExecution;
   skipExecution?: boolean;
+  metadata?: any;
+  state?: any;
 }
 
 interface CompletionContext {
@@ -37,22 +41,28 @@ interface CompletionContext {
   error?: Error;
 }
 
-export class TaskDependenciesPlugin {
-  private extension: Extension;
-  private dependencies: Map<string, TaskDependency> = new Map();
+export class TaskDependenciesPlugin implements Extension {
+  id = 'task-dependencies';
+  name = 'task-dependencies';
+  description = 'Handles task dependencies and sequencing';
+  dependencies: string[] = [];
+  
+  private dependencies_map: Map<string, TaskDependency> = new Map();
   private runningTasks: Map<string, TaskExecution> = new Map();
 
   constructor(
     private eventBus: EventBus,
     private extensionSystem: ExtensionSystem
-  ) {
-    this.extension = {
-      name: 'task-dependencies',
-      description: 'Handles task dependencies and sequencing',
-      hooks: {
-        'task:beforeDependencyCheck': async (context: ExtensionContext) => {
-          const taskId = context.taskId!;
-          const dependencies = context.metadata?.dependencies as string[] || [];
+  ) {}
+
+  getHooks(): Array<ExtensionHookRegistration<ExtensionPointName, unknown>> {
+    return [
+      {
+        pointName: 'task:beforeDependencyCheck' as ExtensionPointName,
+        hook: async (context: unknown) => {
+          const ctx = context as any;
+          const taskId = ctx.taskId;
+          const dependencies = ctx.metadata?.dependencies as string[] || [];
           
           // Create dependency record
           const dependency: TaskDependency = {
@@ -61,89 +71,117 @@ export class TaskDependenciesPlugin {
             status: 'pending'
           };
 
-          this.dependencies.set(taskId, dependency);
+          this.dependencies_map.set(taskId, dependency);
 
           // Wait for all dependencies to complete
           const dependencyResults = await this.waitForDependencies(dependencies);
 
           return {
-            ...context,
-            metadata: {
-              ...context.metadata,
-              dependency,
-              dependencyResults
+            success: true,
+            value: {
+              ...ctx,
+              metadata: {
+                ...ctx.metadata,
+                dependency,
+                dependencyResults
+              }
             }
           };
-        },
-
-        'task:beforeExecution': async (context: ExtensionContext) => {
-          const taskType = context.taskType!;
-          const input = context.data;
-          const dependencyResults = context.metadata?.dependencyResults;
+        }
+      },
+      {
+        pointName: 'task:beforeExecution' as ExtensionPointName,
+        hook: async (context: unknown) => {
+          const ctx = context as any;
+          const taskType = ctx.taskType;
+          const input = ctx.data;
+          const dependencyResults = ctx.metadata?.dependencyResults;
           
-          const execution: TaskExecution = {
+          const execution = {
             id: `task-${Date.now()}`,
-            type: taskType,
-            input,
             status: 'running',
-            startTime: Date.now(),
             attempts: 1,
             dependency: {
               dependsOn: [],
               waitingFor: []
             }
-          };
+          } as unknown as TaskExecution; // Safe type assertion via unknown
 
           this.runningTasks.set(execution.id, execution);
 
+          const executionContext: ExecutionContext = {
+            taskType,
+            input,
+            dependencyResults: dependencyResults || {},
+            execution,
+            metadata: ctx.metadata
+          };
+
           return {
-            ...context,
-            skipExecution: false,
-            metadata: {
-              ...context.metadata,
-              execution
+            success: true,
+            value: {
+              ...ctx,
+              metadata: {
+                ...ctx.metadata,
+                execution
+              }
             }
           };
-        },
-
-        'task:afterCompletion': async (context: ExtensionContext) => {
-          const execution = context.metadata?.execution as TaskExecution;
-          const result = context.result;
-          const error = context.error;
+        }
+      },
+      {
+        pointName: 'task:afterCompletion' as ExtensionPointName,
+        hook: async (context: unknown) => {
+          const ctx = context as any;
+          const taskId = ctx.taskId;
+          const result = ctx.result;
+          const error = ctx.error;
+          const execution = ctx.metadata?.execution as TaskExecution;
           
-          if (error) {
-            execution.status = 'failed';
-            execution.error = error;
-            execution.endTime = Date.now();
-
-            // Publish failure event
-            this.eventBus.publish('task:failed', {
-              taskId: execution.id,
-              taskType: execution.type,
-              error
-            });
-          } else {
-            execution.result = result;
-            execution.status = 'completed';
-            execution.endTime = Date.now();
-
-            // Publish completion event
-            this.eventBus.publish('task:completed', {
-              taskId: execution.id,
-              taskType: execution.type,
-              result
+          if (execution) {
+            // Update dependency status
+            const dependency = this.dependencies_map.get(taskId);
+            if (dependency) {
+              dependency.status = error ? 'failed' : 'completed';
+              dependency.result = result;
+              dependency.error = error;
+            }
+            
+            // Update execution status
+            execution.status = error ? 'failed' : 'completed';
+            
+            // Remove from running tasks
+            this.runningTasks.delete(execution.id);
+            
+            // Publish task completion event
+            this.eventBus.publish({
+              id: uuidv4(),
+              type: error ? 'task.failed' : 'task.completed',
+              timestamp: Date.now(),
+              payload: {
+                taskId,
+                executionId: execution.id,
+                result: result,
+                error: error
+              }
             });
           }
-
-          this.runningTasks.delete(execution.id);
-          return context;
+          
+          return {
+            success: true,
+            value: ctx
+          };
         }
       }
-    };
+    ];
   }
 
-  getExtension(): Extension {
-    return this.extension;
+  getVersion(): string {
+    return '1.0.0';
+  }
+
+  getCapabilities(): string[] {
+    return ['task-dependencies', 'sequencing', 'dependency-management'];
   }
 
   private async waitForDependencies(dependencies: string[]): Promise<Record<string, any>> {
@@ -173,7 +211,7 @@ export class TaskDependenciesPlugin {
   private async waitForDependency(depId: string): Promise<any> {
     return new Promise((resolve, reject) => {
       const checkDependency = () => {
-        const dep = this.dependencies.get(depId);
+        const dep = this.dependencies_map.get(depId);
         if (!dep) {
           reject(new Error(`Dependency ${depId} not found`));
           return;
@@ -218,11 +256,17 @@ export class TaskDependenciesPlugin {
     }, delay);
 
     // Publish scheduling event
-    this.eventBus.publish('task:scheduled', {
-      taskId,
-      taskType,
-      scheduledTime,
-      input
+    this.eventBus.publish({
+      id: uuidv4(),
+      type: 'task:scheduled',
+      timestamp: Date.now(),
+      payload: {
+        taskId,
+        taskType,
+        scheduledTime,
+        input
+      },
+      metadata: {}
     });
 
     return taskId;
@@ -236,12 +280,16 @@ export class TaskDependenciesPlugin {
 
     // Update execution status
     execution.status = 'cancelled';
-    execution.endTime = Date.now();
 
     // Publish cancellation event
-    this.eventBus.publish('task:cancelled', {
-      taskId,
-      taskType: execution.type
+    this.eventBus.publish({
+      id: uuidv4(),
+      type: 'task:cancelled',
+      timestamp: Date.now(),
+      payload: {
+        taskId,
+      },
+      metadata: {}
     });
 
     return true;
@@ -271,39 +319,34 @@ export class TaskDependenciesPlugin {
       taskType,
       data: input,
       state: {},
-      metadata: dependencyContext.metadata
+      metadata: (dependencyContext as any).value?.metadata
     });
 
-    if (executionContext.skipExecution) {
-      return executionContext.metadata?.execution as TaskExecution;
+    if ((executionContext as any).value?.skipExecution) {
+      return ((executionContext as any).value?.metadata?.execution) as TaskExecution;
     }
 
     try {
-      // Execute the task
       const result = await this.executeTaskHandler(taskType, {
         input,
-        ...executionContext.metadata
+        ...((executionContext as any).value?.metadata || {})
       });
 
       // Execute afterCompletion extension point
       const completionContext = await this.extensionSystem.executeExtensionPoint('task:afterCompletion', {
-        taskId,
-        taskType,
         data: input,
         state: {},
-        metadata: executionContext.metadata,
+        metadata: (executionContext as any).value?.metadata || {},
         result
       });
 
-      return completionContext.metadata?.execution as TaskExecution;
+      return ((completionContext as any).value?.metadata?.execution || (completionContext as any).value?.execution) as TaskExecution;
     } catch (error: unknown) {
       // Execute afterCompletion extension point with error
       const errorContext = await this.extensionSystem.executeExtensionPoint('task:afterCompletion', {
-        taskId,
-        taskType,
         data: input,
         state: {},
-        metadata: executionContext.metadata,
+        metadata: (executionContext as any).value?.metadata || {},
         error: error instanceof Error ? error : new Error(String(error))
       });
 
@@ -322,7 +365,7 @@ export class TaskDependenciesPlugin {
 
   // Utility methods for testing and debugging
   getDependencies(): Map<string, TaskDependency> {
-    return new Map(this.dependencies);
+    return new Map(this.dependencies_map);
   }
 
   getRunningTasks(): Map<string, TaskExecution> {
@@ -330,7 +373,7 @@ export class TaskDependenciesPlugin {
   }
 
   clear(): void {
-    this.dependencies.clear();
+    this.dependencies_map.clear();
     this.runningTasks.clear();
   }
 }
@@ -338,6 +381,6 @@ export class TaskDependenciesPlugin {
 export function createTaskDependenciesPlugin(
   eventBus: EventBus,
   extensionSystem: ExtensionSystem
-): TaskDependenciesPlugin {
+): Extension {
   return new TaskDependenciesPlugin(eventBus, extensionSystem);
 } 

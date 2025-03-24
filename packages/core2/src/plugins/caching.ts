@@ -1,4 +1,4 @@
-import { Extension } from '../models/extension';
+import { Extension, ExtensionHookRegistration, ExtensionPointName } from '../models/extension-system';
 
 /**
  * Options for the caching plugin
@@ -45,6 +45,8 @@ interface CacheEntry {
 export class CachingPlugin implements Extension {
   name = 'caching';
   description = 'Caches task execution results to improve performance';
+  id = 'caching-plugin';
+  dependencies: string[] = [];
   
   /** The cache storage */
   private cache: Map<string, CacheEntry> = new Map();
@@ -60,6 +62,23 @@ export class CachingPlugin implements Extension {
       defaultTTL: options.defaultTTL || 60000, // 1 minute default
       maxSize: options.maxSize || 1000         // 1000 items default
     };
+  }
+  
+  // Implement Extension interface methods
+  getHooks(): Array<ExtensionHookRegistration<ExtensionPointName, unknown>> {
+    return Object.entries(this.hooks).map(([pointName, hook]) => ({
+      pointName: pointName as ExtensionPointName,
+      hook,
+      priority: 0
+    }));
+  }
+  
+  getVersion(): string {
+    return '1.0.0';
+  }
+  
+  getCapabilities(): string[] {
+    return ['caching'];
   }
   
   hooks = {

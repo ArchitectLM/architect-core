@@ -108,37 +108,40 @@ describe('Rate Limiting Plugin', () => {
     eventBus = new InMemoryEventBus();
     
     // Create plugin instances
-    processManagementPlugin = createProcessManagementPlugin(eventBus, {
-      id: 'process-management',
-      name: 'Process Management Plugin',
-      description: 'Manages processes'
-    });
+    processManagementPlugin = createProcessManagementPlugin(
+      eventBus, 
+      extensionSystem
+    ) as unknown as ProcessManagementPlugin;
     
-    taskManagementPlugin = createTaskManagementPlugin(eventBus, {
-      id: 'task-management',
-      name: 'Task Management Plugin',
-      description: 'Manages tasks'
-    });
+    taskManagementPlugin = createTaskManagementPlugin(
+      eventBus, 
+      { 
+        id: 'task-management', 
+        name: 'Task Management', 
+        description: 'Manages task execution'
+      }
+    );
     
-    taskDependenciesPlugin = createTaskDependenciesPlugin(eventBus, {
-      id: 'task-dependencies',
-      name: 'Task Dependencies Plugin',
-      description: 'Handles task dependencies'
-    });
+    taskDependenciesPlugin = createTaskDependenciesPlugin(
+      eventBus, 
+      extensionSystem
+    ) as unknown as TaskDependenciesPlugin;
     
-    retryPlugin = createRetryPlugin(eventBus, {
-      id: 'retry-plugin',
-      name: 'Retry Plugin',
-      description: 'Handles task retries'
-    }, {
-      maxRetries: 3,
-      retryableErrors: [Error],
-      backoffStrategy: BackoffStrategy.EXPONENTIAL,
-      initialDelay: 100,
-      maxDelay: 30000
-    });
+    retryPlugin = createRetryPlugin(
+      eventBus, 
+      extensionSystem, 
+      {
+        maxRetries: 3,
+        backoffStrategy: BackoffStrategy.EXPONENTIAL,
+        initialDelay: 10,
+        maxDelay: 1000
+      }
+    ) as unknown as RetryPlugin;
     
-    processRecoveryPlugin = createProcessRecoveryPlugin(eventBus);
+    processRecoveryPlugin = createProcessRecoveryPlugin(
+      eventBus
+    ) as unknown as ProcessRecoveryPlugin;
+    
     transactionPlugin = createTransactionPluginInstance(eventBus);
     rateLimitingPlugin = new RateLimitingPlugin({
       defaultLimit: {

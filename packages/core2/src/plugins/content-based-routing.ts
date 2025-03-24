@@ -1,4 +1,6 @@
-import { EventBus } from '../models/event';
+import { EventBus } from '../models/event-system';
+import { Extension, ExtensionHookRegistration, ExtensionPointName } from '../models/extension-system';
+import { v4 as uuidv4 } from 'uuid';
 
 export interface RouteMatch {
   routeName: string;
@@ -9,15 +11,9 @@ export interface RouteMatch {
 
 export interface RouteDefinition {
   name: string;
-  predicate: (event: any) => boolean;
-  targetEventType: string;
-  transformPayload?: (payload: any) => any;
-}
-
-export interface JsonPathRouteDefinition {
-  name: string;
-  jsonPath: string;
-  expectedValue: any;
+  predicate?: (event: any) => boolean;
+  jsonPath?: string;
+  expectedValue?: any;
   targetEventType: string;
   transformPayload?: (payload: any) => any;
 }
@@ -25,28 +21,49 @@ export interface JsonPathRouteDefinition {
 export interface ContentBasedRouter {
   initialize(): void;
   registerRoute(route: RouteDefinition): void;
-  registerRouteWithJsonPath(route: JsonPathRouteDefinition): void;
+  registerRouteWithJsonPath(route: Omit<RouteDefinition, 'predicate'> & { jsonPath: string, expectedValue: any }): void;
   updateRoute(route: RouteDefinition): void;
   removeRoute(routeName: string): void;
   getRouteByName(routeName: string): RouteDefinition | undefined;
   getAllRoutes(): RouteDefinition[];
   enableRouteEvents(): void;
   disableRouteEvents(): void;
+  getExtension(): Extension;
 }
 
 export class ContentBasedRouterImpl implements ContentBasedRouter {
   private routes: Map<string, RouteDefinition> = new Map();
   private initialized = false;
   private emitRouteEvents = false;
+  private extension: Extension;
   
-  constructor(private eventBus: EventBus) {}
+  constructor(private eventBus: EventBus) {
+    const self = this;
+    
+    this.extension = {
+      id: 'content-based-router',
+      name: 'Content Based Router',
+      description: 'Routes events based on content matching',
+      dependencies: [],
+      
+      getHooks(): Array<ExtensionHookRegistration<ExtensionPointName, unknown>> {
+        return [];
+      },
+      
+      getVersion() { return '1.0.0'; },
+      
+      getCapabilities() { 
+        return ['content-based-routing', 'event-transformation'];
+      }
+    };
+  }
   
   initialize(): void {
-    if (this.initialized) {
-      return;
-    }
+    if (this.initialized) return;
     
+    // Subscribe to all events with a wildcard
     this.eventBus.subscribe('*', this.handleEvent.bind(this));
+    
     this.initialized = true;
   }
   
@@ -54,7 +71,7 @@ export class ContentBasedRouterImpl implements ContentBasedRouter {
     this.routes.set(route.name, route);
   }
   
-  registerRouteWithJsonPath(route: JsonPathRouteDefinition): void {
+  registerRouteWithJsonPath(route: Omit<RouteDefinition, 'predicate'> & { jsonPath: string, expectedValue: any }): void {
     // Convert the JSON path route to a predicate-based route
     const predicateRoute: RouteDefinition = {
       name: route.name,
@@ -100,36 +117,68 @@ export class ContentBasedRouterImpl implements ContentBasedRouter {
     this.emitRouteEvents = false;
   }
   
-  private handleEvent(event: any): void {
-    // Check each route to see if the event matches
-    for (const route of this.routes.values()) {
-      try {
-        if (route.predicate(event)) {
-          // Transform the payload if a transformer is provided
-          const payload = route.transformPayload 
-            ? route.transformPayload(event.payload) 
-            : event.payload;
-          
-          // Publish to the target event type
-          this.eventBus.publish(route.targetEventType, payload);
-          
-          // Emit route match event if enabled
-          if (this.emitRouteEvents) {
-            const routeMatch: RouteMatch = {
-              routeName: route.name,
-              originalEventType: event.type,
-              targetEventType: route.targetEventType,
-              timestamp: Date.now()
-            };
-            
-            this.eventBus.publish('router.route.matched', routeMatch);
+  getExtension(): Extension {
+    return this.extension;
+  }
+  
+  private handleEvent(event: any): Promise<void> {
+    // Skip processing if we're not initialized
+    if (!this.initialized) return Promise.resolve();
+
+    // Find all matching routes for this event
+    for (const [_, route] of this.routes) {
+      let match = false;
+      
+      if (route.predicate) {
+        // Use predicate function to determine if event matches route
+        match = route.predicate(event);
+      } else if (route.jsonPath && route.expectedValue !== undefined) {
+        // Use JSON path expression to evaluate if event matches route
+        const value = this.evaluateJsonPath(event, route.jsonPath);
+        match = value === route.expectedValue;
+      }
+
+      if (match) {
+        // Apply payload transformation if defined
+        let payload = event.payload;
+        if (route.transformPayload) {
+          try {
+            payload = route.transformPayload(event.payload);
+          } catch (error) {
+            console.error(`Error transforming payload for route ${route.name}:`, error);
+            continue;
           }
         }
-      } catch (error) {
-        // Log the error but continue processing other routes
-        console.error(`Error processing route ${route.name}:`, error);
+
+        // Publish to the target event type using DomainEvent format
+        this.eventBus.publish({
+          id: uuidv4(),
+          type: route.targetEventType,
+          timestamp: Date.now(),
+          payload: payload
+        });
+
+        // Emit route match event if enabled
+        if (this.emitRouteEvents) {
+          const routeMatchPayload: RouteMatch = {
+            routeName: route.name,
+            originalEventType: event.type,
+            targetEventType: route.targetEventType,
+            timestamp: Date.now()
+          };
+          
+          // Publish route match event using DomainEvent format
+          this.eventBus.publish({
+            id: uuidv4(),
+            type: 'router.route.matched',
+            timestamp: Date.now(),
+            payload: routeMatchPayload
+          });
+        }
       }
     }
+
+    return Promise.resolve();
   }
   
   private evaluateJsonPath(obj: any, path: string): any {

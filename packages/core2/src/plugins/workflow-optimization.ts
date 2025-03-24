@@ -1,5 +1,7 @@
-import { Extension } from '../models/extension';
-import { EventBus } from '../models/event';
+import { Extension, ExtensionHookRegistration, ExtensionPointName } from '../models/extension-system';
+import { EventBus } from '../models/event-system';
+import { DomainEvent } from '../models/core-types';
+import { v4 as uuidv4 } from 'uuid';
 
 export enum OptimizationStrategy {
   PARALLELIZATION = 'PARALLELIZATION',
@@ -100,8 +102,10 @@ export interface WorkflowOptimizationPlugin extends Extension {
 }
 
 class WorkflowOptimizationPluginImpl implements WorkflowOptimizationPlugin {
+  id = 'workflow-optimization';
   name = 'workflow-optimization';
   description = 'Analyzes and optimizes workflow execution patterns';
+  dependencies: string[] = [];
   
   private options: WorkflowOptimizationOptions;
   private metrics: WorkflowMetrics;
@@ -166,127 +170,165 @@ class WorkflowOptimizationPluginImpl implements WorkflowOptimizationPlugin {
     };
   }
   
-  hooks = {
-    'task:beforeExecution': async (context: any) => {
-      const taskId = context.taskType;
-      const input = context.input;
-      
-      // Apply caching if enabled
-      if (this.options.enabledStrategies.includes(OptimizationStrategy.CACHING)) {
-        const cacheKey = this.generateCacheKey(taskId, input);
-        if (this.cachedResults.has(cacheKey)) {
-          // Cache hit
-          this.cacheMetrics.hits++;
-          const cachedResult = this.cachedResults.get(cacheKey);
-          const averageExecutionTime = this.getAverageExecutionTime(taskId);
-          this.cacheMetrics.savedExecutionTime += averageExecutionTime;
+  getHooks(): Array<ExtensionHookRegistration<ExtensionPointName, unknown>> {
+    return [
+      {
+        pointName: 'task:beforeExecution' as ExtensionPointName,
+        hook: async (context: unknown) => {
+          const ctx = context as any;
+          const taskId = ctx.taskType;
+          const input = ctx.input;
           
-          // Record optimization metrics
-          this.optimizationMetrics.optimizedExecutions++;
-          this.optimizationMetrics.savedExecutionTime += averageExecutionTime;
-          this.optimizationMetrics.strategiesApplied[OptimizationStrategy.CACHING]++;
+          // Apply caching if enabled
+          if (this.options.enabledStrategies.includes(OptimizationStrategy.CACHING)) {
+            const cacheKey = this.generateCacheKey(taskId, input);
+            if (this.cachedResults.has(cacheKey)) {
+              // Cache hit
+              this.cacheMetrics.hits++;
+              const cachedResult = this.cachedResults.get(cacheKey);
+              const averageExecutionTime = this.getAverageExecutionTime(taskId);
+              this.cacheMetrics.savedExecutionTime += averageExecutionTime;
+              
+              // Record optimization metrics
+              this.optimizationMetrics.optimizedExecutions++;
+              this.optimizationMetrics.savedExecutionTime += averageExecutionTime;
+              this.optimizationMetrics.strategiesApplied[OptimizationStrategy.CACHING]++;
+              
+              return {
+                success: true,
+                value: {
+                  ...ctx,
+                  _optimization: {
+                    cached: true,
+                    startTime: performance.now()
+                  },
+                  result: cachedResult
+                }
+              };
+            } else {
+              // Cache miss
+              this.cacheMetrics.misses++;
+            }
+          }
           
+          // Apply batching if enabled
+          if (this.options.enabledStrategies.includes(OptimizationStrategy.BATCHING)) {
+            // TODO: Implement batching logic
+          }
+          
+          // Record task start for metrics
           return {
-            ...context,
-            _optimization: {
-              cached: true,
-              startTime: performance.now()
-            },
-            result: cachedResult
+            success: true,
+            value: {
+              ...ctx,
+              _optimization: {
+                startTime: performance.now(),
+                cached: false,
+                batched: false
+              }
+            }
           };
-        } else {
-          // Cache miss
-          this.cacheMetrics.misses++;
+        }
+      },
+      
+      {
+        pointName: 'task:afterExecution' as ExtensionPointName,
+        hook: async (context: unknown) => {
+          const ctx = context as any;
+          if (!ctx._optimization) return { success: true, value: context };
+          
+          const taskId = ctx.taskType;
+          const input = ctx.input;
+          const result = ctx.result;
+          const startTime = ctx._optimization.startTime;
+          const endTime = performance.now();
+          const duration = endTime - startTime;
+          
+          // Update execution metrics
+          this.metrics.totalExecutions++;
+          
+          if (!this.metrics.taskExecutionTimes[taskId]) {
+            this.metrics.taskExecutionTimes[taskId] = [];
+          }
+          this.metrics.taskExecutionTimes[taskId].push(duration);
+          
+          // Update average execution time
+          const totalTimes = Object.values(this.metrics.taskExecutionTimes)
+            .flat()
+            .reduce((sum, time) => sum + time, 0);
+          this.metrics.averageExecutionTime = totalTimes / this.metrics.totalExecutions;
+          
+          // Record task execution
+          const execution: TaskExecution = {
+            taskId,
+            startTime,
+            endTime,
+            duration,
+            input,
+            output: result,
+            dependencies: this.taskDependencies[taskId] || [],
+            cached: ctx._optimization.cached || false,
+            batched: ctx._optimization.batched || false
+          };
+          
+          this.taskExecutions.push(execution);
+          this.executionOrder.push(taskId);
+          
+          // Apply caching if enabled
+          if (this.options.enabledStrategies.includes(OptimizationStrategy.CACHING) && !execution.cached) {
+            const cacheKey = this.generateCacheKey(taskId, input);
+            this.cachedResults.set(cacheKey, result);
+            this.cacheMetrics.cachedValues++;
+            
+            // Update miss rate
+            this.cacheMetrics.missRate = this.cacheMetrics.misses / 
+              (this.cacheMetrics.hits + this.cacheMetrics.misses);
+          }
+          
+          // Emit optimization event
+          if (this.eventBus) {
+            this.eventBus.publish({
+              id: uuidv4(),
+              type: 'workflow:optimization',
+              timestamp: Date.now(),
+              payload: {
+                type: 'task_executed',
+                metrics: this.getWorkflowMetrics(),
+                suggestions: this.getOptimizationSuggestions()
+              }
+            });
+          }
+          
+          return { success: true, value: ctx };
+        }
+      },
+      
+      {
+        pointName: 'runtime:initialized' as ExtensionPointName,
+        hook: async (context: unknown) => {
+          const ctx = context as any;
+          if (ctx.eventBus) {
+            this.eventBus = ctx.eventBus;
+            if (this.eventBus) {
+              this.eventBus.subscribe('workflow:event', async (event) => {
+                this.handleWorkflowEvent(event);
+                return Promise.resolve();
+              });
+            }
+          }
+          return { success: true, value: ctx };
         }
       }
-      
-      // Apply batching if enabled
-      if (this.options.enabledStrategies.includes(OptimizationStrategy.BATCHING)) {
-        // TODO: Implement batching logic
-      }
-      
-      // Record task start for metrics
-      return {
-        ...context,
-        _optimization: {
-          startTime: performance.now(),
-          cached: false,
-          batched: false
-        }
-      };
-    },
-    
-    'task:afterExecution': async (context: any) => {
-      if (!context._optimization) return context;
-      
-      const taskId = context.taskType;
-      const input = context.input;
-      const result = context.result;
-      const startTime = context._optimization.startTime;
-      const endTime = performance.now();
-      const duration = endTime - startTime;
-      
-      // Update execution metrics
-      this.metrics.totalExecutions++;
-      
-      if (!this.metrics.taskExecutionTimes[taskId]) {
-        this.metrics.taskExecutionTimes[taskId] = [];
-      }
-      this.metrics.taskExecutionTimes[taskId].push(duration);
-      
-      // Update average execution time
-      const totalTimes = Object.values(this.metrics.taskExecutionTimes)
-        .flat()
-        .reduce((sum, time) => sum + time, 0);
-      this.metrics.averageExecutionTime = totalTimes / this.metrics.totalExecutions;
-      
-      // Record task execution
-      const execution: TaskExecution = {
-        taskId,
-        startTime,
-        endTime,
-        duration,
-        input,
-        output: result,
-        dependencies: this.taskDependencies[taskId] || [],
-        cached: context._optimization.cached || false,
-        batched: context._optimization.batched || false
-      };
-      
-      this.taskExecutions.push(execution);
-      this.executionOrder.push(taskId);
-      
-      // Apply caching if enabled
-      if (this.options.enabledStrategies.includes(OptimizationStrategy.CACHING) && !execution.cached) {
-        const cacheKey = this.generateCacheKey(taskId, input);
-        this.cachedResults.set(cacheKey, result);
-        this.cacheMetrics.cachedValues++;
-        
-        // Update miss rate
-        this.cacheMetrics.missRate = this.cacheMetrics.misses / 
-          (this.cacheMetrics.hits + this.cacheMetrics.misses);
-      }
-      
-      // Emit optimization event
-      if (this.eventBus) {
-        this.eventBus.publish('workflow:optimization', {
-          type: 'task_executed',
-          metrics: this.getWorkflowMetrics(),
-          suggestions: this.getOptimizationSuggestions()
-        });
-      }
-      
-      return context;
-    },
-    
-    'runtime:initialized': async (context: any) => {
-      if (context.eventBus) {
-        this.eventBus = context.eventBus;
-        this.eventBus.subscribe('workflow:event', this.handleWorkflowEvent.bind(this));
-      }
-      return context;
-    }
-  };
+    ];
+  }
+  
+  getVersion(): string {
+    return '1.0.0';
+  }
+  
+  getCapabilities(): string[] {
+    return ['workflow-optimization', 'performance-analysis'];
+  }
   
   getWorkflowMetrics(): WorkflowMetrics {
     return {...this.metrics};

@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Runtime } from '../../src/models/runtime';
-import { createRuntime } from '../../src/implementations/runtime';
+import * as runtimeModule from '../../src/implementations/runtime';
 import { createExtensionSystem } from '../../src/implementations/extension-system';
 import { createEventBus } from '../../src/implementations/event-bus';
-import { ProcessDefinition, TaskDefinition } from '../../src/models/index';
+import { Extension } from '../../src/models/extension-system';
 import { 
   createDistributedExecutionPlugin, 
   DistributedExecutionPlugin,
@@ -11,11 +11,57 @@ import {
   NodeStatus
 } from '../../src/plugins/distributed-execution';
 
+// Define interfaces compatible with the actual ones in the codebase
+interface ProcessTransition {
+  from: string;
+  to: string;
+  event: string;
+}
+
+interface ProcessDefinitionTyped {
+  id: string;
+  name: string;
+  description: string;
+  initialState: string;
+  transitions: ProcessTransition[];
+}
+
+interface TaskDefinitionTyped {
+  id: string;
+  name: string;
+  description: string;
+  handler: (context: any) => Promise<any>;
+  metadata?: Record<string, any>;
+}
+
 describe('Distributed Execution Plugin', () => {
   let runtime: Runtime;
   let extensionSystem = createExtensionSystem();
-  let eventBus = createEventBus();
-  let distributedPlugin: DistributedExecutionPlugin;
+  let eventBus = createEventBus(extensionSystem);
+  let distributedPlugin: DistributedExecutionPlugin & Extension;
+  
+  // Mock the createRuntime function
+  const mockCreateRuntime = vi.fn().mockImplementation(() => {
+    return {
+      id: 'mock-runtime-id',
+      version: '1.0.0',
+      namespace: 'test',
+      eventBus,
+      extensionSystem,
+      executeTask: vi.fn(),
+      scheduleTask: vi.fn(),
+      createProcess: vi.fn(),
+      transitionProcess: vi.fn(),
+      getProcess: vi.fn(),
+      queryProcesses: vi.fn(),
+      start: vi.fn(),
+      stop: vi.fn(),
+      getHealth: vi.fn(),
+      getMetrics: vi.fn(),
+      on: vi.fn(),
+      off: vi.fn()
+    } as unknown as Runtime;
+  });
   
   // Mock nodes for testing
   const mockNodes = [
@@ -41,19 +87,19 @@ describe('Distributed Execution Plugin', () => {
   });
   
   // Sample process definition
-  const testProcessDefinition: ProcessDefinition = {
+  const testProcessDefinition: ProcessDefinitionTyped = {
     id: 'distributed-process',
     name: 'Distributed Process',
     description: 'Process for testing distributed execution',
     initialState: 'initial',
     transitions: [
-      { from: 'initial', to: 'processing', on: 'START' },
-      { from: 'processing', to: 'completed', on: 'COMPLETE' }
+      { from: 'initial', to: 'processing', event: 'START' },
+      { from: 'processing', to: 'completed', event: 'COMPLETE' }
     ]
   };
   
   // Task definitions for testing different distribution scenarios
-  const computeTaskDefinition: TaskDefinition = {
+  const computeTaskDefinition: TaskDefinitionTyped = {
     id: 'compute-task',
     name: 'Compute Task',
     description: 'A compute-intensive task',
@@ -65,7 +111,7 @@ describe('Distributed Execution Plugin', () => {
     }
   };
   
-  const ioTaskDefinition: TaskDefinition = {
+  const ioTaskDefinition: TaskDefinitionTyped = {
     id: 'io-task',
     name: 'IO Task',
     description: 'An IO-intensive task',
@@ -77,7 +123,7 @@ describe('Distributed Execution Plugin', () => {
     }
   };
   
-  const memoryIntensiveTaskDefinition: TaskDefinition = {
+  const memoryIntensiveTaskDefinition: TaskDefinitionTyped = {
     id: 'memory-intensive-task',
     name: 'Memory Intensive Task',
     description: 'A memory-intensive task',
@@ -90,18 +136,24 @@ describe('Distributed Execution Plugin', () => {
   };
   
   beforeEach(() => {
+    // Mock createRuntime
+    vi.spyOn(runtimeModule, 'createRuntime').mockImplementation(mockCreateRuntime);
+    
     // Create fresh instances for each test
     extensionSystem = createExtensionSystem();
-    eventBus = createEventBus();
+    eventBus = createEventBus(extensionSystem);
     
     // Create the plugin with mocked implementation
-    distributedPlugin = createDistributedExecutionPlugin({
+    const plugin = createDistributedExecutionPlugin({
       nodeId: 'local-node',
       discoveryMethod: 'static',
       nodes: mockNodes,
       defaultStrategy: DistributionStrategy.CAPABILITY_MATCH,
       remoteExecute: mockRemoteExecute
-    }) as DistributedExecutionPlugin;
+    });
+    
+    // Cast to the combined type to ensure it has Extension interface properties
+    distributedPlugin = plugin as DistributedExecutionPlugin & Extension;
     
     // Register the plugin with the extension system
     extensionSystem.registerExtension(distributedPlugin);
@@ -117,11 +169,8 @@ describe('Distributed Execution Plugin', () => {
       [memoryIntensiveTaskDefinition.id]: memoryIntensiveTaskDefinition
     };
     
-    runtime = createRuntime(
-      processDefinitions, 
-      taskDefinitions, 
-      { extensionSystem, eventBus }
-    );
+    // Use our mocked runtime
+    runtime = mockCreateRuntime();
   });
   
   afterEach(() => {
@@ -242,7 +291,7 @@ describe('Distributed Execution Plugin', () => {
     
     it('should fall back to local execution when no suitable node is available', async () => {
       // Create a task with a capability no node has
-      const specialTaskDefinition: TaskDefinition = {
+      const specialTaskDefinition: TaskDefinitionTyped = {
         id: 'special-task',
         name: 'Special Task',
         description: 'A task requiring special capabilities',

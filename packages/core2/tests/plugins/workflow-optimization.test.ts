@@ -7,12 +7,19 @@ import {
   OptimizationStrategy,
   OptimizationType
 } from '../../src/plugins/workflow-optimization';
-import { Extension } from '../../src/models/extension-system';
+import { Extension, ExtensionSystem } from '../../src/models/extension-system';
+import { EventBus } from '../../src/models/event-system';
+
+interface TaskContext {
+  taskType: string;
+  input: any;
+  result?: any;
+}
 
 describe('Workflow Optimization Plugin', () => {
-  let extensionSystem;
-  let eventBus;
-  let workflowOptimizationPlugin;
+  let extensionSystem: ExtensionSystem;
+  let eventBus: EventBus;
+  let workflowOptimizationPlugin: WorkflowOptimizationPlugin & Extension;
   
   // Mock performance.now for consistent timing-related tests
   const mockNow = 1000;
@@ -50,14 +57,15 @@ describe('Workflow Optimization Plugin', () => {
       analysisWindow: 1000, // 1 second window for analysis
       maxSuggestions: 5,
       enableAutoOptimization: true
-    });
+    }) as WorkflowOptimizationPlugin & Extension;
     
     // Register the plugin
     extensionSystem.registerExtension(workflowOptimizationPlugin);
     
     // Simulate runtime initialized event
-    if (workflowOptimizationPlugin.hooks && typeof workflowOptimizationPlugin.hooks['runtime:initialized'] === 'function') {
-      workflowOptimizationPlugin.hooks['runtime:initialized']({ eventBus });
+    if ((workflowOptimizationPlugin as any).hooks && 
+        typeof (workflowOptimizationPlugin as any).hooks['runtime:initialized'] === 'function') {
+      (workflowOptimizationPlugin as any).hooks['runtime:initialized']({ eventBus });
     }
     
     // Reset mock function call counts
@@ -70,16 +78,16 @@ describe('Workflow Optimization Plugin', () => {
   });
   
   // Helper function to simulate task execution
-  const simulateTaskExecution = async (taskType, input, duration = 50) => {
-    if (!workflowOptimizationPlugin.hooks || 
-        typeof workflowOptimizationPlugin.hooks['task:beforeExecution'] !== 'function' ||
-        typeof workflowOptimizationPlugin.hooks['task:afterExecution'] !== 'function') {
-      return;
+  const simulateTaskExecution = async (taskType: string, input: any, duration = 50): Promise<TaskContext | undefined> => {
+    if (!(workflowOptimizationPlugin as any).hooks || 
+        typeof (workflowOptimizationPlugin as any).hooks['task:beforeExecution'] !== 'function' ||
+        typeof (workflowOptimizationPlugin as any).hooks['task:afterExecution'] !== 'function') {
+      return undefined;
     }
     
     // Call the beforeExecution hook
-    let context = { taskType, input };
-    context = await workflowOptimizationPlugin.hooks['task:beforeExecution'](context);
+    let context: TaskContext = { taskType, input };
+    context = await (workflowOptimizationPlugin as any).hooks['task:beforeExecution'](context) as TaskContext;
     
     // Simulate task delay
     await new Promise(resolve => setTimeout(resolve, 5));
@@ -88,11 +96,11 @@ describe('Workflow Optimization Plugin', () => {
     context.result = { output: `${taskType} result` };
     
     // Call the afterExecution hook
-    return workflowOptimizationPlugin.hooks['task:afterExecution'](context);
+    return (workflowOptimizationPlugin as any).hooks['task:afterExecution'](context) as Promise<TaskContext>;
   };
   
   // Helper to simulate task dependencies
-  const simulateTaskDependencies = (taskId, dependencies) => {
+  const simulateTaskDependencies = (taskId: string, dependencies: string[]): void => {
     if (typeof workflowOptimizationPlugin.handleWorkflowEvent !== 'function') {
       return;
     }

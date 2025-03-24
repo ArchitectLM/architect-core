@@ -213,9 +213,9 @@ export class RateLimitingPlugin extends BasePlugin {
     this.defaultLimitOptions = options.defaultLimit;
     this.eventBus = eventBus;
 
-    // Register hooks
-    this.registerHook(ExtensionPointNames.TASK_BEFORE_EXECUTION, async (
-      params: ExtensionPointParameters[typeof ExtensionPointNames.TASK_BEFORE_EXECUTION],
+    // Register hooks for task execution
+    this.registerHook(ExtensionPointNames.TASK_BEFORE_EXECUTE, async (
+      params: ExtensionPointParameters[typeof ExtensionPointNames.TASK_BEFORE_EXECUTE],
       context: ExtensionContext<unknown>
     ) => {
       const { taskId } = params;
@@ -234,8 +234,8 @@ export class RateLimitingPlugin extends BasePlugin {
       return { success: true, value: params };
     });
 
-    this.registerHook(ExtensionPointNames.TASK_AFTER_EXECUTION, async (
-      params: ExtensionPointParameters[typeof ExtensionPointNames.TASK_AFTER_EXECUTION],
+    this.registerHook(ExtensionPointNames.TASK_AFTER_EXECUTE, async (
+      params: ExtensionPointParameters[typeof ExtensionPointNames.TASK_AFTER_EXECUTE],
       context: ExtensionContext<unknown>
     ) => {
       const { taskId } = params;

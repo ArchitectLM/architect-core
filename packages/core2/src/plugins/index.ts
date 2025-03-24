@@ -14,10 +14,10 @@ export { EventPersistencePlugin, createEventPersistencePlugin } from './event-pe
 export { ProcessManagementPlugin, createProcessManagementPlugin } from './process-management';
 
 // Export task management plugin
-export { TaskManagementPlugin, createTaskManagementPlugin } from './task-management';
+export { TaskManagementPluginImpl as TaskManagementPlugin, createTaskManagementPlugin } from './task-management';
 
 // Export transaction management plugin
-export { TransactionPlugin, createTransactionPlugin } from './transaction-management';
+export { TransactionPluginImpl as TransactionPlugin } from './transaction-management';
 
 // Export workflow optimization plugin
 export { WorkflowOptimizationPlugin } from './workflow-optimization';
@@ -50,7 +50,7 @@ export { ContentBasedRouter, RouteDefinition, createContentBasedRouter } from '.
 export { DistributedExecutionPlugin } from './distributed-execution';
 
 // Export event sourcing plugin
-export { EventSourcingPlugin, EventStore, AggregateRoot, DomainEvent, createEventSourcingPlugin } from './event-sourcing';
+export { EventSourcingPlugin, EventStore, AggregateRoot, createEventSourcingPlugin } from './event-sourcing';
 
 // Export caching plugin
 export { CachingPlugin } from './caching';

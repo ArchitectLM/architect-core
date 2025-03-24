@@ -127,7 +127,7 @@ describe('Observability Plugin', () => {
       enableLogging: true,
       logLevel: LogLevel.INFO,
       samplingRate: 1.0
-    });
+    }) as unknown as ObservabilityPlugin;
     
     // Create the Extension wrapper for the plugin
     observabilityPluginExtension = new ObservabilityPluginExtension(observabilityPlugin);
